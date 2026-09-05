@@ -19,6 +19,9 @@ export const NewsCommandModal: React.FC<NewsCommandModalProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AIAnalysisResult | null>(null);
+  const [useWebsitePhoto, setUseWebsitePhoto] = useState<boolean>(true);
+  const [generatingAiImage, setGeneratingAiImage] = useState<boolean>(false);
+  const [generatedAiImageUrl, setGeneratedAiImageUrl] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -34,6 +37,7 @@ export const NewsCommandModal: React.FC<NewsCommandModalProps> = ({
     setLoading(true);
     setError(null);
     setResult(null);
+    setGeneratedAiImageUrl(null);
 
     try {
       const response = await fetch('/api/process-news-command', {
@@ -51,6 +55,9 @@ export const NewsCommandModal: React.FC<NewsCommandModalProps> = ({
       }
 
       setResult(data.data);
+      if (data.data.pickedImages?.main) {
+        setUseWebsitePhoto(true);
+      }
     } catch (err: any) {
       console.error('Command processing error:', err);
       setError(err.message || 'त्रुटि उत्पन्न हुई');
@@ -59,9 +66,46 @@ export const NewsCommandModal: React.FC<NewsCommandModalProps> = ({
     }
   };
 
+  const handleGenerateAiPhotoFromHeadline = async () => {
+    if (!result?.headline) return;
+    setGeneratingAiImage(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/generate-ai-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          headline: result.headline,
+          customPrompt: result.suggestedImagePrompt,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'AI फोटो जनरेट करने में त्रुटि');
+      }
+      setGeneratedAiImageUrl(data.imageUrl);
+      setResult((prev) => (prev ? { ...prev, isAiGeneratedPhoto: true } : null));
+    } catch (err: any) {
+      console.error('AI image generation error:', err);
+      setError(err.message || 'AI फोटो जनरेट नहीं हो सकी');
+    } finally {
+      setGeneratingAiImage(false);
+    }
+  };
+
   const handleApply = () => {
     if (result) {
-      onApplyResult(result);
+      const finalResult: AIAnalysisResult = { ...result };
+      if (generatedAiImageUrl) {
+        finalResult.pickedImages = {
+          main: generatedAiImageUrl,
+        };
+        finalResult.isAiGeneratedPhoto = true;
+      } else if (!useWebsitePhoto) {
+        // User opted out of using website photo
+        finalResult.pickedImages = undefined;
+      }
+      onApplyResult(finalResult);
       onClose();
     }
   };
@@ -204,12 +248,103 @@ export const NewsCommandModal: React.FC<NewsCommandModalProps> = ({
                 ))}
               </div>
 
-              {/* AI Generated Photo Toggle Option */}
+              {/* 1. Website Picked Image Preview & Toggle */}
+              {result.pickedImages?.main && (
+                <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+                      <span>📸 वेबसाइट से प्राप्त फोटो:</span>
+                      <span className="text-[10px] bg-green-950 text-green-400 border border-green-800/60 px-1.5 py-0.2 rounded font-bold">
+                        Auto Picked
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setUseWebsitePhoto(!useWebsitePhoto)}
+                      className={`px-2.5 py-0.5 text-xs font-bold rounded border cursor-pointer ${
+                        useWebsitePhoto
+                          ? 'bg-green-600/30 text-green-300 border-green-500'
+                          : 'bg-neutral-800 text-neutral-400 border-neutral-700'
+                      }`}
+                    >
+                      {useWebsitePhoto ? 'फोटो शामिल करें (ON)' : 'हटाएं (OFF)'}
+                    </button>
+                  </div>
+                  {useWebsitePhoto && (
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={result.pickedImages.main}
+                        alt="Website Article"
+                        className="w-20 h-16 object-cover rounded-lg border border-neutral-700 shadow"
+                      />
+                      {result.pickedImages.second && (
+                        <img
+                          src={result.pickedImages.second}
+                          alt="Website Article 2"
+                          className="w-20 h-16 object-cover rounded-lg border border-neutral-700 shadow"
+                        />
+                      )}
+                      <div className="text-[11px] text-neutral-400">
+                        यह फोटो कार्ड के बैकग्राउंड में स्वतः सेट हो जाएगी। बाद में आप इसे एडिटर में बदल भी सकते हैं।
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. AI Generated Photo Option */}
+              <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
+                    <span>हेडलाइन से AI फोटो जनरेट करें:</span>
+                  </span>
+                  {!generatedAiImageUrl ? (
+                    <button
+                      type="button"
+                      disabled={generatingAiImage}
+                      onClick={handleGenerateAiPhotoFromHeadline}
+                      className="px-3 py-1 bg-yellow-400/20 hover:bg-yellow-400/30 text-yellow-400 border border-yellow-400/40 rounded text-xs font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      {generatingAiImage ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>AI फोटो बन रही है...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3" />
+                          <span>AI फोटो बनाएं</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <span className="text-[11px] bg-yellow-400 text-neutral-950 font-black px-2 py-0.5 rounded">
+                      AI फोटो तैयार ✅
+                    </span>
+                  )}
+                </div>
+
+                {generatedAiImageUrl && (
+                  <div className="flex items-center gap-3 p-2 bg-neutral-950 rounded-lg border border-yellow-500/40">
+                    <img
+                      src={generatedAiImageUrl}
+                      alt="AI Generated Background"
+                      className="w-20 h-20 object-cover rounded-lg border border-yellow-400/50 shadow"
+                    />
+                    <div className="text-[11px] text-neutral-300">
+                      हेडलाइन के अनुसार AI द्वारा फोटो तैयार कर ली गई है। कार्ड में स्वतः यही बैकग्राउंड लगेगा और AI GENERATED मार्क ऑन रहेगा।
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* AI Generated Photo Badge Toggle */}
               <div className="flex items-center justify-between p-2.5 bg-neutral-900/90 rounded-lg border border-neutral-800">
                 <div className="flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
                   <span className="text-xs font-bold text-neutral-200">
-                    AI जेनरेटेड फोटो (AI GENERATED):
+                    AI वाटरमार्क (AI GENERATED):
                   </span>
                 </div>
                 <button

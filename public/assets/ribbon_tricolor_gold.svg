@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 170" width="100%" height="100%">
+  <defs>
+    <linearGradient id="navyPlate" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1A2D6E" />
+      <stop offset="100%" stop-color="#0E1A45" />
+    </linearGradient>
+    <linearGradient id="amberPlate" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFD000" />
+      <stop offset="100%" stop-color="#FF9900" />
+    </linearGradient>
+  </defs>
+
+  <rect x="180" y="14" width="600" height="6" rx="2" fill="#FFD000" />
+  
+  <g transform="translate(42, 0) skewX(-15)">
+    <!-- Navy बड़ी with Gold Border -->
+    <rect x="75" y="38" width="375" height="100" rx="3" fill="url(#navyPlate)" stroke="#FFD000" stroke-width="3" />
+    <!-- Amber ख़बर with White Border -->
+    <rect x="445" y="36" width="405" height="104" rx="3" fill="url(#amberPlate)" stroke="#FFFFFF" stroke-width="2.5" />
+
+    <text
+      x="262"
+      y="114"
+      fill="#FFFFFF"
+      font-family="'Baloo 2', 'Noto Sans Devanagari', system-ui, sans-serif"
+      font-size="70"
+      font-weight="900"
+      letter-spacing="2"
+      text-anchor="middle"
+    >बड़ी</text>
+
+    <text
+      x="647"
+      y="114"
+      fill="#0A0A0A"
+      font-family="'Baloo 2', 'Noto Sans Devanagari', system-ui, sans-serif"
+      font-size="70"
+      font-weight="900"
+      letter-spacing="2"
+      text-anchor="middle"
+    >ख़बर</text>
+  </g>
+
+  <rect x="120" y="156" width="720" height="6" rx="2" fill="#FFD000" />
+</svg>

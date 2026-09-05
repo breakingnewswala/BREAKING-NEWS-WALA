@@ -1,4 +1,5 @@
 import { NewsCardData } from '../types';
+import { getActiveFooterPng } from './footerUtils';
 import {
   drawOriginalHeader,
   drawBreakingRedHeader,
@@ -54,6 +55,28 @@ const DEFAULT_3D_ARROW_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(`
   <line x1="202" y1="108" x2="236" y2="110" stroke="rgba(255, 255, 255, 0.6)" stroke-width="2.5" stroke-linecap="round" />
 </svg>`)}`;
 
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  if (typeof (ctx as any).roundRect === 'function') {
+    ctx.beginPath();
+    (ctx as any).roundRect(x, y, w, h, r);
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+}
+
 export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvasElement> {
   // Ensure Baloo 2 font is loaded in browser environment before drawing
   if (typeof document !== 'undefined' && document.fonts) {
@@ -81,9 +104,75 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
   ctx.fillRect(0, 0, width, height);
 
   const footerBarHeight = 78;
-  const photoBottomY = height - footerBarHeight;
+  const isSuperBreaking = card.frameDesign === 'jacket-breaking-red';
 
-  // 1. Draw Images according to 5 layouts with custom crop (X/Y) & zoom
+  // 0. Pre-calculate Headline Lines in Baloo 2 font early so we know the exact top of the white box
+  const maxHeadlineWidth = width - 96; // 48px padding on each side
+  const scaleRatio = 2.15; // Maps ~30px editor font to ~65px canvas, matching the visual preview ratio
+  let targetFontSize = Math.round((card.headlineFontSize || 30) * scaleRatio);
+  targetFontSize = Math.max(54, Math.min(80, targetFontSize));
+
+  ctx.save();
+  const rawHeadline = card.formattedHeadline || card.headline || '';
+  const manualLines = rawHeadline.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (manualLines.length >= 2) {
+    for (let s = targetFontSize; s >= 46; s -= 2) {
+      ctx.font = `800 ${s}px "Baloo 2", "Noto Sans Devanagari", sans-serif`;
+      const allFit = manualLines.every((m) => {
+        const cleanText = m.replace(/\[yellow\]/g, '').replace(/\[\/yellow\]/g, '');
+        return ctx.measureText(cleanText).width <= maxHeadlineWidth;
+      });
+      if (allFit) {
+        targetFontSize = s;
+        break;
+      }
+    }
+  }
+  ctx.restore();
+
+  const isQuote = card.frameDesign === 'jacket-quote';
+
+  const headlineFontSize = targetFontSize;
+  const headlineLineHeight = Math.round(headlineFontSize * 1.34);
+  const headlineLines = getHeadlineLines(
+    ctx,
+    card.formattedHeadline || card.headline,
+    card.highlightWords,
+    maxHeadlineWidth,
+    headlineFontSize
+  );
+  const totalHeadlineHeight = headlineLines.length * headlineLineHeight;
+
+  // Standard headline positions
+  const headlineBottomY = height - footerBarHeight - 22;
+  const headlineStartY = headlineBottomY - totalHeadlineHeight;
+
+  // For Super Breaking:
+  // Dynamically calculate white box height based on headline lines so text NEVER touches footer!
+  const ribbonW = Math.round(width * 0.70);
+  const ribbonH = Math.round(ribbonW * (150 / 960));
+  const ribbonHangInsideWhiteBox = Math.round(ribbonH * 0.5);
+  const gapBelowRibbon = 24;
+  const bottomPaddingAboveFooter = 36;
+  const superBreakingWhiteBoxH = ribbonHangInsideWhiteBox + gapBelowRibbon + totalHeadlineHeight + bottomPaddingAboveFooter;
+  const whiteBoxH = Math.max(280, superBreakingWhiteBoxH);
+  const whiteBoxY = height - footerBarHeight - whiteBoxH;
+
+  // Ribbon is positioned exactly half on photo, half on white box:
+  const superBreakingRibbonY = whiteBoxY - Math.round(ribbonH * 0.5);
+  const superBreakingHeadlineTextY = whiteBoxY + ribbonHangInsideWhiteBox + gapBelowRibbon;
+
+  // Photo bottom boundaries:
+  // 1. Super Breaking: stops at top of white box (whiteBoxY)
+  // 2. Quote (बयान): strictly restricted to top 50% of card, leaving lower half solid black for quote & speaker
+  // 3. Default Breaking News Wala & standard: stops below the middle line of the 3-line text, never touching the footer!
+  const photoBottomY = isSuperBreaking
+    ? whiteBoxY
+    : isQuote
+    ? Math.round(height * 0.50)
+    : Math.round(headlineStartY + headlineLineHeight * 1.35);
+
+  // 1. Draw Images according to layouts with custom crop (X/Y) & zoom
   try {
     const mainImg = await loadImage(card.images.main);
 
@@ -109,11 +198,19 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     const foCropY = (fourthCrop.y ?? 50) / 100;
     const foZoom = Math.max(1, fourthCrop.zoom || 1);
 
-    if (card.layout === 'full') {
+    if (isQuote) {
+      // Quote (बयान) Jacket: Strictly single image restricted to top 50%
+      drawImageCover(ctx, mainImg, 0, 0, width, photoBottomY, mCropX, mCropY, mZoom);
+    } else if (card.layout === 'full' && !isSuperBreaking) {
       // Full bleed edge-to-edge image across entire card
       drawImageCover(ctx, mainImg, 0, 0, width, height, mCropX, mCropY, mZoom);
-    } else if (card.layout === 'single' || !card.layout || card.layout === 'inset-circle') {
-      // Single Image: Clear, bright, prominent photo taking maximum space
+    } else if (
+      card.layout === 'single' ||
+      !card.layout ||
+      card.layout === 'inset-circle' ||
+      (card.layout === 'full' && isSuperBreaking)
+    ) {
+      // Single Image / Constrained photo: stops at photoBottomY
       drawImageCover(ctx, mainImg, 0, 0, width, photoBottomY, mCropX, mCropY, mZoom);
     } else if (card.layout === 'split-v') {
       // 2 images: 35% Top, 65% Bottom (35-65 ratio as requested)
@@ -296,14 +393,112 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     ctx.fillRect(0, 0, width, height);
   }
 
+  // Exclusive "⚡ सुपर ब्रेकिंग" subtle watermark across photo area (15% opacity)
+  if (card.showSuperBreakingWatermark) {
+    drawSuperBreakingWatermark(
+      ctx,
+      width,
+      photoBottomY,
+      card.breakingWatermarkText || '⚡ सुपर ब्रेकिंग',
+      card.breakingWatermarkOpacity ?? 0.15
+    );
+  }
+
+  // Load custom logo image if provided
+  let customLogoImg: HTMLImageElement | undefined;
+  if (card.customLogoUrl) {
+    try {
+      customLogoImg = await loadImage(card.customLogoUrl);
+    } catch (logoErr) {
+      console.warn('Custom logo load warning:', logoErr);
+    }
+  }
+
   // 2. Render Header / Jacket
-  // If one of the hold/pending header styles is selected, do not draw Breaking News Wala header
-  if (
-    card.frameDesign === 'jacket-breaking-red' ||
-    card.frameDesign === 'jacket-investigation' ||
-    card.frameDesign === 'jacket-quote'
-  ) {
-    // Hold / Pending: Wait for user to provide separate jackets for these 3 styles
+  if (card.frameDesign === 'jacket-investigation') {
+    // Special Investigation Header
+    const headH = 64;
+    const grad = ctx.createLinearGradient(0, 0, width, 0);
+    grad.addColorStop(0, '#0a0a0a');
+    grad.addColorStop(0.5, '#171717');
+    grad.addColorStop(1, '#451a03');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, headH);
+    ctx.fillStyle = '#F59E0B';
+    ctx.fillRect(0, headH - 4, width, 4);
+
+    // Badge: 🔍 विशेष पड़ताल
+    ctx.fillStyle = '#F59E0B';
+    drawRoundedRect(ctx, 32, 12, 210, 40, 8);
+    ctx.fill();
+    ctx.font = '900 22px "Baloo 2", sans-serif';
+    ctx.fillStyle = '#0a0a0a';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🔍 विशेष पड़ताल', 48, 32);
+
+    ctx.font = '900 24px "Baloo 2", sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(card.investigationCaseNumber || card.brandName || 'INVESTIGATION REPORT', 265, 32);
+
+    ctx.font = '900 18px monospace';
+    ctx.fillStyle = '#FBBF24';
+    ctx.textAlign = 'right';
+    ctx.fillText('EXCLUSIVE', width - 36, 32);
+  } else if (card.frameDesign === 'jacket-quote') {
+    // Quote / Statement Header
+    const headH = 64;
+    const grad = ctx.createLinearGradient(0, 0, width, 0);
+    grad.addColorStop(0, '#171717');
+    grad.addColorStop(0.5, '#0a0a0a');
+    grad.addColorStop(1, '#171717');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, headH);
+    ctx.fillStyle = '#525252';
+    ctx.fillRect(0, headH - 2, width, 2);
+
+    // Badge: ❝ बयान एवं कोटेशन
+    ctx.fillStyle = '#FFE600';
+    drawRoundedRect(ctx, 32, 12, 230, 40, 8);
+    ctx.fill();
+    ctx.font = '900 22px "Baloo 2", sans-serif';
+    ctx.fillStyle = '#0a0a0a';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('❝ बयान एवं कोटेशन', 48, 32);
+
+    ctx.font = '900 24px "Baloo 2", sans-serif';
+    ctx.fillStyle = '#E5E5E5';
+    ctx.fillText(card.brandName || 'ब्रेकिंग न्यूज़वाला', 285, 32);
+
+    ctx.font = '900 18px serif';
+    ctx.fillStyle = '#FFE600';
+    ctx.textAlign = 'right';
+    ctx.fillText('STATEMENT', width - 36, 32);
+  } else if (card.frameDesign === 'custom-png') {
+    if (!card.hideDefaultHeaderInCustomFrame) {
+      if (card.customHeaderPng) {
+        try {
+          const headerImg = await loadImage(card.customHeaderPng);
+          const headerAspect = headerImg.width / headerImg.height;
+          const drawH = width / headerAspect;
+          ctx.drawImage(headerImg, 0, 0, width, drawH);
+        } catch (err) {
+          drawOriginalHeader(ctx, width, card, customLogoImg);
+        }
+      } else {
+        drawOriginalHeader(ctx, width, card, customLogoImg);
+      }
+    }
+  } else if (card.customHeaderPng) {
+    try {
+      const headerImg = await loadImage(card.customHeaderPng);
+      const headerAspect = headerImg.width / headerImg.height;
+      const drawH = width / headerAspect;
+      ctx.drawImage(headerImg, 0, 0, width, drawH);
+    } catch (err) {
+      drawOriginalHeader(ctx, width, card, customLogoImg);
+    }
   } else if (card.customHeaderPng) {
     try {
       const headerImg = await loadImage(card.customHeaderPng);
@@ -312,15 +507,15 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
       ctx.drawImage(headerImg, 0, 0, width, drawH);
     } catch (err) {
       console.warn('Custom header load error:', err);
-      drawOriginalHeader(ctx, width, card);
+      drawOriginalHeader(ctx, width, card, customLogoImg);
     }
   } else {
-    // Default: Official 'ब्रेकिंग न्यूज़ वाला' jacket
-    drawOriginalHeader(ctx, width, card);
+    // Both jacket-original and jacket-breaking-red use the official header!
+    drawOriginalHeader(ctx, width, card, customLogoImg);
   }
 
-  // Optional full frame transparent overlay PNG if provided
-  if (card.customFrameOverlayPng) {
+  // Optional full frame transparent overlay PNG ONLY when custom-png template is selected
+  if (card.frameDesign === 'custom-png' && card.customFrameOverlayPng) {
     try {
       const overlayImg = await loadImage(card.customFrameOverlayPng);
       ctx.drawImage(overlayImg, 0, 0, width, height);
@@ -329,73 +524,219 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     }
   }
 
-  // 3. Calculate Headline Lines in Baloo 2 font (Capped at 3 lines: "फुटर पर तीन लाइन में कैप्शन जाएगा")
-  const maxHeadlineWidth = width - 96;
-  const headlineFontSize = card.headlineFontSize ? card.headlineFontSize * 1.35 : 44;
-  const headlineLineHeight = headlineFontSize * 1.38;
-  const headlineLines = getHeadlineLines(
-    ctx,
-    card.formattedHeadline || card.headline,
-    card.highlightWords,
-    maxHeadlineWidth,
-    headlineFontSize
-  );
-  const totalHeadlineHeight = headlineLines.length * headlineLineHeight;
+  // 4. Render Bottom Section: Super Breaking vs Quote vs Standard Original
+  if (card.frameDesign === 'jacket-breaking-red') {
+    // Super Breaking Template: Badges above + Centered BREAKING NEWS ribbon + Solid pure white headline + Yellow footer
 
-  // 4. Positions relative to bottom footer bar
-  const headlineBottomY = height - footerBarHeight - 22;
-  const headlineStartY = headlineBottomY - totalHeadlineHeight;
-  
-  // Badge height is 40px. Add clean, professional 28px breathing space between badge bottom and headline top:
-  const badgeH = 40;
-  const badgeBottomGap = 28;
-  const topStripY = headlineStartY - badgeH - badgeBottomGap;
+    // Solid white background plate
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, whiteBoxY, width, height - footerBarHeight - whiteBoxY);
 
-  // 5. Compact, gentle headline gradient scrim (so photo remains 80%+ completely visible)
-  const scrimTop = topStripY - 50;
-  const scrimGradient = ctx.createLinearGradient(0, scrimTop, 0, height - footerBarHeight);
-  scrimGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  scrimGradient.addColorStop(0.20, 'rgba(0, 0, 0, 0.65)');
-  scrimGradient.addColorStop(0.55, 'rgba(0, 0, 0, 0.92)');
-  scrimGradient.addColorStop(1, 'rgba(0, 0, 0, 0.99)');
-  ctx.fillStyle = scrimGradient;
-  ctx.fillRect(0, scrimTop, width, height - footerBarHeight - scrimTop);
+    // Subtle divider at top of white plate
+    ctx.fillStyle = '#E5E7EB';
+    ctx.fillRect(0, whiteBoxY, width, 2);
 
-  // 6. Top Strip: Location (Left) & "🔴 पूरी खबर डिस्क्रिप्शन में" (Right)
-  if (card.location) {
-    drawLocationBadge(ctx, 48, topStripY, card.location);
+    // Centered, scaled BREAKING NEWS Ribbon with gentle soft shadow touching border
+    const ribbonScalePct = 70;
+    await drawSuperBreakingRibbon(
+      ctx,
+      width,
+      superBreakingRibbonY,
+      card.customBreakingRibbonPng,
+      ribbonScalePct
+    );
+
+    // Location Badge & Callout Tag floating ABOVE the ribbon
+    const badgeY = superBreakingRibbonY - 48 - 14;
+    if (card.location) {
+      drawLocationBadge(ctx, 48, badgeY, card.location);
+    }
+    if (card.showCallout) {
+      drawCalloutTag(ctx, width - 48, badgeY, card.calloutTag);
+    }
+
+    // AI GENERATED Watermark if enabled
+    if (card.showAiGenerated) {
+      drawAiGeneratedWatermark(ctx, width, height, card.aiGeneratedText || 'AI GENERATED');
+    }
+
+    // 2-Line Headline inside the white box with comfortable top breathing space (never touching ribbon)
+    const hlColor = card.highlightColor && card.highlightColor !== '#FFE600' ? card.highlightColor : '#DC2626';
+    const headlineTextY = superBreakingHeadlineTextY;
+    drawRenderedHeadlineLines(
+      ctx,
+      headlineLines,
+      hlColor,
+      width,
+      headlineTextY,
+      headlineFontSize,
+      headlineLineHeight,
+      card.headlineAlign || 'center',
+      48,
+      true // isLightBackground = true
+    );
+  } else if (card.frameDesign === 'jacket-quote') {
+    // ==========================================
+    // Dedicated Quote (बयान) Template Layout
+    // Single image in top 50%, clean solid black lower 50%
+    // ==========================================
+
+    // 1. Solid black for the lower 50% area
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, photoBottomY, width, height - photoBottomY);
+
+    // 2. On-photo badges (District is hidden per user instruction)
+    // "🔴 पूरी खबर डिस्क्रिप्शन में" placed cleanly on mid-side of photo
+    if (card.showCallout) {
+      const calloutY = photoBottomY - 52;
+      drawCalloutTag(ctx, width - 44, calloutY, card.calloutTag);
+    }
+
+    // AI GENERATED Watermark if enabled
+    if (card.showAiGenerated) {
+      drawAiGeneratedWatermark(ctx, width, Math.round(photoBottomY * 0.5), card.aiGeneratedText || 'AI GENERATED');
+    }
+
+    // 3. Center the Quote Block in the lower black space
+    const quoteAreaTop = photoBottomY;
+    const quoteAreaBottom = height - footerBarHeight;
+    const quoteAreaH = quoteAreaBottom - quoteAreaTop;
+
+    const quoteBadgeW = 76;
+    const quoteBadgeH = 42;
+    const quoteBlockHeight = quoteBadgeH + 20 + totalHeadlineHeight + 20 + quoteBadgeH + 28 + 40;
+    const startBlockY = quoteAreaTop + Math.max(20, Math.round((quoteAreaH - quoteBlockHeight) / 2));
+
+    // Top Quote divider line & yellow badge with opening double quotes
+    const topQuoteY = startBlockY + Math.round(quoteBadgeH / 2);
+    ctx.save();
+    ctx.strokeStyle = '#FFE600';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(110, topQuoteY);
+    ctx.lineTo(width / 2 - quoteBadgeW / 2 - 12, topQuoteY);
+    ctx.moveTo(width / 2 + quoteBadgeW / 2 + 12, topQuoteY);
+    ctx.lineTo(width - 110, topQuoteY);
+    ctx.stroke();
+
+    ctx.fillStyle = '#FFE600';
+    ctx.beginPath();
+    ctx.roundRect(width / 2 - quoteBadgeW / 2, topQuoteY - quoteBadgeH / 2, quoteBadgeW, quoteBadgeH, 8);
+    ctx.fill();
+
+    ctx.fillStyle = '#000000';
+    ctx.font = '900 56px "Plus Jakarta Sans", serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('“', width / 2, topQuoteY + 12);
+    ctx.restore();
+
+    // 4. Center-aligned 2-3 Line Quote Headline with comfortable side padding (90px margin)
+    const quoteTextStartY = topQuoteY + Math.round(quoteBadgeH / 2) + 20;
+    drawRenderedHeadlineLines(
+      ctx,
+      headlineLines,
+      card.highlightColor || '#FFE600',
+      width,
+      quoteTextStartY,
+      headlineFontSize,
+      headlineLineHeight,
+      'center',
+      90, // Reduced width / increased side padding as requested
+      false
+    );
+
+    // 5. Bottom Quote divider line & yellow badge with closing double quotes
+    const bottomQuoteY = quoteTextStartY + totalHeadlineHeight + 20;
+    ctx.save();
+    ctx.strokeStyle = '#FFE600';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(110, bottomQuoteY);
+    ctx.lineTo(width / 2 - quoteBadgeW / 2 - 12, bottomQuoteY);
+    ctx.moveTo(width / 2 + quoteBadgeW / 2 + 12, bottomQuoteY);
+    ctx.lineTo(width - 110, bottomQuoteY);
+    ctx.stroke();
+
+    ctx.fillStyle = '#FFE600';
+    ctx.beginPath();
+    ctx.roundRect(width / 2 - quoteBadgeW / 2, bottomQuoteY - quoteBadgeH / 2, quoteBadgeW, quoteBadgeH, 8);
+    ctx.fill();
+
+    ctx.fillStyle = '#000000';
+    ctx.font = '900 56px "Plus Jakarta Sans", serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('”', width / 2, bottomQuoteY + 12);
+    ctx.restore();
+
+    // 6. Speaker Name & Designation: Single Line centered
+    // Name slightly larger (38px bold), Title slightly smaller (28px)
+    const speakerY = bottomQuoteY + Math.round(quoteBadgeH / 2) + 28;
+    const speakerName = card.speakerName || 'अनिरुद्धाचार्य महाराज';
+    const speakerTitle = card.speakerTitle || 'कथावाचक';
+    drawSpeakerAttribution(ctx, width, speakerY, speakerName, speakerTitle);
+  } else {
+    // Standard Original Layout
+    const headlineBottomY = height - footerBarHeight - 22;
+    const headlineStartY = headlineBottomY - totalHeadlineHeight;
+    
+    // Badge height is 40px. Add clean, professional 28px breathing space between badge bottom and headline top:
+    const badgeH = 40;
+    const badgeBottomGap = 28;
+    const topStripY = headlineStartY - badgeH - badgeBottomGap;
+
+    // Compact, gentle headline gradient scrim (so photo remains 80%+ completely visible)
+    const scrimTop = topStripY - 50;
+    const scrimGradient = ctx.createLinearGradient(0, scrimTop, 0, height - footerBarHeight);
+    scrimGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    scrimGradient.addColorStop(0.20, 'rgba(0, 0, 0, 0.65)');
+    scrimGradient.addColorStop(0.55, 'rgba(0, 0, 0, 0.92)');
+    scrimGradient.addColorStop(1, 'rgba(0, 0, 0, 0.99)');
+    ctx.fillStyle = scrimGradient;
+    ctx.fillRect(0, scrimTop, width, height - footerBarHeight - scrimTop);
+
+    // Top Strip: Location (Left) & "🔴 पूरी खबर डिस्क्रिप्शन में" (Right)
+    if (card.location) {
+      drawLocationBadge(ctx, 48, topStripY, card.location);
+    }
+    if (card.showCallout) {
+      drawCalloutTag(ctx, width - 48, topStripY, card.calloutTag);
+    }
+
+    // AI GENERATED Watermark along Left Edge, Rotated 90°, Low Opacity
+    if (card.showAiGenerated) {
+      drawAiGeneratedWatermark(ctx, width, height, card.aiGeneratedText || 'AI GENERATED');
+    }
+
+    // 3-Line News Headline Caption in Baloo 2 font - Justified / Center / Left
+    drawRenderedHeadlineLines(
+      ctx,
+      headlineLines,
+      card.highlightColor || '#FFE600',
+      width,
+      headlineStartY,
+      headlineFontSize,
+      headlineLineHeight,
+      card.headlineAlign || 'justify',
+      48,
+      false
+    );
   }
-  if (card.showCallout) {
-    drawCalloutTag(ctx, width - 48, topStripY, card.calloutTag);
-  }
-
-  // 6B. AI GENERATED Watermark along Left Edge, Rotated 90°, Low Opacity
-  if (card.showAiGenerated) {
-    drawAiGeneratedWatermark(ctx, width, height, card.aiGeneratedText || 'AI GENERATED');
-  }
-
-  // 7. 3-Line News Headline Caption in Baloo 2 font - Justified / Center / Left
-  drawRenderedHeadlineLines(
-    ctx,
-    headlineLines,
-    card.highlightColor || '#FFE600',
-    width,
-    headlineStartY,
-    headlineFontSize,
-    headlineLineHeight,
-    card.headlineAlign || 'justify'
-  );
 
   // 8. Permanent Theme Footer Bar (Exact reproduction of Footer.png)
-  await drawThemeFooterBar(
-    ctx,
-    width,
-    height,
-    footerBarHeight,
-    card.socialHandle,
-    card.whatsappNumber,
-    card.customFooterPng
-  );
+  // (Skip standard footer bar if jacket-quote, because it has its own dedicated pill footer)
+  if (card.frameDesign !== 'jacket-quote' && !(card.frameDesign === 'custom-png' && card.hideDefaultFooterInCustomFrame)) {
+    await drawThemeFooterBar(
+      ctx,
+      width,
+      height,
+      footerBarHeight,
+      card.socialHandle,
+      card.whatsappNumber,
+      card.customFooterPng
+    );
+  }
 
   return canvas;
 }
@@ -644,6 +985,85 @@ function drawCalloutTag(
   ctx.restore();
 }
 
+// Dedicated Quote Footer Pill matching IMAGE NEWS - TEAM (2).png
+function drawQuoteFooterPill(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  ctx.save();
+  const pillW = 540;
+  const pillH = 58;
+  const pillX = (width - pillW) / 2;
+  const pillY = height - 90;
+
+  // Outer black rounded capsule with crisp white/gold border
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.roundRect(pillX, pillY, pillW, pillH, pillH / 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 1. Red Capsule "WATCH NOW ▶" on the left
+  const watchW = 148;
+  const watchH = 46;
+  const watchX = pillX + 6;
+  const watchY = pillY + 6;
+
+  ctx.fillStyle = '#DC2626';
+  ctx.beginPath();
+  ctx.roundRect(watchX, watchY, watchW, watchH, watchH / 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '900 14px "Plus Jakarta Sans", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('WATCH NOW  ▶', watchX + watchW / 2, watchY + watchH / 2);
+
+  // 2. 6 Social Media circular icons with labels on the right
+  const icons = [
+    { label: 'FACEBOOK', color: '#1877F2', symbol: 'f' },
+    { label: 'INSTAGRAM', color: '#E1306C', symbol: '📷' },
+    { label: 'YOUTUBE', color: '#FF0000', symbol: '▶' },
+    { label: '𝕏', color: '#111111', symbol: '𝕏' },
+    { label: 'LINKEDIN', color: '#0A66C2', symbol: 'in' },
+    { label: 'PUBLIC APP', color: '#FF8C00', symbol: 'P' },
+  ];
+
+  const iconRadius = 14;
+  let curIconX = watchX + watchW + 28;
+  const iconCenterY = pillY + 22;
+
+  icons.forEach((ic) => {
+    // Circle background
+    ctx.beginPath();
+    ctx.arc(curIconX, iconCenterY, iconRadius, 0, Math.PI * 2);
+    ctx.fillStyle = ic.color;
+    ctx.fill();
+
+    // Circle border
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Icon symbol
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ic.symbol, curIconX, iconCenterY);
+
+    // Mini label underneath
+    ctx.font = '700 8px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillText(ic.label, curIconX, iconCenterY + iconRadius + 9);
+
+    curIconX += 54;
+  });
+
+  ctx.restore();
+}
+
 // Vertical AI GENERATED Watermark along Left Edge/Wall, Rotated 90°, Low Opacity
 function drawAiGeneratedWatermark(
   ctx: CanvasRenderingContext2D,
@@ -653,35 +1073,36 @@ function drawAiGeneratedWatermark(
 ) {
   ctx.save();
   // Placed right along the left wall of the photo area
-  const x = 20;
+  const x = 22;
   const y = height * 0.44;
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
 
-  ctx.font = '800 15px system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.font = '800 14px system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+  if ('letterSpacing' in ctx) {
+    (ctx as any).letterSpacing = '3px';
+  }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
   const uppercaseText = (text || 'AI GENERATED').toUpperCase();
-  const textWidth = ctx.measureText(uppercaseText).width + 30;
-  const pillH = 24;
+  // Generous horizontal space (50px padding) before and after text so it never touches the shadow or edge
+  const textWidth = ctx.measureText(uppercaseText).width + 50;
+  const pillH = 26;
 
   // Translucent dark backdrop
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.50)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.60)';
   ctx.beginPath();
   ctx.roundRect(-textWidth / 2, -pillH / 2, textWidth, pillH, 4);
   ctx.fill();
 
   // Subtle border
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
   ctx.lineWidth = 1;
   ctx.stroke();
 
   // Low opacity white uppercase text
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-  if ('letterSpacing' in ctx) {
-    (ctx as any).letterSpacing = '3px';
-  }
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
   ctx.fillText(uppercaseText, 0, 1);
 
   ctx.restore();
@@ -836,6 +1257,116 @@ function getHeadlineLines(
   return lines;
 }
 
+// Render BREAKING NEWS Ribbon (Centered, scaled nicely, subtle shadow, matches uploaded PNG)
+async function drawSuperBreakingRibbon(
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  ribbonY: number,
+  customRibbonUrl?: string,
+  scalePercent: number = 70
+) {
+  ctx.save();
+  const clampedScale = Math.max(0.50, Math.min(0.95, scalePercent / 100));
+  const ribbonW = Math.round(canvasWidth * clampedScale); // User configured scale
+  const ribbonH = Math.round(ribbonW * (150 / 960)); // Proportional to SVG aspect ratio
+  const startX = Math.round((canvasWidth - ribbonW) / 2);
+
+  // Softer shadow
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 8;
+
+  try {
+    const imgUrl = customRibbonUrl || '/assets/breaking_news_ribbon.svg';
+    const ribbonImg = await loadImage(imgUrl);
+    ctx.drawImage(ribbonImg, startX, ribbonY, ribbonW, ribbonH);
+    ctx.restore();
+    return;
+  } catch (err) {
+    console.warn('Could not load ribbon image, using vector fallback', err);
+  }
+
+  // Vector fallback matching uploaded BREAKING NEWS WALA.png
+  const slantOffset = Math.round(ribbonH * 0.28);
+  const leftW = Math.round(ribbonW * 0.48);
+
+  // Top speed lines
+  ctx.fillStyle = '#E50914';
+  ctx.fillRect(startX + Math.round(ribbonW * 0.25), ribbonY - 6, Math.round(ribbonW * 0.58), 6);
+  ctx.fillStyle = '#2244E8';
+  ctx.fillRect(startX + 18, ribbonY + 6, Math.round(ribbonW * 0.45), 5);
+
+  // Left Blue Parallelogram: BREAKING
+  ctx.beginPath();
+  ctx.moveTo(startX + slantOffset, ribbonY + 16);
+  ctx.lineTo(startX + leftW + slantOffset, ribbonY + 16);
+  ctx.lineTo(startX + leftW, ribbonY + ribbonH - 16);
+  ctx.lineTo(startX, ribbonY + ribbonH - 16);
+  ctx.closePath();
+  ctx.fillStyle = '#2244E8';
+  ctx.fill();
+
+  // Right Red Parallelogram: NEWS
+  const rightStartX = startX + leftW + 6;
+  ctx.beginPath();
+  ctx.moveTo(rightStartX + slantOffset, ribbonY + 14);
+  ctx.lineTo(startX + ribbonW + slantOffset, ribbonY + 14);
+  ctx.lineTo(startX + ribbonW, ribbonY + ribbonH - 14);
+  ctx.lineTo(rightStartX, ribbonY + ribbonH - 14);
+  ctx.closePath();
+  ctx.fillStyle = '#E50914';
+  ctx.fill();
+
+  // Text BREAKING
+  ctx.shadowColor = 'transparent';
+  ctx.font = 'italic 900 48px sans-serif';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BREAKING', startX + leftW / 2 + slantOffset / 2, ribbonY + ribbonH / 2);
+
+  // Text NEWS
+  ctx.font = 'italic 900 52px sans-serif';
+  ctx.fillText('NEWS', rightStartX + (ribbonW - (rightStartX - startX)) / 2 + slantOffset / 2, ribbonY + ribbonH / 2);
+
+  // Bottom speed lines
+  ctx.fillStyle = '#E50914';
+  ctx.fillRect(startX + Math.round(ribbonW * 0.16), ribbonY + ribbonH - 8, Math.round(ribbonW * 0.32), 5);
+  ctx.fillStyle = '#2244E8';
+  ctx.fillRect(startX + Math.round(ribbonW * 0.30), ribbonY + ribbonH + 2, Math.round(ribbonW * 0.52), 6);
+
+  ctx.restore();
+}
+
+// Render Subtle Exclusive Watermark across photo area (15% opacity)
+function drawSuperBreakingWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  watermarkText: string = '⚡ सुपर ब्रेकिंग',
+  opacity: number = 0.15
+) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, width, height);
+  ctx.clip();
+
+  ctx.rotate((-20 * Math.PI) / 180);
+  ctx.font = '900 36px "Baloo 2", sans-serif';
+  ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const stepX = 380;
+  const stepY = 130;
+  for (let y = -height * 1.5; y < height * 2.5; y += stepY) {
+    for (let x = -width * 1.5; x < width * 2.5; x += stepX) {
+      ctx.fillText(watermarkText, x, y);
+    }
+  }
+  ctx.restore();
+}
+
 // Render the 3-line headline caption - Justified (Default) or Center or Left
 function drawRenderedHeadlineLines(
   ctx: CanvasRenderingContext2D,
@@ -846,7 +1377,8 @@ function drawRenderedHeadlineLines(
   fontSize: number,
   lineHeight: number,
   align: 'justify' | 'center' | 'left' = 'justify',
-  margin: number = 48
+  margin: number = 48,
+  isLightBackground: boolean = false
 ) {
   ctx.save();
   ctx.font = `800 ${fontSize}px "Baloo 2", "Noto Sans Devanagari", sans-serif`;
@@ -904,13 +1436,19 @@ function drawRenderedHeadlineLines(
     line.forEach((token) => {
       const wordW = ctx.measureText(token.text).width;
 
-      // Heavy stroke shadow for punchy readability
-      ctx.lineWidth = 7;
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
-      ctx.strokeText(token.text, curX, curY);
+      if (!isLightBackground) {
+        // Heavy stroke shadow for punchy readability
+        ctx.lineWidth = 7;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+        ctx.strokeText(token.text, curX, curY);
+      }
 
       // Fill color
-      ctx.fillStyle = token.isHighlight ? highlightColor : '#FFFFFF';
+      ctx.fillStyle = token.isHighlight
+        ? highlightColor
+        : isLightBackground
+        ? '#0A0A0A'
+        : '#FFFFFF';
       ctx.fillText(token.text, curX, curY);
 
       curX += wordW + currentSpaceWidth;

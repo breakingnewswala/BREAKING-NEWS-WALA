@@ -22,8 +22,20 @@ import {
   AlignJustify,
   AlignCenter,
   AlignLeft,
+  Lock,
+  Unlock,
+  Trash2,
+  ChevronRight,
+  ChevronLeft,
 } from 'lucide-react';
 import { FRAME_OPTIONS } from '../lib/HeaderDesigns';
+import {
+  BUILTIN_RIBBONS,
+  loadSavedCustomRibbons,
+  saveCustomRibbon,
+  deleteCustomRibbon,
+  RibbonPreset,
+} from '../lib/ribbonPresets';
 
 interface CardEditorProps {
   card: NewsCardData;
@@ -40,6 +52,22 @@ export const CardEditor: React.FC<CardEditorProps> = ({
   onOpenCommandModal,
   onOpenCaptionModal,
 }) => {
+  // Saved custom ribbons for Super Breaking layout
+  const [savedRibbons, setSavedRibbons] = React.useState<RibbonPreset[]>(() => loadSavedCustomRibbons());
+  const [newRibbonName, setNewRibbonName] = React.useState<string>('');
+
+  // Mobile active step navigation (1 to 5)
+  const [activeStep, setActiveStep] = React.useState<number>(1);
+  const [mobileViewMode, setMobileViewMode] = React.useState<'steps' | 'all'>('steps');
+
+  const STEPS = [
+    { step: 1, id: 'step-frame', label: '1. फ्रेम टेम्पलेट', icon: '🖼️' },
+    { step: 2, id: 'step-ai', label: '2. AI टूल्स', icon: '✨' },
+    { step: 3, id: 'step-jacket', label: '3. हेडर-फुटर', icon: '🏷️' },
+    { step: 4, id: 'step-layout', label: '4. फोटो लेआउट', icon: '📷' },
+    { step: 5, id: 'step-headline', label: '5. 3-लाइन हेडलाइन', icon: '✍️' },
+  ];
+
   // Photo crop/position active tab
   const [activeCropPhotoKey, setActiveCropPhotoKey] = React.useState<'main' | 'second' | 'third' | 'fourth' | 'insetCircle'>('main');
 
@@ -186,6 +214,20 @@ export const CardEditor: React.FC<CardEditorProps> = ({
     reader.readAsDataURL(file);
   };
 
+  // Handle Custom Brand/Channel Logo upload
+  const handleLogoUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        onChange({
+          customLogoUrl: e.target.result as string,
+          brandLogoType: 'custom',
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Handle Footer PNG upload (e.g. Footer.png)
   const handleFooterUpload = (file: File) => {
     const reader = new FileReader();
@@ -239,9 +281,71 @@ export const CardEditor: React.FC<CardEditorProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Mobile Step Navigator Bar (Scrolls left-to-right) */}
+      <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-3 shadow-lg">
+        <div className="flex items-center justify-between mb-2 px-0.5">
+          <span className="text-[11px] font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-yellow-400" />
+            <span>एडिटर स्टेप्स (स्टेप {activeStep} / 5)</span>
+          </span>
+          {/* Mobile view mode toggle */}
+          <div className="flex items-center gap-1 bg-neutral-950 p-0.5 rounded-lg border border-neutral-800 text-[10px]">
+            <button
+              type="button"
+              onClick={() => setMobileViewMode('steps')}
+              className={`px-2 py-1 rounded font-bold transition-all cursor-pointer ${
+                mobileViewMode === 'steps'
+                  ? 'bg-yellow-400 text-neutral-950 shadow'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              ↔️ स्लाइड मोड
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileViewMode('all')}
+              className={`px-2 py-1 rounded font-bold transition-all cursor-pointer ${
+                mobileViewMode === 'all'
+                  ? 'bg-yellow-400 text-neutral-950 shadow'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              ↕️ सभी बॉक्सेस
+            </button>
+          </div>
+        </div>
+
+        {/* Horizontal Scrollable Step Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+          {STEPS.map((s) => (
+            <button
+              key={s.step}
+              type="button"
+              onClick={() => {
+                setActiveStep(s.step);
+                const el = document.getElementById(s.id);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              }}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap font-bold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer ${
+                activeStep === s.step
+                  ? 'bg-yellow-400 text-neutral-950 shadow-md ring-1 ring-yellow-300'
+                  : 'bg-neutral-950 text-neutral-300 hover:bg-neutral-800 border border-neutral-800'
+              }`}
+            >
+              <span>{s.icon}</span>
+              <span>{s.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* 1. फ्रेम टेम्पलेट्स (हेडर स्टाइल चुनें) - STEP 1 */}
-      <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 space-y-4">
+      <div
+        id="step-frame"
+        className={`bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 space-y-4 ${
+          mobileViewMode === 'steps' && activeStep !== 1 ? 'hidden lg:block' : 'block'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-yellow-400 flex items-center gap-1.5">
             <Layers className="w-4 h-4 text-yellow-400" />
@@ -287,24 +391,56 @@ export const CardEditor: React.FC<CardEditorProps> = ({
           })}
         </div>
 
+        {/* Custom PNG Frame dedicated panel - ONLY active when custom-png is selected */}
         {card.frameDesign === 'custom-png' && (
-          <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-lg space-y-2">
+          <div className="p-3.5 bg-neutral-950 border border-yellow-500/40 rounded-xl space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-neutral-200">
-                पूरी ट्रांसपेरेंट PNG फ्रेम अपलोड करें:
+              <span className="text-xs font-bold text-yellow-400 flex items-center gap-1.5">
+                <Upload className="w-3.5 h-3.5" />
+                कस्टम ट्रांसपेरेंट PNG फ्रेम (Full Overlay):
               </span>
-              {card.customFrameOverlayPng && (
-                <span className="text-[10px] text-green-400 font-bold">
-                  ✅ फ्रेम एक्टिव
+              {card.customFrameOverlayPng ? (
+                <span className="text-[10px] text-green-400 font-bold bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">
+                  ✅ सक्रिय है
+                </span>
+              ) : (
+                <span className="text-[10px] text-neutral-400">
+                  कोई फ्रेम नहीं
                 </span>
               )}
             </div>
-            <label className="flex items-center justify-center gap-2 p-2 border border-dashed border-neutral-700 hover:border-yellow-500 rounded-md cursor-pointer text-xs text-neutral-300 bg-neutral-900 transition-all">
+
+            {card.customFrameOverlayPng && (
+              <div className="p-2.5 bg-neutral-900 rounded-lg border border-neutral-800 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src={card.customFrameOverlayPng}
+                    alt="Custom Frame Preview"
+                    className="w-12 h-14 object-contain bg-black/50 rounded border border-neutral-700"
+                  />
+                  <div>
+                    <p className="text-xs font-bold text-white">आपकी कस्टम फ्रेम लोड है</p>
+                    <p className="text-[10px] text-neutral-400">यह केवल इसी टेम्पलेट में दिखेगी</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onChange({ customFrameOverlayPng: undefined })}
+                  className="px-2.5 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs font-bold border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                  title="कस्टम फ्रेम हटाएं"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>हटाएं / ऑफ करें</span>
+                </button>
+              </div>
+            )}
+
+            <label className="flex items-center justify-center gap-2 p-2.5 border border-dashed border-neutral-700 hover:border-yellow-500 rounded-lg cursor-pointer text-xs text-neutral-300 bg-neutral-900/80 hover:bg-neutral-900 transition-all">
               <Upload className="w-3.5 h-3.5 text-yellow-400" />
               <span>
                 {card.customFrameOverlayPng
-                  ? 'फ्रेम PNG बदलें'
-                  : 'अपनी बनाई फ्रेम PNG अपलोड करें'}
+                  ? 'नई फ्रेम PNG अपलोड करके बदलें'
+                  : 'अपनी बनाई ट्रांसपेरेंट PNG फ्रेम अपलोड करें'}
               </span>
               <input
                 type="file"
@@ -316,16 +452,351 @@ export const CardEditor: React.FC<CardEditorProps> = ({
                 }}
               />
             </label>
+
+            {/* Toggles for custom-png mode */}
+            <div className="pt-2 border-t border-neutral-800 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() =>
+                  onChange({
+                    hideDefaultHeaderInCustomFrame: !card.hideDefaultHeaderInCustomFrame,
+                  })
+                }
+                className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
+                  card.hideDefaultHeaderInCustomFrame
+                    ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-300'
+                    : 'border-neutral-800 bg-neutral-900 text-neutral-300'
+                }`}
+              >
+                <span>डिफ़ॉल्ट हेडर बंद रखें</span>
+                <span className="text-[10px] font-bold">
+                  {card.hideDefaultHeaderInCustomFrame ? 'हां (छिपा है)' : 'नहीं'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onChange({
+                    hideDefaultFooterInCustomFrame: !card.hideDefaultFooterInCustomFrame,
+                  })
+                }
+                className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
+                  card.hideDefaultFooterInCustomFrame
+                    ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-300'
+                    : 'border-neutral-800 bg-neutral-900 text-neutral-300'
+                }`}
+              >
+                <span>डिफ़ॉल्ट फुटर बंद रखें</span>
+                <span className="text-[10px] font-bold">
+                  {card.hideDefaultFooterInCustomFrame ? 'हां (छिपा है)' : 'नहीं'}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Template specific fields for Quote */}
+        {card.frameDesign === 'jacket-quote' && (
+          <div className="p-3 bg-neutral-950 border border-neutral-800 rounded-lg space-y-2.5">
+            <span className="text-xs font-bold text-yellow-400">
+              ❝ बयान / कोटेशन विशेष सेटिंग्स:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] text-neutral-400 mb-1">
+                  वक्ता / नेता का नाम:
+                </label>
+                <input
+                  type="text"
+                  value={card.speakerName || ''}
+                  onChange={(e) => onChange({ speakerName: e.target.value })}
+                  placeholder="उदा. राहुल गांधी / नरेंद्र मोदी"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-yellow-400 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-neutral-400 mb-1">
+                  पद / पदवी / स्थान:
+                </label>
+                <input
+                  type="text"
+                  value={card.speakerTitle || ''}
+                  onChange={(e) => onChange({ speakerTitle: e.target.value })}
+                  placeholder="उदा. कांग्रेस नेता / मुख्यमंत्री"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-yellow-400 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Template specific fields for Super Breaking */}
+        {card.frameDesign === 'jacket-breaking-red' && (
+          <div className="p-3.5 bg-neutral-950 border border-red-500/40 rounded-xl space-y-3.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-red-400 flex items-center gap-1.5">
+                ⚡ सुपर ब्रेकिंग विशेष सेटिंग्स
+              </span>
+              <span className="text-[10px] text-yellow-400 font-bold bg-yellow-400/10 px-2 py-0.5 rounded border border-yellow-400/20">
+                एक्सक्लूसिव लेआउट
+              </span>
+            </div>
+
+            {/* 1. BREAKING NEWS Ribbon Style Gallery (5+ Built-in + Saved Custom) */}
+            <div className="p-3 bg-neutral-900 rounded-lg border border-neutral-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs">⚡</span>
+                  <span className="text-xs font-bold text-white">
+                    BREAKING NEWS रिबन स्टाइल (5+ ऑप्शन्स)
+                  </span>
+                </div>
+                {card.customBreakingRibbonPng && card.customBreakingRibbonPng !== '/assets/breaking_news_ribbon.svg' && (
+                  <button
+                    type="button"
+                    onClick={() => onChange({ customBreakingRibbonPng: undefined })}
+                    className="text-[10px] text-red-400 hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    डिफ़ॉल्ट रिबन
+                  </button>
+                )}
+              </div>
+
+              {/* Grid of All Ribbons (Built-in + User Saved) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[...BUILTIN_RIBBONS, ...savedRibbons].map((ribbon) => {
+                  const isSelected =
+                    (!card.customBreakingRibbonPng && ribbon.id === 'speed-blue-red') ||
+                    card.customBreakingRibbonPng === ribbon.url;
+
+                  return (
+                    <div
+                      key={ribbon.id}
+                      onClick={() => onChange({ customBreakingRibbonPng: ribbon.url })}
+                      className={`relative p-2 rounded-lg border text-left flex flex-col justify-between gap-1.5 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'border-red-500 bg-red-950/30 shadow-md ring-1 ring-red-500/50'
+                          : 'border-neutral-800 bg-neutral-950/70 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[11px] font-bold text-neutral-200 truncate">
+                          {ribbon.name}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {ribbon.isCustom && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const updated = deleteCustomRibbon(ribbon.id);
+                                setSavedRibbons(updated);
+                                if (card.customBreakingRibbonPng === ribbon.url) {
+                                  onChange({ customBreakingRibbonPng: undefined });
+                                }
+                              }}
+                              className="p-1 rounded text-neutral-400 hover:text-red-400 hover:bg-neutral-800 transition-colors"
+                              title="यह सेव किया रिबन हटाएं"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                          {isSelected && (
+                            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="w-full h-8 bg-neutral-950 rounded flex items-center justify-center p-1 border border-neutral-800/80 overflow-hidden">
+                        <img
+                          src={ribbon.url}
+                          alt={ribbon.name}
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Upload & Save Custom Ribbon Option */}
+              <div className="pt-2 border-t border-neutral-800 space-y-2">
+                <span className="text-[11px] font-bold text-neutral-400 block">
+                  + नया रिबन अपलोड करके सेव करें (Saved Ribbons):
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newRibbonName}
+                    onChange={(e) => setNewRibbonName(e.target.value)}
+                    placeholder="रिबन का नाम (उदा. स्पेशल प्राइम)"
+                    className="flex-1 bg-neutral-950 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-neutral-500 focus:border-red-500 focus:outline-none"
+                  />
+                  <label className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/40 rounded-lg cursor-pointer text-xs font-bold transition-all shrink-0">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>अपलोड व सेव</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/svg+xml,image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          const dataUrl = ev.target?.result as string;
+                          if (dataUrl) {
+                            const updated = saveCustomRibbon(
+                              newRibbonName.trim() || file.name.replace(/\.[^/.]+$/, ''),
+                              dataUrl
+                            );
+                            setSavedRibbons(updated);
+                            setNewRibbonName('');
+                            onChange({ customBreakingRibbonPng: dataUrl });
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Ribbon Position & Scale is now locked in fixed space per user command */}
+              <div className="pt-2 border-t border-neutral-800 flex items-center justify-between text-[11px] text-neutral-400">
+                <span className="flex items-center gap-1.5 text-neutral-300">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  रिबन स्पेसिंग:
+                </span>
+                <span className="text-emerald-400 font-bold">
+                  फिक्स स्पेस में लॉक (संतुलित)
+                </span>
+              </div>
+            </div>
+
+            {/* 2. Exclusive News Watermark Feature (Custom Opacity) */}
+            <div className="p-3 bg-neutral-900 rounded-lg border border-neutral-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs">🔒</span>
+                  <span className="text-xs font-bold text-white">
+                    एक्सक्लूसिव न्यूज़ वॉटरमार्क (फोटो सुरक्षा)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      showSuperBreakingWatermark: !card.showSuperBreakingWatermark,
+                    })
+                  }
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                    card.showSuperBreakingWatermark
+                      ? 'bg-red-600 text-white shadow'
+                      : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  {card.showSuperBreakingWatermark
+                    ? `✅ सक्रिय (${Math.round((card.breakingWatermarkOpacity ?? 0.15) * 100)}% ओपेसिटी)`
+                    : 'बंद है (ऑफ)'}
+                </button>
+              </div>
+
+              {card.showSuperBreakingWatermark && (
+                <div className="pt-2 border-t border-neutral-800 space-y-2.5">
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-1">
+                      वॉटरमार्क टेक्स्ट:
+                    </label>
+                    <input
+                      type="text"
+                      value={card.breakingWatermarkText || '⚡ सुपर ब्रेकिंग'}
+                      onChange={(e) => onChange({ breakingWatermarkText: e.target.value })}
+                      placeholder="⚡ सुपर ब्रेकिंग"
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded px-2.5 py-1.5 text-xs text-white focus:border-red-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-[10px] text-neutral-400 mb-1">
+                      <span>कस्टम ओपेसिटी (हल्कापन / गाढ़ापन):</span>
+                      <span className="text-white font-bold font-mono">
+                        {Math.round((card.breakingWatermarkOpacity ?? 0.15) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="0.45"
+                      step="0.01"
+                      value={card.breakingWatermarkOpacity ?? 0.15}
+                      onChange={(e) =>
+                        onChange({ breakingWatermarkOpacity: parseFloat(e.target.value) })
+                      }
+                      className="w-full accent-red-500 cursor-pointer h-1.5 bg-neutral-800 rounded"
+                    />
+                    <div className="flex justify-between text-[9px] text-neutral-500 mt-0.5">
+                      <span>5% (बेहद हल्का)</span>
+                      <span>15% (स्टैंडर्ड)</span>
+                      <span>45% (गाढ़ा)</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-neutral-500 leading-relaxed">
+                    यह वॉटरमार्क आपकी चुनी हुई ओपेसिटी में तिरछी (डायगोनल) पंक्तियों में पूरी फोटो पर दिखेगा ताकि कोई अन्य मीडिया आपकी एक्सक्लूसिव खबर या फोटो को चुरा न सके।
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Template specific fields for Investigation */}
+        {card.frameDesign === 'jacket-investigation' && (
+          <div className="p-3 bg-neutral-950 border border-amber-500/30 rounded-lg space-y-2">
+            <span className="text-xs font-bold text-amber-400">
+              🔍 विशेष पड़ताल सेटिंग्स:
+            </span>
+            <div>
+              <label className="block text-[11px] text-neutral-400 mb-1">
+                पड़ताल शीर्षक / केस नंबर:
+              </label>
+              <input
+                type="text"
+                value={card.investigationCaseNumber || 'INVESTIGATION REPORT'}
+                onChange={(e) => onChange({ investigationCaseNumber: e.target.value })}
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-yellow-400 focus:outline-none"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Step 1 Mobile Next Button */}
+        {mobileViewMode === 'steps' && (
+          <div className="flex items-center justify-between pt-3 border-t border-neutral-800 text-xs lg:hidden">
+            <span className="text-neutral-500 font-semibold text-[11px]">स्टेप 1 / 5</span>
+            <button
+              type="button"
+              onClick={() => setActiveStep(2)}
+              className="px-3.5 py-1.5 rounded-lg bg-yellow-400 text-neutral-950 font-black flex items-center gap-1 shadow cursor-pointer"
+            >
+              <span>अगला: AI टूल्स</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
       </div>
 
       {/* 2. AI Actions Row (URL to News & Gemini Pro Photo Analysis) */}
-      <div className="bg-gradient-to-r from-neutral-900 to-neutral-950 border border-yellow-500/20 rounded-xl p-3.5 space-y-3">
+      <div
+        id="step-ai"
+        className={`bg-gradient-to-r from-neutral-900 to-neutral-950 border border-yellow-500/20 rounded-xl p-3.5 space-y-3 ${
+          mobileViewMode === 'steps' && activeStep !== 2 ? 'hidden lg:block' : 'block'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-yellow-400 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-            AI ऑटोमेशन टूल्स (Automated News Generation)
+            स्टेप 2: AI ऑटोमेशन टूल्स (Automated News Generation)
           </span>
           <span className="text-[10px] font-bold bg-yellow-400/10 text-yellow-300 border border-yellow-400/30 px-2 py-0.5 rounded-full">
             Gemini AI Integrated
@@ -348,39 +819,67 @@ export const CardEditor: React.FC<CardEditorProps> = ({
                 <span className="bg-yellow-400 text-neutral-950 text-[9px] font-extrabold px-1 rounded">URL</span>
               </div>
               <p className="text-[11px] text-neutral-300 mt-0.5 leading-snug">
-                किसी भी वेबसाइट का लिंक या 1 लाइन खबर डालें, AI तुरंत उसी जैकेट में 3-लाइन हेडलाइन बनाएगा
+                न्यूज़ लिंक डालें — AI स्वतः हेडलाइन, हाइलाइट्स व वेबसाइट से फोटो पिक करके कार्ड में लगा देगा
               </p>
             </div>
           </button>
 
-          {/* 2. Photo Analysis */}
+          {/* 2. Headline to AI Photo */}
           <button
             type="button"
             onClick={onOpenAIAnalyze}
-            className="flex items-start gap-3 p-3 rounded-xl bg-gradient-to-br from-red-950/40 to-neutral-900 hover:from-red-900/50 hover:to-neutral-850 text-left border border-red-500/30 hover:border-red-400 text-white transition-all cursor-pointer shadow-md group"
+            className="flex items-start gap-3 p-3 rounded-xl bg-gradient-to-br from-amber-950/40 to-neutral-900 hover:from-amber-900/50 hover:to-neutral-850 text-left border border-amber-500/30 hover:border-amber-400 text-white transition-all cursor-pointer shadow-md group"
           >
-            <div className="w-8 h-8 rounded-lg bg-red-600/30 text-red-400 border border-red-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-yellow-300 border border-amber-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
               <Sparkles className="w-4 h-4 text-yellow-300" />
             </div>
             <div className="min-w-0">
-              <div className="text-xs font-bold text-red-300 flex items-center gap-1.5">
-                <span>AI से फोटो समझें व हेडलाइन बनाएं</span>
-                <span className="bg-red-600 text-white text-[9px] font-extrabold px-1 rounded">Photo</span>
+              <div className="text-xs font-bold text-yellow-300 flex items-center gap-1.5">
+                <span>हेडलाइन देखकर AI फोटो बनाएं</span>
+                <span className="bg-gradient-to-r from-amber-500 to-yellow-400 text-neutral-950 text-[9px] font-black px-1 rounded">AI Photo</span>
               </div>
               <p className="text-[11px] text-neutral-300 mt-0.5 leading-snug">
-                घटना या नेता की फोटो अपलोड करें, AI समझकर वायरल हिंदी हेडलाइन तैयार करेगा
+                हेडलाइन को पढ़कर AI तुरंत उसके अनुसार उच्च-गुणवत्ता वाली बैकग्राउंड फोटो तैयार कर देगा
               </p>
             </div>
           </button>
         </div>
+
+        {/* Step 2 Mobile Nav Buttons */}
+        {mobileViewMode === 'steps' && (
+          <div className="flex items-center justify-between pt-3 border-t border-neutral-800 text-xs lg:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveStep(1)}
+              className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>पिछला: फ्रेम</span>
+            </button>
+            <span className="text-neutral-500 font-semibold text-[11px]">स्टेप 2 / 5</span>
+            <button
+              type="button"
+              onClick={() => setActiveStep(3)}
+              className="px-3.5 py-1.5 rounded-lg bg-yellow-400 text-neutral-950 font-black flex items-center gap-1 shadow cursor-pointer"
+            >
+              <span>अगला: हेडर-फुटर</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 3. Header PNG & Footer PNG Controls ("जैकेट हेडर व फुटर") */}
-      <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 space-y-4">
+      <div
+        id="step-jacket"
+        className={`bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 space-y-4 ${
+          mobileViewMode === 'steps' && activeStep !== 3 ? 'hidden lg:block' : 'block'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5 text-yellow-400" />
-            जैकेट हेडर एवं फुटर पीएनजी (Header & Footer PNG)
+            स्टेप 3: जैकेट हेडर एवं फुटर पीएनजी (Header & Footer PNG)
           </span>
           <span className="text-xs text-yellow-400 font-medium">
             {card.customHeaderPng ? '✅ कस्टम हेडर एक्टिव' : 'डिफ़ॉल्ट हेडर'}
@@ -410,30 +909,62 @@ export const CardEditor: React.FC<CardEditorProps> = ({
 
             {/* Action buttons */}
             <div className="flex items-center gap-2 shrink-0">
-              <label className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold rounded-lg text-xs cursor-pointer shadow transition-all">
-                <Upload className="w-3.5 h-3.5" />
-                <span>{card.customHeaderPng ? 'हेडर PNG बदलें' : 'हेडर PNG अपलोड करें'}</span>
-                <input
-                  type="file"
-                  accept="image/png,image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleHeaderUpload(f);
-                  }}
-                />
-              </label>
+              {/* Header Lock Toggle */}
+              <button
+                type="button"
+                onClick={() => onChange({ lockHeader: !card.lockHeader })}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  card.lockHeader
+                    ? 'bg-amber-500/20 text-yellow-300 border-amber-500/60 shadow-sm'
+                    : 'bg-neutral-850 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
+                }`}
+                title={card.lockHeader ? 'हेडर लॉक खोलें (Unlock)' : 'हेडर डिज़ाइन लॉक करें (Lock)'}
+              >
+                {card.lockHeader ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5 text-yellow-400" />
+                    <span>हेडर लॉक है</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-3.5 h-3.5 text-neutral-400" />
+                    <span>हेडर लॉक करें</span>
+                  </>
+                )}
+              </button>
 
-              {card.customHeaderPng && (
-                <button
-                  type="button"
-                  onClick={() => onChange({ customHeaderPng: undefined })}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs transition-all cursor-pointer"
-                  title="डिफ़ॉल्ट हेडर पर रीसेट करें"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>रीसेट</span>
-                </button>
+              {!card.lockHeader ? (
+                <>
+                  <label className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold rounded-lg text-xs cursor-pointer shadow transition-all">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{card.customHeaderPng ? 'हेडर PNG बदलें' : 'हेडर PNG अपलोड करें'}</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleHeaderUpload(f);
+                      }}
+                    />
+                  </label>
+
+                  {card.customHeaderPng && (
+                    <button
+                      type="button"
+                      onClick={() => onChange({ customHeaderPng: undefined })}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs transition-all cursor-pointer"
+                      title="डिफ़ॉल्ट हेडर पर रीसेट करें"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>रीसेट</span>
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span className="text-[11px] text-amber-400/90 font-medium bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">
+                  🔒 सुरक्षित है
+                </span>
               )}
             </div>
           </div>
@@ -448,7 +979,7 @@ export const CardEditor: React.FC<CardEditorProps> = ({
                   className="h-9 w-auto max-w-[140px] object-contain bg-black/40 rounded border border-neutral-700"
                 />
                 <span className="text-xs text-neutral-300 font-medium">
-                  आपकी हेडर PNG सफलता से जोड़ी गई है
+                  आपकी हेडर PNG सफलता से जोड़ी गई है {card.lockHeader && '(लॉक स्थिति में)'}
                 </span>
               </div>
               <span className="text-[10px] text-green-400 font-bold flex items-center gap-1">
@@ -481,30 +1012,62 @@ export const CardEditor: React.FC<CardEditorProps> = ({
 
             {/* Action buttons */}
             <div className="flex items-center gap-2 shrink-0">
-              <label className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold rounded-lg text-xs cursor-pointer shadow transition-all">
-                <Upload className="w-3.5 h-3.5" />
-                <span>{card.customFooterPng ? 'फुटर PNG बदलें' : 'फुटर PNG अपलोड करें'}</span>
-                <input
-                  type="file"
-                  accept="image/png,image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleFooterUpload(f);
-                  }}
-                />
-              </label>
+              {/* Footer Lock Toggle */}
+              <button
+                type="button"
+                onClick={() => onChange({ lockFooter: !card.lockFooter })}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  card.lockFooter
+                    ? 'bg-amber-500/20 text-yellow-300 border-amber-500/60 shadow-sm'
+                    : 'bg-neutral-850 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
+                }`}
+                title={card.lockFooter ? 'फुटर लॉक खोलें (Unlock)' : 'फुटर डिज़ाइन लॉक करें (Lock)'}
+              >
+                {card.lockFooter ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5 text-yellow-400" />
+                    <span>फुटर लॉक है</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-3.5 h-3.5 text-neutral-400" />
+                    <span>फुटर लॉक करें</span>
+                  </>
+                )}
+              </button>
 
-              {card.customFooterPng && (
-                <button
-                  type="button"
-                  onClick={() => onChange({ customFooterPng: undefined })}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs transition-all cursor-pointer"
-                  title="डिफ़ॉल्ट फुटर पर रीसेट करें"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>रीसेट</span>
-                </button>
+              {!card.lockFooter ? (
+                <>
+                  <label className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-neutral-950 font-bold rounded-lg text-xs cursor-pointer shadow transition-all">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{card.customFooterPng ? 'फुटर PNG बदलें' : 'फुटर PNG अपलोड करें'}</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleFooterUpload(f);
+                      }}
+                    />
+                  </label>
+
+                  {card.customFooterPng && (
+                    <button
+                      type="button"
+                      onClick={() => onChange({ customFooterPng: undefined })}
+                      className="flex items-center gap-1 px-2.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs transition-all cursor-pointer"
+                      title="डिफ़ॉल्ट फुटर पर रीसेट करें"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>रीसेट</span>
+                    </button>
+                  )}
+                </>
+              ) : (
+                <span className="text-[11px] text-amber-400/90 font-medium bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20">
+                  🔒 सुरक्षित है
+                </span>
               )}
             </div>
           </div>
@@ -519,7 +1082,7 @@ export const CardEditor: React.FC<CardEditorProps> = ({
                   className="h-8 w-auto max-w-[140px] object-contain bg-white rounded border border-neutral-700"
                 />
                 <span className="text-xs text-neutral-300 font-medium">
-                  आपकी फुटर PNG सफलता से जोड़ी गई है
+                  आपकी फुटर PNG सफलता से जोड़ी गई है {card.lockFooter && '(लॉक स्थिति में)'}
                 </span>
               </div>
               <span className="text-[10px] text-green-400 font-bold flex items-center gap-1">
@@ -528,14 +1091,42 @@ export const CardEditor: React.FC<CardEditorProps> = ({
             </div>
           )}
         </div>
+
+        {/* Step 3 Mobile Nav Buttons */}
+        {mobileViewMode === 'steps' && (
+          <div className="flex items-center justify-between pt-3 border-t border-neutral-800 text-xs lg:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveStep(2)}
+              className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>पिछला: AI टूल्स</span>
+            </button>
+            <span className="text-neutral-500 font-semibold text-[11px]">स्टेप 3 / 5</span>
+            <button
+              type="button"
+              onClick={() => setActiveStep(4)}
+              className="px-3.5 py-1.5 rounded-lg bg-yellow-400 text-neutral-950 font-black flex items-center gap-1 shadow cursor-pointer"
+            >
+              <span>अगला: फोटो लेआउट</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 4. Photo Upload & Layout Configuration */}
-      <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 space-y-4">
+      <div
+        id="step-layout"
+        className={`bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 space-y-4 ${
+          mobileViewMode === 'steps' && activeStep !== 4 ? 'hidden lg:block' : 'block'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
             <LayoutGrid className="w-3.5 h-3.5 text-yellow-400" />
-            फोटो लेआउट चुनें ("जैकेट" फ्रेम)
+            स्टेप 4: फोटो लेआउट चुनें ("जैकेट" फ्रेम)
           </span>
           <span className="text-xs text-yellow-400 font-medium">
             {card.layout === 'single'
@@ -657,8 +1248,8 @@ export const CardEditor: React.FC<CardEditorProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Photo 1 */}
-            <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-3">
-              <div className="text-[11px] font-bold text-neutral-300 mb-1.5 flex items-center justify-between">
+            <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-3 space-y-2">
+              <div className="text-[11px] font-bold text-neutral-300 flex items-center justify-between">
                 <span>
                   {card.layout === 'single' || card.layout === 'full'
                     ? 'मुख्य फोटो (Single Photo)'
@@ -674,11 +1265,29 @@ export const CardEditor: React.FC<CardEditorProps> = ({
                     ? 'पहली फोटो (ऊपर चौड़ी - Top Wide)'
                     : 'मुख्य बैकग्राउंड फोटो (Background)'}
                 </span>
-                <span className="text-yellow-400 text-[10px]">अनिवार्य</span>
+                <span className="text-yellow-400 text-[10px] font-bold">अनिवार्य</span>
               </div>
-              <label className="flex items-center justify-center gap-2 p-2 border border-dashed border-neutral-700 hover:border-yellow-500 rounded-md cursor-pointer text-xs text-neutral-400 hover:text-white bg-neutral-900/50 transition-all">
+
+              {/* Current photo preview thumbnail */}
+              {card.images.main && (
+                <div className="flex items-center gap-2.5 bg-neutral-900/80 p-2 rounded border border-neutral-800">
+                  <img
+                    src={card.images.main}
+                    alt="Photo 1 preview"
+                    className="w-12 h-12 object-cover rounded border border-neutral-700 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-green-400 font-semibold truncate flex items-center gap-1">
+                      <Check className="w-3 h-3 text-green-400" /> फोटो एक्टिव है
+                    </p>
+                    <p className="text-[10px] text-neutral-400 truncate">लाइव कार्ड पर दिख रही है</p>
+                  </div>
+                </div>
+              )}
+
+              <label className="flex items-center justify-center gap-2 p-2.5 border border-dashed border-yellow-500/50 hover:border-yellow-400 rounded-md cursor-pointer text-xs text-yellow-300 font-bold hover:text-white bg-yellow-500/10 hover:bg-yellow-500/20 transition-all">
                 <Upload className="w-3.5 h-3.5 text-yellow-400" />
-                <span>फोटो अपलोड / बदलें</span>
+                <span>{card.images.main ? 'नई फोटो अपलोड / बदलें' : 'फोटो अपलोड करें'}</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -699,8 +1308,8 @@ export const CardEditor: React.FC<CardEditorProps> = ({
               card.layout === 'grid-3' ||
               card.layout === 'grid-3-bottom' ||
               card.layout === 'grid-4') && (
-              <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-3">
-                <div className="text-[11px] font-bold text-neutral-300 mb-1.5 flex items-center justify-between">
+              <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-3 space-y-2">
+                <div className="text-[11px] font-bold text-neutral-300 flex items-center justify-between">
                   <span>
                     {card.layout === 'split-v'
                       ? 'दूसरी फोटो (65% नीचे - Bottom)'
@@ -713,9 +1322,26 @@ export const CardEditor: React.FC<CardEditorProps> = ({
                       : 'दूसरी फोटो (नीचे बाईं - Bottom Left)'}
                   </span>
                 </div>
-                <label className="flex items-center justify-center gap-2 p-2 border border-dashed border-neutral-700 hover:border-yellow-500 rounded-md cursor-pointer text-xs text-neutral-400 hover:text-white bg-neutral-900/50 transition-all">
+
+                {card.images.second && (
+                  <div className="flex items-center gap-2.5 bg-neutral-900/80 p-2 rounded border border-neutral-800">
+                    <img
+                      src={card.images.second}
+                      alt="Photo 2 preview"
+                      className="w-12 h-12 object-cover rounded border border-neutral-700 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] text-green-400 font-semibold truncate flex items-center gap-1">
+                        <Check className="w-3 h-3 text-green-400" /> फोटो 2 एक्टिव है
+                      </p>
+                      <p className="text-[10px] text-neutral-400 truncate">लाइव कार्ड पर दिख रही है</p>
+                    </div>
+                  </div>
+                )}
+
+                <label className="flex items-center justify-center gap-2 p-2.5 border border-dashed border-neutral-700 hover:border-yellow-500 rounded-md cursor-pointer text-xs text-neutral-400 hover:text-white bg-neutral-900/50 transition-all">
                   <Upload className="w-3.5 h-3.5 text-yellow-400" />
-                  <span>फोटो 2 अपलोड करें</span>
+                  <span>{card.images.second ? 'फोटो 2 बदलें' : 'फोटो 2 अपलोड करें'}</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -731,8 +1357,8 @@ export const CardEditor: React.FC<CardEditorProps> = ({
 
             {/* Photo 3 (for grid-3, grid-3-bottom, grid-4) */}
             {(card.layout === 'grid-3' || card.layout === 'grid-3-bottom' || card.layout === 'grid-4') && (
-              <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-3">
-                <div className="text-[11px] font-bold text-neutral-300 mb-1.5 flex items-center justify-between">
+              <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-3 space-y-2">
+                <div className="text-[11px] font-bold text-neutral-300 flex items-center justify-between">
                   <span>
                     {card.layout === 'grid-3'
                       ? 'तीसरी फोटो (नीचे चौड़ी - Bottom Wide)'
@@ -741,9 +1367,25 @@ export const CardEditor: React.FC<CardEditorProps> = ({
                       : 'तीसरी फोटो (नीचे दाईं - Bottom Right)'}
                   </span>
                 </div>
-                <label className="flex items-center justify-center gap-2 p-2 border border-dashed border-neutral-700 hover:border-neutral-500 rounded-md cursor-pointer text-xs text-neutral-400 hover:text-white bg-neutral-900/50 transition-all">
+
+                {card.images.third && (
+                  <div className="flex items-center gap-2.5 bg-neutral-900/80 p-2 rounded border border-neutral-800">
+                    <img
+                      src={card.images.third}
+                      alt="Photo 3 preview"
+                      className="w-12 h-12 object-cover rounded border border-neutral-700 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] text-green-400 font-semibold truncate flex items-center gap-1">
+                        <Check className="w-3 h-3 text-green-400" /> फोटो 3 एक्टिव है
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <label className="flex items-center justify-center gap-2 p-2.5 border border-dashed border-neutral-700 hover:border-neutral-500 rounded-md cursor-pointer text-xs text-neutral-400 hover:text-white bg-neutral-900/50 transition-all">
                   <Upload className="w-3.5 h-3.5 text-yellow-400" />
-                  <span>फोटो 3 अपलोड करें</span>
+                  <span>{card.images.third ? 'फोटो 3 बदलें' : 'फोटो 3 अपलोड करें'}</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -1137,14 +1779,42 @@ export const CardEditor: React.FC<CardEditorProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Step 4 Mobile Nav Buttons */}
+        {mobileViewMode === 'steps' && (
+          <div className="flex items-center justify-between pt-3 border-t border-neutral-800 text-xs lg:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveStep(3)}
+              className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>पिछला: हेडर-फुटर</span>
+            </button>
+            <span className="text-neutral-500 font-semibold text-[11px]">स्टेप 4 / 5</span>
+            <button
+              type="button"
+              onClick={() => setActiveStep(5)}
+              className="px-3.5 py-1.5 rounded-lg bg-yellow-400 text-neutral-950 font-black flex items-center gap-1 shadow cursor-pointer"
+            >
+              <span>अगला: हेडलाइन</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* 4. Headline & Keyword Highlights (Permanent Fixed Space at Lower Section) */}
-      <div className="bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 space-y-4">
+      {/* 5. Headline & Keyword Highlights (Permanent Fixed Space at Lower Section) */}
+      <div
+        id="step-headline"
+        className={`bg-neutral-900/90 border border-neutral-800 rounded-xl p-4 space-y-4 ${
+          mobileViewMode === 'steps' && activeStep !== 5 ? 'hidden lg:block' : 'block'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
             <Type className="w-3.5 h-3.5 text-yellow-400" />
-            3-लाइन कैप्शन हेडलाइन (Permanent News Caption)
+            स्टेप 5: 3-लाइन कैप्शन हेडलाइन (Permanent News Caption)
           </span>
           <div className="flex items-center gap-2">
             <span className="text-[11px] bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 px-2 py-0.5 rounded-full font-bold">
@@ -1269,6 +1939,40 @@ export const CardEditor: React.FC<CardEditorProps> = ({
           </p>
         </div>
 
+        {/* Quote Speaker Attribution Input (for Quote Jacket) */}
+        {card.frameDesign === 'jacket-quote' && (
+          <div className="p-3 bg-neutral-950 border border-yellow-500/40 rounded-lg space-y-2">
+            <span className="text-xs font-bold text-yellow-400 block">
+              ❝ बयान देने वाले नेता / वक्ता का नाम व पद (सिंगल लाइन):
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] text-neutral-400 mb-1">वक्ता का नाम:</label>
+                <input
+                  type="text"
+                  value={card.speakerName || ''}
+                  onChange={(e) => onChange({ speakerName: e.target.value })}
+                  placeholder="उदा. अनिरुद्धाचार्य महाराज"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-yellow-400 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-neutral-400 mb-1">पद / पदवी:</label>
+                <input
+                  type="text"
+                  value={card.speakerTitle || ''}
+                  onChange={(e) => onChange({ speakerTitle: e.target.value })}
+                  placeholder="उदा. कथावाचक"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-yellow-400 focus:outline-none"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-neutral-400">
+              💡 यह टेक्स्ट कार्ड के नीचे कोट्स (कोटेशन) के ठीक नीचे सिंगल लाइन में प्रदर्शित होगा: <b>{card.speakerName || 'अनिरुद्धाचार्य महाराज'}{card.speakerTitle ? ` (${card.speakerTitle})` : ', कथावाचक'}</b>
+            </p>
+          </div>
+        )}
+
         {/* Headline Font Size Slider & Alignment */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 bg-neutral-950 rounded-lg border border-neutral-800">
           {/* Font Size Slider */}
@@ -1278,15 +1982,41 @@ export const CardEditor: React.FC<CardEditorProps> = ({
                 <Type className="w-3.5 h-3.5 text-yellow-400" />
                 <span>फ़ॉन्ट साइज (Size):</span>
               </span>
-              <span className="text-yellow-400 font-mono text-[11px] font-bold">
-                {card.headlineFontSize || 30}px
-              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      headlineFontSize: Math.max(20, (card.headlineFontSize || 30) - 1),
+                    })
+                  }
+                  className="w-5 h-5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs flex items-center justify-center cursor-pointer"
+                  title="1px छोटा करें"
+                >
+                  -
+                </button>
+                <span className="text-yellow-400 font-mono text-[11px] font-bold px-1.5 py-0.5 bg-neutral-900 rounded border border-neutral-800">
+                  {card.headlineFontSize || 30}px
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      headlineFontSize: Math.min(48, (card.headlineFontSize || 30) + 1),
+                    })
+                  }
+                  className="w-5 h-5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs flex items-center justify-center cursor-pointer"
+                  title="1px बड़ा करें"
+                >
+                  +
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <input
                 type="range"
-                min="24"
-                max="40"
+                min="20"
+                max="48"
                 step="1"
                 value={card.headlineFontSize || 30}
                 onChange={(e) => onChange({ headlineFontSize: Number(e.target.value) })}
@@ -1294,9 +2024,9 @@ export const CardEditor: React.FC<CardEditorProps> = ({
               />
             </div>
             <div className="flex justify-between text-[9px] text-neutral-500 font-mono">
-              <span>छोटा (24px)</span>
-              <span>मीडियम (30px)</span>
-              <span>बड़ा (40px)</span>
+              <span>छोटा (20px)</span>
+              <span>मानक (30px)</span>
+              <span>बड़ा (48px)</span>
             </div>
           </div>
 
@@ -1472,99 +2202,28 @@ export const CardEditor: React.FC<CardEditorProps> = ({
           </div>
         </div>
 
-        {/* Manual Headline Font Size Control */}
-        <div className="pt-3 border-t border-neutral-800/80 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-neutral-300">
-                हेडलाइन फ़ॉन्ट साइज़ (मैन्युअल छोटा/बड़ा करें):
-              </span>
-              <span className="text-xs font-bold text-yellow-300 bg-neutral-950 px-2 py-0.5 rounded border border-neutral-800">
-                {card.headlineFontSize || 33}px
-              </span>
-            </div>
-
-            {/* Quick +/- step buttons */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() =>
-                  onChange({
-                    headlineFontSize: Math.max(20, (card.headlineFontSize || 33) - 1),
-                  })
-                }
-                className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-sm flex items-center justify-center border border-neutral-700 cursor-pointer"
-                title="1px छोटा करें"
-              >
-                -
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  onChange({
-                    headlineFontSize: Math.min(48, (card.headlineFontSize || 33) + 1),
-                  })
-                }
-                className="w-7 h-7 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-sm flex items-center justify-center border border-neutral-700 cursor-pointer"
-                title="1px बड़ा करें"
-              >
-                +
-              </button>
-              <button
-                type="button"
-                onClick={() => onChange({ headlineFontSize: 33 })}
-                className="px-2 py-1 rounded-lg bg-neutral-850 hover:bg-neutral-800 text-[11px] text-neutral-400 hover:text-neutral-200 border border-neutral-750 cursor-pointer ml-1"
-                title="33px डिफ़ॉल्ट पर सेट करें"
-              >
-                33px रीसेट
-              </button>
-            </div>
+        {/* Step 5 Mobile Nav Buttons */}
+        {mobileViewMode === 'steps' && (
+          <div className="flex items-center justify-between pt-3 border-t border-neutral-800 text-xs lg:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveStep(4)}
+              className="px-3 py-1.5 rounded-lg bg-neutral-800 text-neutral-300 font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>पिछला: फोटो लेआउट</span>
+            </button>
+            <span className="text-neutral-500 font-semibold text-[11px]">स्टेप 5 / 5 (अंतिम)</span>
+            <button
+              type="button"
+              onClick={onOpenCaptionModal}
+              className="px-3.5 py-1.5 rounded-lg bg-green-500 text-neutral-950 font-black flex items-center gap-1 shadow cursor-pointer"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>कैप्शन व शेयर</span>
+            </button>
           </div>
-
-          {/* Slider */}
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] text-neutral-500 shrink-0">20px</span>
-            <input
-              type="range"
-              min="20"
-              max="48"
-              value={card.headlineFontSize || 33}
-              onChange={(e) =>
-                onChange({ headlineFontSize: Number(e.target.value) })
-              }
-              className="w-full accent-yellow-400 cursor-pointer"
-            />
-            <span className="text-[10px] text-neutral-500 shrink-0">48px</span>
-          </div>
-
-          {/* Quick presets */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-            <span className="text-[11px] text-neutral-500 shrink-0">तुरंत चुनें:</span>
-            {[
-              { size: 26, label: '26px (लंबी खबर)' },
-              { size: 30, label: '30px' },
-              { size: 33, label: '33px (मानक)' },
-              { size: 36, label: '36px' },
-              { size: 40, label: '40px (छोटी खबर)' },
-            ].map((p) => (
-              <button
-                key={p.size}
-                type="button"
-                onClick={() => onChange({ headlineFontSize: p.size })}
-                className={`px-2 py-1 rounded text-[11px] font-medium border transition-all cursor-pointer ${
-                  (card.headlineFontSize || 33) === p.size
-                    ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50 font-bold'
-                    : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:text-white'
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-neutral-500">
-            * 3-लाइन हेडलाइन में शब्दों की संख्या के अनुसार आप कभी भी आसानी से साइज़ बदल सकते हैं।
-          </p>
-        </div>
+        )}
       </div>
 
       {/* 5. Social Media Caption Generator Button */}

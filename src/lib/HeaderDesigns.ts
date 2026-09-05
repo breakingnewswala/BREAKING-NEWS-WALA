@@ -11,26 +11,26 @@ export const FRAME_OPTIONS: FrameOption[] = [
   {
     id: 'jacket-original',
     name: 'ब्रेकिंग न्यूज़ वाला जैकेट',
-    description: 'लेफ्ट में लोगो + राइट में सिग्नेचर कर्व्स (आपकी ओरिजिनल जैकेट)',
-    badge: 'सक्रिय (Active)',
+    description: 'लेफ्ट में लोगो + राइट में सिग्नेचर कर्व्स (डिफ़ॉल्ट ओरिजिनल जैकेट)',
+    badge: 'डिफ़ॉल्ट',
   },
   {
     id: 'jacket-breaking-red',
     name: 'सुपर ब्रेकिंग जैकेट',
-    description: 'नई जैकेट व कमांड्स आने पर सक्रिय होगी (वर्तमान में होल्ड)',
-    badge: 'जैकेट प्रतीक्षित',
+    description: 'ओरिजिनल हेडर + 3D BREAKING NEWS रिबन + सफेद बैकग्राउंड पर 2-लाइन हेडलाइन',
+    badge: '⚡ सुपर ब्रेकिंग',
   },
   {
     id: 'jacket-investigation',
     name: 'विशेष पड़ताल जैकेट',
     description: 'नई जैकेट व कमांड्स आने पर सक्रिय होगी (वर्तमान में होल्ड)',
-    badge: 'जैकेट प्रतीक्षित',
+    badge: 'प्रतीक्षित',
   },
   {
     id: 'jacket-quote',
     name: 'बयान कोटेशन जैकेट',
     description: 'नई जैकेट व कमांड्स आने पर सक्रिय होगी (वर्तमान में होल्ड)',
-    badge: 'जैकेट प्रतीक्षित',
+    badge: 'प्रतीक्षित',
   },
   {
     id: 'custom-png',
@@ -48,7 +48,8 @@ export const FRAME_OPTIONS: FrameOption[] = [
 export function drawOriginalHeader(
   ctx: CanvasRenderingContext2D,
   width: number,
-  card: NewsCardData
+  card: NewsCardData,
+  customLogoImg?: HTMLImageElement
 ) {
   // 1. Right-side curved jacket swoosh (exact match to IMAGE NEWS.png)
   ctx.save();
@@ -99,7 +100,7 @@ export function drawOriginalHeader(
   // 2. Left-side Official Logo Badge
   const badgeX = 36;
   const badgeY = 36;
-  const badgeW = 340;
+  const badgeW = 360;
   const badgeH = 100;
   const radius = 20;
 
@@ -120,25 +121,72 @@ export function drawOriginalHeader(
   ctx.stroke();
   ctx.restore();
 
-  // Text inside yellow badge: "ब्रेकिंग" and "न्यूज़वाला"
+  // Dynamic Brand / Channel Name
+  const brandName = card.brandName || 'ब्रेकिंग न्यूज़वाला';
+  const nameParts = brandName.trim().split(/\s+/);
+  const firstWord = nameParts[0] || 'ब्रेकिंग';
+  const restWords = nameParts.slice(1).join(' ');
+
   ctx.save();
   ctx.fillStyle = '#D91A2A';
-  ctx.font = '900 38px "Noto Sans Devanagari", "Mukta", sans-serif';
+  ctx.font = '900 36px "Noto Sans Devanagari", "Mukta", sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText('ब्रेकिंग', badgeX + 85, badgeY + 10);
+  ctx.fillText(firstWord, badgeX + 85, badgeY + 12);
 
-  ctx.font = '800 24px "Noto Sans Devanagari", "Mukta", sans-serif';
-  ctx.fillText('न्यूज़ वाला', badgeX + 205, badgeY + 22);
+  if (restWords) {
+    ctx.font = '800 24px "Noto Sans Devanagari", "Mukta", sans-serif';
+    const firstWordWidth = ctx.measureText(firstWord).width;
+    ctx.fillText(restWords, badgeX + 85 + firstWordWidth + 10, badgeY + 22);
+  }
 
-  // Tagline strip at bottom: "भारत के जिलों से आपके दिलों तक"
-  ctx.fillStyle = '#111827';
-  ctx.font = '700 13px "Noto Sans Devanagari", sans-serif';
-  ctx.fillText(card.brandTagline || 'भारत के जिलों से आपके दिलों तक', badgeX + 85, badgeY + 62);
+  // Tagline strip at bottom: e.g. "भारत के जिलों से आपके दिलों तक"
+  if (card.brandTagline) {
+    ctx.fillStyle = '#111827';
+    ctx.font = '700 13px "Noto Sans Devanagari", sans-serif';
+    ctx.fillText(card.brandTagline, badgeX + 85, badgeY + 62);
+  }
   ctx.restore();
 
-  // Globe icon overlapping the left edge
-  drawGlobeEmblem(ctx, badgeX + 40, badgeY + badgeH / 2, 44);
+  // Logo Icon: Custom Logo Image OR Vector Globe Emblem
+  const iconCx = badgeX + 40;
+  const iconCy = badgeY + badgeH / 2;
+  const iconRadius = 44;
+
+  if (customLogoImg) {
+    ctx.save();
+    // Circle shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 3;
+    ctx.beginPath();
+    ctx.arc(iconCx, iconCy, iconRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+
+    // Clip to circle and draw custom logo image
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(iconCx, iconCy, iconRadius, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(
+      customLogoImg,
+      iconCx - iconRadius,
+      iconCy - iconRadius,
+      iconRadius * 2,
+      iconRadius * 2
+    );
+    ctx.restore();
+
+    // Outer border
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#FFE600';
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    // Default globe emblem
+    drawGlobeEmblem(ctx, iconCx, iconCy, iconRadius);
+  }
 }
 
 /**

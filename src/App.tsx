@@ -3,7 +3,7 @@ import { NewsCardData, AIAnalysisResult } from './types';
 import { INITIAL_PRESETS } from './data/presets';
 import { CardPreview } from './components/CardPreview';
 import { CardEditor } from './components/CardEditor';
-import { AIAnalyzeModal } from './components/AIAnalyzeModal';
+import { AIGenerateImageModal } from './components/AIGenerateImageModal';
 import { NewsCommandModal } from './components/NewsCommandModal';
 import { CaptionModal } from './components/CaptionModal';
 import { renderCardToCanvas } from './lib/CanvasExporter';
@@ -17,6 +17,8 @@ import {
   FileImage,
   Layers,
   Info,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 const STORAGE_KEY = 'breaking_news_card_state_v2';
@@ -55,6 +57,7 @@ export default function App() {
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [mobilePreviewSize, setMobilePreviewSize] = useState<'compact' | 'expanded'>('compact');
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -68,29 +71,49 @@ export default function App() {
     }));
   };
 
-  // Apply AI result from Photo analysis or link/command
+  // Apply AI result from link or command
   const handleApplyAIResult = (result: AIAnalysisResult, photoData?: string) => {
+    setCard((prev) => {
+      const pickedMain = photoData || result.pickedImages?.main;
+      const pickedSecond = result.pickedImages?.second;
+      return {
+        ...prev,
+        headline: result.headline,
+        formattedHeadline: result.formattedHeadline || result.headline,
+        highlightWords: result.highlightWords || [],
+        location: result.location || prev.location,
+        summary: result.summary || prev.summary,
+        category: result.category || prev.category,
+        images: pickedMain
+          ? {
+              ...prev.images,
+              main: pickedMain,
+              second: pickedSecond || prev.images.second,
+            }
+          : prev.images,
+        layout: (pickedSecond && prev.layout === 'single')
+          ? 'split-v'
+          : (result.hasPerson ? 'inset-circle' : prev.layout),
+        showAiGenerated:
+          result.isAiGeneratedPhoto !== undefined
+            ? result.isAiGeneratedPhoto
+            : prev.showAiGenerated,
+      };
+    });
+    showToast('✨ Gemini AI द्वारा न्यूज़ हेडलाइन व विवरण लागू किए गए!');
+  };
+
+  // Apply AI Generated Image from Headline
+  const handleApplyAiGeneratedImage = (imageUrl: string) => {
     setCard((prev) => ({
       ...prev,
-      headline: result.headline,
-      formattedHeadline: result.formattedHeadline || result.headline,
-      highlightWords: result.highlightWords || [],
-      location: result.location || prev.location,
-      summary: result.summary || prev.summary,
-      category: result.category || prev.category,
-      images: photoData
-        ? {
-            ...prev.images,
-            main: photoData,
-          }
-        : prev.images,
-      layout: result.hasPerson ? 'inset-circle' : prev.layout,
-      showAiGenerated:
-        result.isAiGeneratedPhoto !== undefined
-          ? result.isAiGeneratedPhoto
-          : prev.showAiGenerated,
+      images: {
+        ...prev.images,
+        main: imageUrl,
+      },
+      showAiGenerated: true,
     }));
-    showToast('✨ Gemini AI द्वारा न्यूज़ हेडलाइन व हाइलाइट्स लागू किए गए!');
+    showToast('✨ AI जनरेटेड फोटो कार्ड के बैकग्राउंड में सेट हो गई!');
   };
 
   // Export card to High-Res PNG
@@ -211,28 +234,60 @@ export default function App() {
       </header>
 
       {/* Main Workspace Layout */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Fixed Card Preview on Screen (5 cols on lg) */}
-        <section className="lg:col-span-5 flex flex-col items-center lg:sticky lg:top-20 space-y-4">
-          <div className="w-full flex items-center justify-between px-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
+        {/* Left Column: Card Preview (Sticky on Mobile & Desktop per user command) */}
+        <section className="sticky top-0 z-30 bg-neutral-950/95 backdrop-blur-md pt-2 pb-3 px-2 -mx-3 sm:mx-0 sm:px-0 border-b border-neutral-800/80 shadow-2xl lg:shadow-none lg:border-none lg:bg-transparent lg:top-20 lg:z-10 lg:col-span-5 flex flex-col items-center space-y-2.5 sm:space-y-4 w-full">
+          <div className="w-full max-w-[500px] flex items-center justify-between px-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-yellow-400" />
-              लाइव न्यूज़ कार्ड प्रीव्यू (1080x1350)
+              <span>लाइव कार्ड प्रीव्यू (1080x1350)</span>
             </span>
-            <span className="text-[11px] text-neutral-500">4:5 Instagram Portrait</span>
+
+            <div className="flex items-center gap-2">
+              {/* Mobile Size Toggle Button (Sticky Bar) */}
+              <button
+                type="button"
+                onClick={() =>
+                  setMobilePreviewSize((prev) => (prev === 'compact' ? 'expanded' : 'compact'))
+                }
+                className="lg:hidden flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-800 hover:bg-neutral-700 text-[10px] font-bold text-yellow-400 border border-neutral-700 transition-colors cursor-pointer"
+                title={mobilePreviewSize === 'compact' ? 'प्रीव्यू बड़ा करें' : 'प्रीव्यू कॉम्पैक्ट करें'}
+              >
+                {mobilePreviewSize === 'compact' ? (
+                  <>
+                    <Maximize2 className="w-3 h-3" />
+                    <span>बड़ा करें</span>
+                  </>
+                ) : (
+                  <>
+                    <Minimize2 className="w-3 h-3" />
+                    <span>छोटा करें</span>
+                  </>
+                )}
+              </button>
+
+              <span className="text-[11px] text-neutral-400">4:5 Portrait</span>
+            </div>
           </div>
 
-          {/* The Actual News Jacket Card */}
+          {/* The Actual News Jacket Card - Always fully visible, crisp and centered */}
           <div className="w-full flex justify-center">
-            <CardPreview card={card} />
+            <CardPreview
+              card={card}
+              className={`w-full transition-all duration-200 ${
+                mobilePreviewSize === 'compact'
+                  ? 'max-w-[240px] xs:max-w-[270px] sm:max-w-[340px] lg:max-w-[500px]'
+                  : 'max-w-[340px] sm:max-w-[420px] lg:max-w-[500px]'
+              }`}
+            />
           </div>
 
           {/* Quick Action Buttons Directly Under the Card */}
-          <div className="w-full max-w-[540px] grid grid-cols-3 gap-2 pt-1">
+          <div className="w-full max-w-[500px] grid grid-cols-3 gap-2 pt-0.5">
             <button
               onClick={handleDownload}
               disabled={downloading}
-              className="py-2.5 px-3 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-neutral-950 font-black text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
+              className="py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-neutral-950 font-black text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>डाउनलोड</span>
@@ -241,7 +296,7 @@ export default function App() {
             <button
               onClick={handleCopyToClipboard}
               disabled={downloading}
-              className="py-2.5 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              className="py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
             >
               {copied ? (
                 <>
@@ -258,19 +313,19 @@ export default function App() {
 
             <button
               onClick={() => setIsCaptionModalOpen(true)}
-              className="py-2.5 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              className="py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
             >
               <Share2 className="w-3.5 h-3.5 text-green-400" />
-              <span>कैप्शन</span>
+              <span>कैप्शन व शेयर</span>
             </button>
           </div>
 
-          {/* User note */}
-          <div className="w-full max-w-[540px] bg-neutral-900/60 border border-neutral-800/80 rounded-xl p-3 text-[11px] text-neutral-400 flex items-start gap-2">
+          {/* User info note - hidden on small mobile to save vertical space, visible on sm and desktop */}
+          <div className="hidden sm:flex w-full max-w-[500px] bg-neutral-900/60 border border-neutral-800/80 rounded-xl p-3 text-[11px] text-neutral-400 items-start gap-2">
             <Info className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
             <p>
-              यह कार्ड बिल्कुल आपके अपलोड किए गए <strong>"ब्रेकिंग न्यूज़वाला"</strong> सैंपल्स के अनुसार
-              डिज़ाइन किया गया है। बैकग्राउंड फोटो, जैकेट ओवरले, हेडलाइन का स्थायी फिक्स स्पेस, येलो हाइलाइट, और फुटर बार पूरी तरह कस्टमाइज़ेबल हैं।
+              यह कार्ड बिल्कुल आपके <strong>"ब्रेकिंग न्यूज़वाला"</strong> सैंपल्स के अनुसार
+              डिज़ाइन किया गया है। बैकग्राउंड फोटो, जैकेट ओवरले, हेडलाइन का स्थायी फिक्स स्पेस, और फुटर बार पूरी तरह कस्टमाइज़ेबल हैं।
             </p>
           </div>
         </section>
@@ -292,12 +347,13 @@ export default function App() {
         ब्रेकिंग न्यूज़वाला ग्राफिक मेकर • Powered by Google Gemini 3.1 Pro • उच्च गुणवत्ता 1080x1350 सोशल मीडिया इमेज
       </footer>
 
-      {/* AI Analysis Modal */}
-      <AIAnalyzeModal
+      {/* AI Generate Image from Headline Modal */}
+      <AIGenerateImageModal
         isOpen={isAIAnalyzeOpen}
         onClose={() => setIsAIAnalyzeOpen(false)}
-        currentImage={card.images.main}
-        onApplyResult={handleApplyAIResult}
+        currentHeadline={card.headline}
+        aspectRatio={card.aspectRatio}
+        onApplyImage={handleApplyAiGeneratedImage}
       />
 
       {/* News Command & Link Modal */}

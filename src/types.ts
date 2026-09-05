@@ -56,9 +56,26 @@ export interface NewsCardData {
   customLogoUrl?: string;
   customHeaderPng?: string; // Uploaded header PNG (IMAGE NEWS.png)
   customFooterPng?: string; // Uploaded footer PNG (Footer.png)
+  footersByDesign?: Partial<Record<FrameDesign, string>>; // Separate footer graphic per frame template
   customFrameOverlayPng?: string; // Full overlay PNG
   customArrowPng?: string; // Custom pointer arrow PNG (ARROW.png)
   frameDesign?: FrameDesign; // Multiple frame styles
+  lockHeader?: boolean; // Lock header PNG to prevent accidental changes
+  lockFooter?: boolean; // Lock footer PNG to prevent accidental changes
+  hideDefaultHeaderInCustomFrame?: boolean; // When custom-png is active, hide default header if user desires
+  hideDefaultFooterInCustomFrame?: boolean; // When custom-png is active, hide default footer if user desires
+  customBreakingRibbonPng?: string; // Uploaded or custom Breaking News ribbon PNG
+  breakingRibbonOffsetY?: number; // Vertical offset of ribbon (-60px to +60px, default 0)
+  breakingRibbonScale?: number; // Scaling percentage of ribbon (55% to 95%, default 70%)
+  
+  // Template specific attributes
+  speakerName?: string; // For jacket-quote (बयान देने वाले का नाम)
+  speakerTitle?: string; // For jacket-quote (पद / पदवी)
+  breakingUrgencyBadge?: string; // For jacket-breaking-red (e.g. ⚡ सुपर ब्रेकिंग)
+  investigationCaseNumber?: string; // For jacket-investigation (e.g. पड़ताल / एक्सक्लूसिव)
+  showSuperBreakingWatermark?: boolean; // ⚡ सुपर ब्रेकिंग एक्सक्लूसिव वॉटरमार्क (15% ओपेसिटी)
+  breakingWatermarkText?: string; // e.g. '⚡ सुपर ब्रेकिंग'
+  breakingWatermarkOpacity?: number; // default 0.15
   
   // Badges
   calloutTag: string;
@@ -95,4 +112,9 @@ export interface AIAnalysisResult {
   hasPerson?: boolean;
   description?: string;
   isAiGeneratedPhoto?: boolean;
+  pickedImages?: {
+    main?: string;
+    second?: string;
+  };
+  suggestedImagePrompt?: string;
 }
