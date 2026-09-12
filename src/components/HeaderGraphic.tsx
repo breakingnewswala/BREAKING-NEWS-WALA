@@ -10,7 +10,7 @@ interface HeaderGraphicProps {
 export const HeaderGraphic: React.FC<HeaderGraphicProps> = ({
   customHeaderPng,
   brandTagline = 'भारत के जिलों से आपके दिलों तक',
-  brandName = 'ब्रेकिंग न्यूज़वाला',
+  brandName = 'ब्रेकिंग न्यूज़ वाला',
   customLogoUrl,
 }) => {
   // If user uploaded a custom header PNG, render it directly

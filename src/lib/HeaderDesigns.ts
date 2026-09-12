@@ -7,6 +7,14 @@ export interface FrameOption {
   badge: string;
 }
 
+export const REPORTER_ALLOWED_FRAMES: FrameDesign[] = [
+  'jacket-original',
+  'jacket-breaking-red',
+  'jacket-morning',
+  'jacket-text-breaking',
+  'jacket-epaper',
+];
+
 export const FRAME_OPTIONS: FrameOption[] = [
   {
     id: 'jacket-original',
@@ -21,28 +29,46 @@ export const FRAME_OPTIONS: FrameOption[] = [
     badge: '⚡ सुपर ब्रेकिंग',
   },
   {
+    id: 'jacket-morning',
+    name: 'मॉर्निंग जैकेट',
+    description: 'सुबह के सुविचार, हेल्थ टिप्स, फल/जूस के फायदे, नॉलेज टिप्स व पॉजिटिव न्यूज़',
+    badge: '🌅 मॉर्निंग जैकेट',
+  },
+  {
+    id: 'jacket-text-breaking',
+    name: 'टेक्स्ट ब्रेकिंग जैकेट',
+    description: 'बिना फोटो वाली एक्सक्लूसिव बड़ी खबर: बड़ा 3D ब्रेकिंग न्यूज़ हेडर व केंद्र-संरेखित टेक्स्ट',
+    badge: '📝 टेक्स्ट ओनली',
+  },
+  {
+    id: 'jacket-epaper',
+    name: 'ई-पेपर जैकेट',
+    description: 'अखबार स्टाइल ई-पेपर: लंबी स्क्रिप्ट/प्रेस नोट, 2-कॉलम स्टोरी, हेडलाइन, बायलाइन व फोटो',
+    badge: '📰 ई-पेपर जैकेट',
+  },
+  {
     id: 'jacket-investigation',
     name: 'विशेष पड़ताल जैकेट',
-    description: 'नई जैकेट व कमांड्स आने पर सक्रिय होगी (वर्तमान में होल्ड)',
-    badge: 'प्रतीक्षित',
+    description: 'एडमिन ओनली: विशेष इन्वेस्टिगेशन जांच रिपोर्ट फ्रेम (वर्तमान में होल्ड)',
+    badge: '👑 एडमिन ओनली',
   },
   {
     id: 'jacket-quote',
     name: 'बयान कोटेशन जैकेट',
-    description: 'नई जैकेट व कमांड्स आने पर सक्रिय होगी (वर्तमान में होल्ड)',
-    badge: 'प्रतीक्षित',
+    description: 'एडमिन ओनली: नेताओं/हस्तियों के बयानों के लिए स्पेशल फ्रेम (वर्तमान में होल्ड)',
+    badge: '👑 एडमिन ओनली',
   },
   {
     id: 'custom-png',
     name: 'कस्टम PNG फ्रेम',
-    description: 'अपनी बनाई कोई भी ट्रांसपेरेंट PNG जैकेट अपलोड करें',
-    badge: 'कस्टम',
+    description: 'एडमिन ओनली: अपनी बनाई कोई भी ट्रांसपेरेंट PNG जैकेट अपलोड करें',
+    badge: '👑 एडमिन ओनली',
   },
 ];
 
 /**
  * Draws the Official "Breaking News Wala" header (matching IMAGE NEWS.png)
- * Left: Globe + Yellow badge with "ब्रेकिंग न्यूज़वाला" + tagline
+ * Left: Globe + Yellow badge with "ब्रेकिंग न्यूज़ वाला" + tagline
  * Right: Curved jacket swoosh (black, yellow, red)
  */
 export function drawOriginalHeader(
@@ -122,7 +148,7 @@ export function drawOriginalHeader(
   ctx.restore();
 
   // Dynamic Brand / Channel Name
-  const brandName = card.brandName || 'ब्रेकिंग न्यूज़वाला';
+  const brandName = card.brandName || 'ब्रेकिंग न्यूज़ वाला';
   const nameParts = brandName.trim().split(/\s+/);
   const firstWord = nameParts[0] || 'ब्रेकिंग';
   const restWords = nameParts.slice(1).join(' ');
@@ -301,7 +327,7 @@ export function drawBreakingRedHeader(
 
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '900 36px "Noto Sans Devanagari", sans-serif';
-  ctx.fillText('ब्रेकिंग न्यूज़वाला', 120, barH / 2 + 6);
+  ctx.fillText('ब्रेकिंग न्यूज़ वाला', 120, barH / 2 + 6);
 
   // Right side: "SUPER BREAKING" alert badge
   const alertW = 280;
@@ -348,7 +374,7 @@ export function drawInvestigationHeader(
 
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '800 32px "Noto Sans Devanagari", sans-serif';
-  ctx.fillText('ब्रेकिंग न्यूज़वाला', 110, barH / 2 + 5);
+  ctx.fillText('ब्रेकिंग न्यूज़ वाला', 110, barH / 2 + 5);
 
   // Special Report pill
   const pillW = 260;

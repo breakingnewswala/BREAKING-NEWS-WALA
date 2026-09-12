@@ -8,6 +8,12 @@ export function getFrameDesignLabel(design?: FrameDesign): string {
       return 'बयान एवं कोटेशन (Statement Quote)';
     case 'jacket-investigation':
       return 'विशेष पड़ताल (Investigation)';
+    case 'jacket-text-breaking':
+      return 'टेक्स्ट ब्रेकिंग (Text Only Breaking)';
+    case 'jacket-morning':
+      return 'मॉर्निंग जैकेट (Morning Jacket)';
+    case 'jacket-epaper':
+      return 'ई-पेपर जैकेट (E-Paper Jacket)';
     case 'custom-png':
       return 'कस्टम पीएनजी फ्रेम (Custom PNG)';
     case 'jacket-original':

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Share2, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
 import { NewsCardData } from '../types';
+import { VoiceInputButton } from './VoiceInputButton';
 
 interface CaptionModalProps {
   isOpen: boolean;
@@ -70,6 +71,9 @@ export const CaptionModal: React.FC<CaptionModalProps> = ({
   const [captionText, setCaptionText] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [isExpanding, setIsExpanding] = useState(false);
+  const [selectedStyle, setSelectedStyle] = useState<'detailed_3_para' | 'bullet_points' | 'short'>('detailed_3_para');
+  const [customInstruction, setCustomInstruction] = useState<string>('');
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai'>('gemini');
 
   // Generate strictly 2 to 3 detailed paragraphs of news + tags at the end
   useEffect(() => {
@@ -129,9 +133,10 @@ export const CaptionModal: React.FC<CaptionModalProps> = ({
     }
   }, [isOpen, card]);
 
-  // Expand into full 3 detailed paragraphs using Gemini AI
-  const handleExpandWithAI = async () => {
+  // Expand into full detailed paragraphs or customized style using Gemini AI
+  const handleExpandWithAI = async (overrideStyle?: 'detailed_3_para' | 'bullet_points' | 'short') => {
     setIsExpanding(true);
+    const styleToUse = overrideStyle || selectedStyle;
     try {
       const response = await fetch('/api/generate-caption', {
         method: 'POST',
@@ -141,6 +146,9 @@ export const CaptionModal: React.FC<CaptionModalProps> = ({
           location: card.location,
           category: card.category,
           existingSummary: captionText || card.summary,
+          style: styleToUse,
+          customInstruction: customInstruction.trim() || undefined,
+          aiProvider: aiProvider,
         }),
       });
 
@@ -179,9 +187,9 @@ export const CaptionModal: React.FC<CaptionModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-xl shadow-2xl flex flex-col max-h-[92vh] overflow-y-auto">
         {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-neutral-800 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-neutral-800 flex items-center justify-between sticky top-0 bg-neutral-900 z-10">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-green-500/20 text-green-400 border border-green-500/30 flex items-center justify-center">
               <Share2 className="w-4 h-4" />
@@ -205,31 +213,143 @@ export const CaptionModal: React.FC<CaptionModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-4 sm:p-5 space-y-3.5">
+          {/* AI Provider Selector */}
+          <div className="flex items-center justify-between p-2.5 rounded-xl bg-neutral-950 border border-neutral-800">
+            <span className="text-xs font-bold text-neutral-300">
+              AI इंजन:
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setAiProvider('gemini')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                  aiProvider === 'gemini'
+                    ? 'bg-blue-600/30 text-blue-300 border border-blue-500/60 shadow-sm'
+                    : 'bg-neutral-900 text-neutral-400 border border-neutral-800 hover:text-white'
+                }`}
+              >
+                ✨ Google Gemini
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiProvider('openai')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all ${
+                  aiProvider === 'openai'
+                    ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/60 shadow-sm'
+                    : 'bg-neutral-900 text-neutral-400 border border-neutral-800 hover:text-white'
+                }`}
+              >
+                🤖 OpenAI ChatGPT
+              </button>
+            </div>
+          </div>
+
+          {/* Style Selector Chips */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-neutral-300 flex items-center gap-1.5">
+              <span>कैप्शन स्टाइल चुनें (Caption Format):</span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedStyle('detailed_3_para');
+                  handleExpandWithAI('detailed_3_para');
+                }}
+                className={`p-2 rounded-lg text-xs font-bold border transition-all text-center cursor-pointer ${
+                  selectedStyle === 'detailed_3_para'
+                    ? 'bg-yellow-400 text-neutral-950 border-yellow-400 shadow-sm'
+                    : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                }`}
+              >
+                📰 3 पैराग्राफ (बड़ा)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedStyle('bullet_points');
+                  handleExpandWithAI('bullet_points');
+                }}
+                className={`p-2 rounded-lg text-xs font-bold border transition-all text-center cursor-pointer ${
+                  selectedStyle === 'bullet_points'
+                    ? 'bg-yellow-400 text-neutral-950 border-yellow-400 shadow-sm'
+                    : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                }`}
+              >
+                📌 बुलेट पॉइंट्स
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedStyle('short');
+                  handleExpandWithAI('short');
+                }}
+                className={`p-2 rounded-lg text-xs font-bold border transition-all text-center cursor-pointer ${
+                  selectedStyle === 'short'
+                    ? 'bg-yellow-400 text-neutral-950 border-yellow-400 shadow-sm'
+                    : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                }`}
+              >
+                ⚡ संक्षिप्त (शॉर्ट)
+              </button>
+            </div>
+          </div>
+
+          {/* Custom Instruction Box */}
+          <div className="p-2.5 bg-neutral-950 rounded-xl border border-neutral-800 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-yellow-400/90 flex items-center gap-1">
+                <span>कैप्शन में कोई बदलाव / विशेष निर्देश? (Optional):</span>
+              </span>
+              <VoiceInputButton
+                onTranscript={(transcript) => {
+                  setCustomInstruction((prev) => (prev ? `${prev} ${transcript}` : transcript));
+                }}
+                title="बोलकर निर्देश बताएं"
+              />
+            </div>
+            <input
+              type="text"
+              value={customInstruction}
+              onChange={(e) => setCustomInstruction(e.target.value)}
+              placeholder="उदा. पुलिस अधिकारी का बयान शामिल करें, सख्त लहजा रखें, आंकड़े जोड़ें..."
+              className="w-full bg-neutral-900 border border-neutral-700/80 rounded px-2.5 py-1.5 text-xs text-white placeholder:text-neutral-500 focus:border-yellow-400 focus:outline-none font-['Noto_Sans_Devanagari']"
+            />
+          </div>
+
           <div className="flex items-center justify-between text-xs text-neutral-400">
-            <span>कैप्शन टेक्स्ट (आवश्यकतानुसार एडिट भी कर सकते हैं):</span>
+            <span className="flex items-center gap-1.5 font-bold text-neutral-200">
+              <span>कैप्शन विवरण (संपादित करें):</span>
+              <VoiceInputButton
+                onTranscript={(transcript) => {
+                  setCaptionText((prev) => (prev ? `${prev}\n\n${transcript}` : transcript));
+                }}
+                title="बोलकर कैप्शन लिखें / जोड़ें"
+              />
+            </span>
             <button
               type="button"
-              onClick={handleExpandWithAI}
+              onClick={() => handleExpandWithAI()}
               disabled={isExpanding}
               className="text-yellow-400 hover:text-yellow-300 font-bold flex items-center gap-1.5 bg-yellow-400/10 hover:bg-yellow-400/20 px-2.5 py-1 rounded-lg border border-yellow-400/30 transition-all cursor-pointer disabled:opacity-50"
-              title="AI से खबर को 3 विस्तृत पैराग्राफ में तैयार करें"
+              title="AI से कैप्शन को फिर से तैयार या बड़ा करें"
             >
               {isExpanding ? (
                 <>
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  <span>विस्तार हो रहा है...</span>
+                  <span>तैयार हो रहा है...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-3 h-3 text-yellow-400" />
-                  <span>AI से 3 पैराग्राफ में विस्तार करें</span>
+                  <span>🔄 AI से नया कैप्शन बनाएं / बड़ा करें</span>
                 </>
               )}
             </button>
           </div>
 
           <textarea
-            rows={10}
+            rows={9}
             value={captionText}
             onChange={(e) => setCaptionText(e.target.value)}
             className="w-full bg-neutral-950 border border-neutral-800 rounded-xl p-3.5 text-xs sm:text-sm text-neutral-200 focus:border-green-500 focus:outline-none font-['Noto_Sans_Devanagari'] leading-relaxed resize-none shadow-inner"

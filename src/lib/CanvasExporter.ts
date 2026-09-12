@@ -1,5 +1,8 @@
-import { NewsCardData } from '../types';
+import { NewsCardData, TextBreakingBadgeStyle } from '../types';
 import { getActiveFooterPng } from './footerUtils';
+import { getActiveHeaderPng } from './headerUtils';
+import { getEffectiveSpeaker } from './speakerUtils';
+import { getFormattedHindiDate } from './dateUtils';
 import {
   drawOriginalHeader,
   drawBreakingRedHeader,
@@ -78,11 +81,15 @@ function drawRoundedRect(
 }
 
 export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvasElement> {
-  // Ensure Baloo 2 font is loaded in browser environment before drawing
+  // Ensure Baloo 2, Devanagari, and Arial fonts are fully ready before measuring or drawing
   if (typeof document !== 'undefined' && document.fonts) {
     try {
+      await document.fonts.ready;
       await document.fonts.load('800 48px "Baloo 2"');
+      await document.fonts.load('800 64px "Baloo 2"');
       await document.fonts.load('700 24px "Baloo 2"');
+      await document.fonts.load('900 34px Arial');
+      await document.fonts.load('800 48px "Noto Sans Devanagari"');
     } catch (e) {
       // Continue if browser does not support font loading API
     }
@@ -105,18 +112,20 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
 
   const footerBarHeight = 78;
   const isSuperBreaking = card.frameDesign === 'jacket-breaking-red';
+  const isQuote = card.frameDesign === 'jacket-quote';
 
-  // 0. Pre-calculate Headline Lines in Baloo 2 font early so we know the exact top of the white box
-  const maxHeadlineWidth = width - 96; // 48px padding on each side
-  const scaleRatio = 2.15; // Maps ~30px editor font to ~65px canvas, matching the visual preview ratio
+  // 0. Pre-calculate Headline Lines in Baloo 2 font early so we know the exact dimensions
+  // For quote template, side margin is 90px (width - 180). For standard templates, 48px (width - 96).
+  const maxHeadlineWidth = isQuote ? width - 180 : width - 96;
+  const scaleRatio = 2.15; // Maps ~30px editor font to ~65px canvas
   let targetFontSize = Math.round((card.headlineFontSize || 30) * scaleRatio);
-  targetFontSize = Math.max(54, Math.min(80, targetFontSize));
+  targetFontSize = Math.max(isQuote ? 44 : 54, Math.min(isQuote ? 64 : 80, targetFontSize));
 
   ctx.save();
   const rawHeadline = card.formattedHeadline || card.headline || '';
   const manualLines = rawHeadline.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (manualLines.length >= 2) {
-    for (let s = targetFontSize; s >= 46; s -= 2) {
+    for (let s = targetFontSize; s >= 38; s -= 2) {
       ctx.font = `800 ${s}px "Baloo 2", "Noto Sans Devanagari", sans-serif`;
       const allFit = manualLines.every((m) => {
         const cleanText = m.replace(/\[yellow\]/g, '').replace(/\[\/yellow\]/g, '');
@@ -128,9 +137,23 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
       }
     }
   }
-  ctx.restore();
 
-  const isQuote = card.frameDesign === 'jacket-quote';
+  // For Quote Template: Auto-fit headline font size so the entire block fits cleanly in lower 50%
+  if (isQuote) {
+    const quoteAreaAvailableH = height - footerBarHeight - Math.round(height * 0.50);
+    for (let s = targetFontSize; s >= 36; s -= 2) {
+      const testLineH = Math.round(s * 1.34);
+      const testLines = getHeadlineLines(ctx, rawHeadline, card.highlightWords, maxHeadlineWidth, s);
+      const testH = testLines.length * testLineH;
+      // 42 (top badge) + 18 (gap) + testH + 18 (gap) + 42 (bottom badge) + 24 (gap) + 42 (speaker) = total
+      const totalBlockH = 42 + 18 + testH + 18 + 42 + 24 + 42;
+      if (totalBlockH <= quoteAreaAvailableH - 36 || s <= 38) {
+        targetFontSize = s;
+        break;
+      }
+    }
+  }
+  ctx.restore();
 
   const headlineFontSize = targetFontSize;
   const headlineLineHeight = Math.round(headlineFontSize * 1.34);
@@ -147,32 +170,48 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
   const headlineBottomY = height - footerBarHeight - 22;
   const headlineStartY = headlineBottomY - totalHeadlineHeight;
 
-  // For Super Breaking:
-  // Dynamically calculate white box height based on headline lines so text NEVER touches footer!
+  // For Super Breaking (jacket-breaking-red):
+  // Headline is positioned close to the yellow footer (10px bottom gap), exactly removing unwanted empty space.
+  // The white box and ribbon are positioned with clean breathing room above the headline, ensuring words never touch the ribbon.
+  const showBreakingRibbon = card.showBreakingRibbon !== false;
   const ribbonW = Math.round(width * 0.70);
   const ribbonH = Math.round(ribbonW * (150 / 960));
-  const ribbonHangInsideWhiteBox = Math.round(ribbonH * 0.5);
-  const gapBelowRibbon = 24;
-  const bottomPaddingAboveFooter = 36;
-  const superBreakingWhiteBoxH = ribbonHangInsideWhiteBox + gapBelowRibbon + totalHeadlineHeight + bottomPaddingAboveFooter;
-  const whiteBoxH = Math.max(280, superBreakingWhiteBoxH);
-  const whiteBoxY = height - footerBarHeight - whiteBoxH;
-
-  // Ribbon is positioned exactly half on photo, half on white box:
+  const ribbonHangInsideWhiteBox = Math.round(ribbonH * 0.46);
+  const headlineBottomPaddingAboveFooter = 10;
+  const superBreakingHeadlineTextY = (height - footerBarHeight - headlineBottomPaddingAboveFooter) - totalHeadlineHeight;
+  const gapAboveHeadlineToRibbon = 44;
+  const whiteBoxY = showBreakingRibbon
+    ? superBreakingHeadlineTextY - gapAboveHeadlineToRibbon - ribbonHangInsideWhiteBox
+    : superBreakingHeadlineTextY - 24;
+  const whiteBoxH = (height - footerBarHeight) - whiteBoxY;
   const superBreakingRibbonY = whiteBoxY - Math.round(ribbonH * 0.5);
-  const superBreakingHeadlineTextY = whiteBoxY + ribbonHangInsideWhiteBox + gapBelowRibbon;
 
   // Photo bottom boundaries:
-  // 1. Super Breaking: stops at top of white box (whiteBoxY)
-  // 2. Quote (बयान): strictly restricted to top 50% of card, leaving lower half solid black for quote & speaker
+  // 1. Super Breaking: stops at top of white box (whiteBoxY), giving more space to the photo
+  // 2. Quote (बयान): 54% photo height, leaving lower 46% for quote, speaker & footer without any dead black void
   // 3. Default Breaking News Wala & standard: stops below the middle line of the 3-line text, never touching the footer!
   const photoBottomY = isSuperBreaking
     ? whiteBoxY
     : isQuote
-    ? Math.round(height * 0.50)
+    ? Math.round(height * 0.52)
     : Math.round(headlineStartY + headlineLineHeight * 1.35);
 
-  // 1. Draw Images according to layouts with custom crop (X/Y) & zoom
+  // 1. Draw Images or Geometric Background
+  if (card.frameDesign === 'jacket-morning') {
+    await drawMorningJacketBackground(
+      ctx,
+      width,
+      height,
+      card.morningBgStyle,
+      card.morningCustomBgUrl || card.images.main
+    );
+  } else if (card.frameDesign === 'jacket-epaper') {
+    // E-Paper Jacket: Pure crisp white background between header and footer
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, width, height);
+  } else if (card.frameDesign === 'jacket-text-breaking') {
+    await drawGeometricTextBackground(ctx, width, height, card.textBreakingBgStyle, card.textBreakingCustomBgUrl);
+  } else {
   try {
     const mainImg = await loadImage(card.images.main);
 
@@ -348,7 +387,7 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     if (card.layout === 'inset-circle' && card.images.insetCircle) {
       const insetImg = await loadImage(card.images.insetCircle);
       const cx = (card.insetPosition.x / 100) * width;
-      const cy = (card.insetPosition.y / 100) * height;
+      const cy = (card.insetPosition.y / 100) * photoBottomY;
       const radius = width * 0.155; // ~168px radius
 
       // Inset photo crop & zoom settings
@@ -387,21 +426,33 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     console.warn('Canvas image load warning:', imgErr);
   }
 
+  // Smooth fade-out at the bottom of the photo into solid black for Quote (बयान) Template
+  if (isQuote) {
+    const fadeH = 200;
+    const fadeStart = photoBottomY - fadeH;
+    const fadeGrad = ctx.createLinearGradient(0, fadeStart, 0, photoBottomY);
+    fadeGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    fadeGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.7)');
+    fadeGrad.addColorStop(1, 'rgba(0, 0, 0, 1)');
+    ctx.fillStyle = fadeGrad;
+    ctx.fillRect(0, fadeStart, width, fadeH + 2);
+  }
+
   // Optional user dark overlay if requested
   if (card.darkOverlayOpacity && card.darkOverlayOpacity > 0) {
     ctx.fillStyle = `rgba(0, 0, 0, ${card.darkOverlayOpacity})`;
     ctx.fillRect(0, 0, width, height);
   }
 
-  // Exclusive "⚡ सुपर ब्रेकिंग" subtle watermark across photo area (15% opacity)
-  if (card.showSuperBreakingWatermark) {
-    drawSuperBreakingWatermark(
+  // Subtle exclusive watermark across photo area
+  if (card.showSuperBreakingWatermark || card.showWatermark) {
+    await drawUniversalWatermark(
       ctx,
       width,
       photoBottomY,
-      card.breakingWatermarkText || '⚡ सुपर ब्रेकिंग',
-      card.breakingWatermarkOpacity ?? 0.15
+      card
     );
+  }
   }
 
   // Load custom logo image if provided
@@ -414,7 +465,318 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     }
   }
 
-  // 2. Render Header / Jacket
+  // 4. Render Bottom Section: Morning Jacket vs Text Breaking vs Super Breaking vs Quote vs Standard Original
+  if (card.frameDesign === 'jacket-morning') {
+    // ==========================================
+    // MORNING JACKET (HEALTH, QUOTE, POSITIVE TIPS)
+    // ==========================================
+    const headerHeight = 150;
+    await drawMorningJacketContent(ctx, card, width, height, footerBarHeight, headerHeight);
+  } else if (card.frameDesign === 'jacket-epaper') {
+    // ==========================================
+    // E-PAPER JACKET (NEWSPAPER FRONT-PAGE 2-COLUMN ARTICLE)
+    // ==========================================
+    const headerHeight = 150;
+    await drawEPaperJacketContent(ctx, card, width, height, footerBarHeight, headerHeight);
+  } else if (card.frameDesign === 'jacket-text-breaking') {
+    // ==========================================
+    // TEXT BREAKING JACKET (NO PHOTO - EXCLUSIVE TEXT ONLY)
+    // ==========================================
+    const aboveFooterY = height - footerBarHeight - 54;
+
+    // Badges directly above the footer bar:
+    // Location (Left) and Callout Tag (Right)
+    if (card.showLocation !== false && card.location) {
+      drawLocationBadge(ctx, 48, aboveFooterY, card.location);
+    }
+    if (card.showCallout && card.calloutTag) {
+      drawCalloutTag(ctx, width - 48, aboveFooterY, card.calloutTag);
+    }
+
+    // 3D Breaking News Badge (Moved upwards closer to header)
+    const headerHeight = 110;
+    const badgeCenterY = Math.round(headerHeight + (height * 0.082));
+    drawTextBreaking3DBadge(ctx, width, badgeCenterY, card.textBreakingStyle, card.textBreakingCustomTitle, card.textBreakingTitleSize);
+
+    // Centered Partition Line below 3D Badge (not full width, elegant centered line)
+    const badgeBottomOffset = card.textBreakingStyle === 'breaking-ribbon' ? 48 : 66;
+    const dividerY = Math.round(badgeCenterY + badgeBottomOffset);
+    const dividerW = Math.round(width * 0.40);
+    const dividerX = Math.round((width - dividerW) / 2);
+
+    ctx.save();
+    const divGrad = ctx.createLinearGradient(dividerX, 0, dividerX + dividerW, 0);
+    divGrad.addColorStop(0, 'rgba(220, 38, 38, 0)');
+    divGrad.addColorStop(0.18, 'rgba(220, 38, 38, 0.9)');
+    divGrad.addColorStop(0.5, 'rgba(220, 38, 38, 1)');
+    divGrad.addColorStop(0.82, 'rgba(220, 38, 38, 0.9)');
+    divGrad.addColorStop(1, 'rgba(220, 38, 38, 0)');
+    ctx.strokeStyle = divGrad;
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(dividerX, dividerY);
+    ctx.lineTo(dividerX + dividerW, dividerY);
+    ctx.stroke();
+
+    // Subtle central diamond accent
+    ctx.fillStyle = '#DC2626';
+    ctx.save();
+    ctx.translate(width / 2, dividerY);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-3, -3, 6, 6);
+    ctx.restore();
+    ctx.restore();
+
+    // Headline Text (Centered between divider and above-footer strip)
+    const hlColor = card.highlightColor && card.highlightColor !== '#FFE600' ? card.highlightColor : '#DC2626';
+    const headlineTopBound = dividerY + 32;
+    const headlineBottomBound = aboveFooterY - 24;
+    const availableHeadlineSpace = headlineBottomBound - headlineTopBound;
+    const scaledLineH = Math.round(headlineLineHeight * 1.08);
+    const totalHeadlineH = headlineLines.length * scaledLineH;
+    const textBreakingHeadlineY = Math.max(
+      headlineTopBound,
+      Math.round(headlineTopBound + (availableHeadlineSpace - totalHeadlineH) / 2)
+    );
+
+    drawRenderedHeadlineLines(
+      ctx,
+      headlineLines,
+      hlColor,
+      width,
+      textBreakingHeadlineY,
+      Math.round(headlineFontSize * 1.14),
+      scaledLineH,
+      card.headlineAlign || 'center',
+      56,
+      true // isLightBackground = true
+    );
+
+    drawPhotoDisclaimerWatermark(ctx, width, aboveFooterY - 30, card);
+  } else if (card.frameDesign === 'jacket-breaking-red') {
+    // Super Breaking Template: Badges above + Centered BREAKING NEWS ribbon + Solid pure white headline + Yellow footer
+
+    // Solid white background plate
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, whiteBoxY, width, height - footerBarHeight - whiteBoxY);
+
+    // Subtle divider at top of white plate
+    ctx.fillStyle = '#E5E7EB';
+    ctx.fillRect(0, whiteBoxY, width, 2);
+
+    if (showBreakingRibbon) {
+      // Centered, scaled BREAKING NEWS Ribbon with gentle soft shadow touching border
+      const ribbonScalePct = 70;
+      await drawSuperBreakingRibbon(
+        ctx,
+        width,
+        superBreakingRibbonY,
+        card.customBreakingRibbonPng,
+        ribbonScalePct
+      );
+
+      // Location Badge & Callout Tag floating ABOVE the ribbon
+      const badgeY = superBreakingRibbonY - 48 - 14;
+      if (card.location) {
+        drawLocationBadge(ctx, 48, badgeY, card.location);
+      }
+      if (card.showCallout) {
+        drawCalloutTag(ctx, width - 48, badgeY, card.calloutTag);
+      }
+    } else {
+      // Ribbon hidden: Location & Callout badges positioned lower, sitting right above the white box plate!
+      const badgeY = whiteBoxY - 48 - 12;
+      if (card.location) {
+        drawLocationBadge(ctx, 48, badgeY, card.location);
+      }
+      if (card.showCallout) {
+        drawCalloutTag(ctx, width - 48, badgeY, card.calloutTag);
+      }
+    }
+
+    // Photo Disclaimer Watermark if enabled (AI GENERATED or प्रतीकात्मक फोटो)
+    drawPhotoDisclaimerWatermark(ctx, width, height, card);
+
+    // 2-Line Headline inside the white box with comfortable top breathing space (never touching ribbon)
+    const hlColor = card.highlightColor && card.highlightColor !== '#FFE600' ? card.highlightColor : '#DC2626';
+    const headlineTextY = superBreakingHeadlineTextY;
+    drawRenderedHeadlineLines(
+      ctx,
+      headlineLines,
+      hlColor,
+      width,
+      headlineTextY,
+      headlineFontSize,
+      headlineLineHeight,
+      card.headlineAlign || 'center',
+      48,
+      true // isLightBackground = true
+    );
+  } else if (card.frameDesign === 'jacket-quote') {
+    // ==========================================
+    // Dedicated Quote (बयान) Template Layout
+    // Single image in top 50%, clean solid black lower 50%
+    // ==========================================
+
+    // 1. Solid black for the lower 50% area
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, photoBottomY, width, height - photoBottomY);
+
+    // 2. On-photo badges: Location (Left) & Callout Tag (Right) safely padded inwards (72px)
+    const badgeY = photoBottomY - 58;
+    if (card.showLocation !== false && card.location) {
+      drawLocationBadge(ctx, 72, badgeY, card.location);
+    }
+    if (card.showCallout && card.calloutTag) {
+      drawCalloutTag(ctx, width - 72, badgeY, card.calloutTag);
+    }
+
+    // Photo Disclaimer Watermark if enabled (AI GENERATED or प्रतीकात्मक फोटो)
+    drawPhotoDisclaimerWatermark(ctx, width, Math.round(photoBottomY * 0.5), card);
+
+    // 3. Mathematical vertical balancing for the Quote Block
+    const quoteAreaTop = photoBottomY;
+    const quoteAreaBottom = height - footerBarHeight;
+    const quoteAreaH = quoteAreaBottom - quoteAreaTop;
+
+    const quoteBadgeW = 74;
+    const quoteBadgeH = 38;
+    const speakerH = 46;
+
+    // Get effective speaker attribution (respecting user entry, or auto-detecting from headline)
+    const effectiveSpeaker = getEffectiveSpeaker(card.speakerName, card.speakerTitle, card.headline);
+    const hasSpeaker = Boolean(effectiveSpeaker.name);
+
+    // Total content height without gaps
+    const totalContentH = quoteBadgeH + totalHeadlineHeight + quoteBadgeH + (hasSpeaker ? speakerH : 0);
+    const numGaps = hasSpeaker ? 5 : 4;
+    const gap = Math.max(18, Math.floor((quoteAreaH - totalContentH) / numGaps));
+
+    let currentY = quoteAreaTop + gap;
+
+    // A. Top Quote divider line & yellow badge with crisp opening Quote Icon
+    const topQuoteY = currentY + Math.round(quoteBadgeH / 2);
+    ctx.save();
+    ctx.strokeStyle = '#FFE600';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(100, topQuoteY);
+    ctx.lineTo(width / 2 - quoteBadgeW / 2 - 12, topQuoteY);
+    ctx.moveTo(width / 2 + quoteBadgeW / 2 + 12, topQuoteY);
+    ctx.lineTo(width - 100, topQuoteY);
+    ctx.stroke();
+
+    // Top Yellow Box
+    ctx.fillStyle = '#FFE600';
+    ctx.beginPath();
+    ctx.roundRect(width / 2 - quoteBadgeW / 2, topQuoteY - quoteBadgeH / 2, quoteBadgeW, quoteBadgeH, 8);
+    ctx.fill();
+
+    // Top Quote Vector Icon (Opening: isClosing = false)
+    drawQuoteVectorIcon(ctx, width / 2, topQuoteY, 22, false);
+    ctx.restore();
+
+    currentY += quoteBadgeH + gap;
+
+    // B. Headline / Statement Text (Respects user's headlineAlign: 'justify' | 'center' | 'left')
+    const quoteTextStartY = currentY;
+    const effectiveAlign = card.headlineAlign || 'justify';
+    drawRenderedHeadlineLines(
+      ctx,
+      headlineLines,
+      card.highlightColor || '#FFE600',
+      width,
+      quoteTextStartY,
+      headlineFontSize,
+      headlineLineHeight,
+      effectiveAlign,
+      90, // Side margin 90px (width - 180 = 900px, matches quote divider lines)
+      false, // isLightBackground = false
+      true // disableStroke = true (no black stroke artifacts on pure black)
+    );
+
+    currentY += totalHeadlineHeight + gap;
+
+    // C. Bottom Quote divider line & yellow badge with crisp closing Quote Icon
+    const bottomQuoteY = currentY + Math.round(quoteBadgeH / 2);
+    ctx.save();
+    ctx.strokeStyle = '#FFE600';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(100, bottomQuoteY);
+    ctx.lineTo(width / 2 - quoteBadgeW / 2 - 12, bottomQuoteY);
+    ctx.moveTo(width / 2 + quoteBadgeW / 2 + 12, bottomQuoteY);
+    ctx.lineTo(width - 100, bottomQuoteY);
+    ctx.stroke();
+
+    // Bottom Yellow Box
+    ctx.fillStyle = '#FFE600';
+    ctx.beginPath();
+    ctx.roundRect(width / 2 - quoteBadgeW / 2, bottomQuoteY - quoteBadgeH / 2, quoteBadgeW, quoteBadgeH, 8);
+    ctx.fill();
+
+    // Bottom Quote Vector Icon (Closing: isClosing = true)
+    drawQuoteVectorIcon(ctx, width / 2, bottomQuoteY, 22, true);
+    ctx.restore();
+
+    currentY += quoteBadgeH + gap;
+
+    // D. Speaker Name & Designation: Symmetrically spaced with generous breathing room above footer
+    if (hasSpeaker) {
+      const speakerY = currentY + Math.round(speakerH / 2);
+      drawSpeakerAttribution(ctx, width, speakerY, effectiveSpeaker.name, effectiveSpeaker.title);
+    }
+  } else {
+    // Standard Original Layout
+    const headlineBottomY = height - footerBarHeight - 22;
+    const headlineStartY = headlineBottomY - totalHeadlineHeight;
+    
+    // Badge height is 40px.
+    // Devanagari font (Baloo 2) upper matras (ि, ी, े, ै, ं, र्) extend ~24-26px above headlineStartY.
+    // Setting badgeBottomGap to 58 ensures a generous, clean 32-34px visible air gap above the highest
+    // matra (58px from base text top), matching the live preview screen perfectly.
+    const badgeH = 40;
+    const badgeBottomGap = 58;
+    const topStripY = headlineStartY - badgeH - badgeBottomGap;
+
+    // Compact, gentle headline gradient scrim (so photo remains 65%+ completely visible)
+    const scrimTop = topStripY - 55;
+    const scrimGradient = ctx.createLinearGradient(0, scrimTop, 0, height - footerBarHeight);
+    scrimGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    scrimGradient.addColorStop(0.20, 'rgba(0, 0, 0, 0.65)');
+    scrimGradient.addColorStop(0.55, 'rgba(0, 0, 0, 0.92)');
+    scrimGradient.addColorStop(1, 'rgba(0, 0, 0, 0.99)');
+    ctx.fillStyle = scrimGradient;
+    ctx.fillRect(0, scrimTop, width, height - footerBarHeight - scrimTop);
+
+    // Top Strip: Location (Left) & "🔴 पूरी खबर डिस्क्रिप्शन में" (Right)
+    if (card.location) {
+      drawLocationBadge(ctx, 48, topStripY, card.location);
+    }
+    if (card.showCallout) {
+      drawCalloutTag(ctx, width - 48, topStripY, card.calloutTag);
+    }
+
+    // Photo Disclaimer Watermark along Left Edge, Rotated 90°
+    drawPhotoDisclaimerWatermark(ctx, width, height, card);
+
+    // 3-Line News Headline Caption in Baloo 2 font - Justified / Center / Left
+    drawRenderedHeadlineLines(
+      ctx,
+      headlineLines,
+      card.highlightColor || '#FFE600',
+      width,
+      headlineStartY,
+      headlineFontSize,
+      headlineLineHeight,
+      card.headlineAlign || 'justify',
+      48,
+      false
+    );
+  }
+
+  // 7. Render Header / Jacket on the TOPMOST LAYER so it stays pristine, above photos & watermarks
   if (card.frameDesign === 'jacket-investigation') {
     // Special Investigation Header
     const headH = 64;
@@ -445,73 +807,36 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     ctx.fillStyle = '#FBBF24';
     ctx.textAlign = 'right';
     ctx.fillText('EXCLUSIVE', width - 36, 32);
-  } else if (card.frameDesign === 'jacket-quote') {
-    // Quote / Statement Header
-    const headH = 64;
-    const grad = ctx.createLinearGradient(0, 0, width, 0);
-    grad.addColorStop(0, '#171717');
-    grad.addColorStop(0.5, '#0a0a0a');
-    grad.addColorStop(1, '#171717');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, headH);
-    ctx.fillStyle = '#525252';
-    ctx.fillRect(0, headH - 2, width, 2);
-
-    // Badge: ❝ बयान एवं कोटेशन
-    ctx.fillStyle = '#FFE600';
-    drawRoundedRect(ctx, 32, 12, 230, 40, 8);
-    ctx.fill();
-    ctx.font = '900 22px "Baloo 2", sans-serif';
-    ctx.fillStyle = '#0a0a0a';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('❝ बयान एवं कोटेशन', 48, 32);
-
-    ctx.font = '900 24px "Baloo 2", sans-serif';
-    ctx.fillStyle = '#E5E5E5';
-    ctx.fillText(card.brandName || 'ब्रेकिंग न्यूज़वाला', 285, 32);
-
-    ctx.font = '900 18px serif';
-    ctx.fillStyle = '#FFE600';
-    ctx.textAlign = 'right';
-    ctx.fillText('STATEMENT', width - 36, 32);
-  } else if (card.frameDesign === 'custom-png') {
-    if (!card.hideDefaultHeaderInCustomFrame) {
-      if (card.customHeaderPng) {
-        try {
-          const headerImg = await loadImage(card.customHeaderPng);
-          const headerAspect = headerImg.width / headerImg.height;
-          const drawH = width / headerAspect;
-          ctx.drawImage(headerImg, 0, 0, width, drawH);
-        } catch (err) {
+  } else {
+    const activeHeaderPng = getActiveHeaderPng(card);
+    if (card.frameDesign === 'custom-png') {
+      if (!card.hideDefaultHeaderInCustomFrame) {
+        if (activeHeaderPng) {
+          try {
+            const headerImg = await loadImage(activeHeaderPng);
+            const headerAspect = headerImg.width / headerImg.height;
+            const drawH = width / headerAspect;
+            ctx.drawImage(headerImg, 0, 0, width, drawH);
+          } catch (err) {
+            drawOriginalHeader(ctx, width, card, customLogoImg);
+          }
+        } else {
           drawOriginalHeader(ctx, width, card, customLogoImg);
         }
-      } else {
+      }
+    } else if (activeHeaderPng) {
+      try {
+        const headerImg = await loadImage(activeHeaderPng);
+        const headerAspect = headerImg.width / headerImg.height;
+        const drawH = width / headerAspect;
+        ctx.drawImage(headerImg, 0, 0, width, drawH);
+      } catch (err) {
         drawOriginalHeader(ctx, width, card, customLogoImg);
       }
-    }
-  } else if (card.customHeaderPng) {
-    try {
-      const headerImg = await loadImage(card.customHeaderPng);
-      const headerAspect = headerImg.width / headerImg.height;
-      const drawH = width / headerAspect;
-      ctx.drawImage(headerImg, 0, 0, width, drawH);
-    } catch (err) {
+    } else {
+      // jacket-original, jacket-breaking-red, jacket-quote & jacket-text-breaking use the official header!
       drawOriginalHeader(ctx, width, card, customLogoImg);
     }
-  } else if (card.customHeaderPng) {
-    try {
-      const headerImg = await loadImage(card.customHeaderPng);
-      const headerAspect = headerImg.width / headerImg.height;
-      const drawH = width / headerAspect;
-      ctx.drawImage(headerImg, 0, 0, width, drawH);
-    } catch (err) {
-      console.warn('Custom header load error:', err);
-      drawOriginalHeader(ctx, width, card, customLogoImg);
-    }
-  } else {
-    // Both jacket-original and jacket-breaking-red use the official header!
-    drawOriginalHeader(ctx, width, card, customLogoImg);
   }
 
   // Optional full frame transparent overlay PNG ONLY when custom-png template is selected
@@ -524,209 +849,18 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     }
   }
 
-  // 4. Render Bottom Section: Super Breaking vs Quote vs Standard Original
-  if (card.frameDesign === 'jacket-breaking-red') {
-    // Super Breaking Template: Badges above + Centered BREAKING NEWS ribbon + Solid pure white headline + Yellow footer
-
-    // Solid white background plate
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, whiteBoxY, width, height - footerBarHeight - whiteBoxY);
-
-    // Subtle divider at top of white plate
-    ctx.fillStyle = '#E5E7EB';
-    ctx.fillRect(0, whiteBoxY, width, 2);
-
-    // Centered, scaled BREAKING NEWS Ribbon with gentle soft shadow touching border
-    const ribbonScalePct = 70;
-    await drawSuperBreakingRibbon(
-      ctx,
-      width,
-      superBreakingRibbonY,
-      card.customBreakingRibbonPng,
-      ribbonScalePct
-    );
-
-    // Location Badge & Callout Tag floating ABOVE the ribbon
-    const badgeY = superBreakingRibbonY - 48 - 14;
-    if (card.location) {
-      drawLocationBadge(ctx, 48, badgeY, card.location);
-    }
-    if (card.showCallout) {
-      drawCalloutTag(ctx, width - 48, badgeY, card.calloutTag);
-    }
-
-    // AI GENERATED Watermark if enabled
-    if (card.showAiGenerated) {
-      drawAiGeneratedWatermark(ctx, width, height, card.aiGeneratedText || 'AI GENERATED');
-    }
-
-    // 2-Line Headline inside the white box with comfortable top breathing space (never touching ribbon)
-    const hlColor = card.highlightColor && card.highlightColor !== '#FFE600' ? card.highlightColor : '#DC2626';
-    const headlineTextY = superBreakingHeadlineTextY;
-    drawRenderedHeadlineLines(
-      ctx,
-      headlineLines,
-      hlColor,
-      width,
-      headlineTextY,
-      headlineFontSize,
-      headlineLineHeight,
-      card.headlineAlign || 'center',
-      48,
-      true // isLightBackground = true
-    );
-  } else if (card.frameDesign === 'jacket-quote') {
-    // ==========================================
-    // Dedicated Quote (बयान) Template Layout
-    // Single image in top 50%, clean solid black lower 50%
-    // ==========================================
-
-    // 1. Solid black for the lower 50% area
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, photoBottomY, width, height - photoBottomY);
-
-    // 2. On-photo badges (District is hidden per user instruction)
-    // "🔴 पूरी खबर डिस्क्रिप्शन में" placed cleanly on mid-side of photo
-    if (card.showCallout) {
-      const calloutY = photoBottomY - 52;
-      drawCalloutTag(ctx, width - 44, calloutY, card.calloutTag);
-    }
-
-    // AI GENERATED Watermark if enabled
-    if (card.showAiGenerated) {
-      drawAiGeneratedWatermark(ctx, width, Math.round(photoBottomY * 0.5), card.aiGeneratedText || 'AI GENERATED');
-    }
-
-    // 3. Center the Quote Block in the lower black space
-    const quoteAreaTop = photoBottomY;
-    const quoteAreaBottom = height - footerBarHeight;
-    const quoteAreaH = quoteAreaBottom - quoteAreaTop;
-
-    const quoteBadgeW = 76;
-    const quoteBadgeH = 42;
-    const quoteBlockHeight = quoteBadgeH + 20 + totalHeadlineHeight + 20 + quoteBadgeH + 28 + 40;
-    const startBlockY = quoteAreaTop + Math.max(20, Math.round((quoteAreaH - quoteBlockHeight) / 2));
-
-    // Top Quote divider line & yellow badge with opening double quotes
-    const topQuoteY = startBlockY + Math.round(quoteBadgeH / 2);
-    ctx.save();
-    ctx.strokeStyle = '#FFE600';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(110, topQuoteY);
-    ctx.lineTo(width / 2 - quoteBadgeW / 2 - 12, topQuoteY);
-    ctx.moveTo(width / 2 + quoteBadgeW / 2 + 12, topQuoteY);
-    ctx.lineTo(width - 110, topQuoteY);
-    ctx.stroke();
-
-    ctx.fillStyle = '#FFE600';
-    ctx.beginPath();
-    ctx.roundRect(width / 2 - quoteBadgeW / 2, topQuoteY - quoteBadgeH / 2, quoteBadgeW, quoteBadgeH, 8);
-    ctx.fill();
-
-    ctx.fillStyle = '#000000';
-    ctx.font = '900 56px "Plus Jakarta Sans", serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('“', width / 2, topQuoteY + 12);
-    ctx.restore();
-
-    // 4. Center-aligned 2-3 Line Quote Headline with comfortable side padding (90px margin)
-    const quoteTextStartY = topQuoteY + Math.round(quoteBadgeH / 2) + 20;
-    drawRenderedHeadlineLines(
-      ctx,
-      headlineLines,
-      card.highlightColor || '#FFE600',
-      width,
-      quoteTextStartY,
-      headlineFontSize,
-      headlineLineHeight,
-      'center',
-      90, // Reduced width / increased side padding as requested
-      false
-    );
-
-    // 5. Bottom Quote divider line & yellow badge with closing double quotes
-    const bottomQuoteY = quoteTextStartY + totalHeadlineHeight + 20;
-    ctx.save();
-    ctx.strokeStyle = '#FFE600';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(110, bottomQuoteY);
-    ctx.lineTo(width / 2 - quoteBadgeW / 2 - 12, bottomQuoteY);
-    ctx.moveTo(width / 2 + quoteBadgeW / 2 + 12, bottomQuoteY);
-    ctx.lineTo(width - 110, bottomQuoteY);
-    ctx.stroke();
-
-    ctx.fillStyle = '#FFE600';
-    ctx.beginPath();
-    ctx.roundRect(width / 2 - quoteBadgeW / 2, bottomQuoteY - quoteBadgeH / 2, quoteBadgeW, quoteBadgeH, 8);
-    ctx.fill();
-
-    ctx.fillStyle = '#000000';
-    ctx.font = '900 56px "Plus Jakarta Sans", serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('”', width / 2, bottomQuoteY + 12);
-    ctx.restore();
-
-    // 6. Speaker Name & Designation: Single Line centered
-    // Name slightly larger (38px bold), Title slightly smaller (28px)
-    const speakerY = bottomQuoteY + Math.round(quoteBadgeH / 2) + 28;
-    const speakerName = card.speakerName || 'अनिरुद्धाचार्य महाराज';
-    const speakerTitle = card.speakerTitle || 'कथावाचक';
-    drawSpeakerAttribution(ctx, width, speakerY, speakerName, speakerTitle);
-  } else {
-    // Standard Original Layout
-    const headlineBottomY = height - footerBarHeight - 22;
-    const headlineStartY = headlineBottomY - totalHeadlineHeight;
-    
-    // Badge height is 40px. Add clean, professional 28px breathing space between badge bottom and headline top:
-    const badgeH = 40;
-    const badgeBottomGap = 28;
-    const topStripY = headlineStartY - badgeH - badgeBottomGap;
-
-    // Compact, gentle headline gradient scrim (so photo remains 80%+ completely visible)
-    const scrimTop = topStripY - 50;
-    const scrimGradient = ctx.createLinearGradient(0, scrimTop, 0, height - footerBarHeight);
-    scrimGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    scrimGradient.addColorStop(0.20, 'rgba(0, 0, 0, 0.65)');
-    scrimGradient.addColorStop(0.55, 'rgba(0, 0, 0, 0.92)');
-    scrimGradient.addColorStop(1, 'rgba(0, 0, 0, 0.99)');
-    ctx.fillStyle = scrimGradient;
-    ctx.fillRect(0, scrimTop, width, height - footerBarHeight - scrimTop);
-
-    // Top Strip: Location (Left) & "🔴 पूरी खबर डिस्क्रिप्शन में" (Right)
-    if (card.location) {
-      drawLocationBadge(ctx, 48, topStripY, card.location);
-    }
-    if (card.showCallout) {
-      drawCalloutTag(ctx, width - 48, topStripY, card.calloutTag);
-    }
-
-    // AI GENERATED Watermark along Left Edge, Rotated 90°, Low Opacity
-    if (card.showAiGenerated) {
-      drawAiGeneratedWatermark(ctx, width, height, card.aiGeneratedText || 'AI GENERATED');
-    }
-
-    // 3-Line News Headline Caption in Baloo 2 font - Justified / Center / Left
-    drawRenderedHeadlineLines(
-      ctx,
-      headlineLines,
-      card.highlightColor || '#FFE600',
-      width,
-      headlineStartY,
-      headlineFontSize,
-      headlineLineHeight,
-      card.headlineAlign || 'justify',
-      48,
-      false
-    );
+  // 7C. Date Stamp: Vertical along Right Wall, Rotated 270° in Hindi
+  if (card.showDate !== false && card.frameDesign !== 'jacket-text-breaking' && card.frameDesign !== 'jacket-morning' && card.frameDesign !== 'jacket-epaper') {
+    const dateText = card.dateStr || getFormattedHindiDate();
+    drawDateStamp(ctx, width, height, dateText);
   }
 
   // 8. Permanent Theme Footer Bar (Exact reproduction of Footer.png)
-  // (Skip standard footer bar if jacket-quote, because it has its own dedicated pill footer)
-  if (card.frameDesign !== 'jacket-quote' && !(card.frameDesign === 'custom-png' && card.hideDefaultFooterInCustomFrame)) {
+  const activeFooter = getActiveFooterPng(card);
+  const shouldDrawFooter =
+    !(card.frameDesign === 'custom-png' && card.hideDefaultFooterInCustomFrame);
+
+  if (shouldDrawFooter) {
     await drawThemeFooterBar(
       ctx,
       width,
@@ -734,7 +868,7 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
       footerBarHeight,
       card.socialHandle,
       card.whatsappNumber,
-      card.customFooterPng
+      activeFooter
     );
   }
 
@@ -825,7 +959,7 @@ function drawLogoBadge(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  brandName: string = 'ब्रेकिंग न्यूज़वाला',
+  brandName: string = 'ब्रेकिंग न्यूज़ वाला',
   tagline: string = 'भारत के जिलों से आपके दिलों तक'
 ) {
   ctx.save();
@@ -910,6 +1044,8 @@ function drawLocationBadge(
   if (!locationText) return;
   ctx.save();
   ctx.font = '800 22px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
   const textW = ctx.measureText(locationText).width;
   const badgeW = textW + 56;
   const badgeH = 40;
@@ -939,6 +1075,7 @@ function drawLocationBadge(
 
   // Location text in Baloo 2
   ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText(locationText, x + 34, y + badgeH / 2 + 1);
 
@@ -954,6 +1091,8 @@ function drawCalloutTag(
 ) {
   ctx.save();
   ctx.font = '800 22px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
   const cleanText = text.replace('🔴', '').trim() || 'पूरी खबर डिस्क्रिप्शन में';
   const textWidth = ctx.measureText(cleanText).width;
   const pillW = textWidth + 56;
@@ -979,98 +1118,2295 @@ function drawCalloutTag(
 
   // Text in Baloo 2
   ctx.fillStyle = '#0F172A';
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText(cleanText, pillX + 36, y + pillH / 2 + 1);
 
   ctx.restore();
 }
 
-// Dedicated Quote Footer Pill matching IMAGE NEWS - TEAM (2).png
-function drawQuoteFooterPill(ctx: CanvasRenderingContext2D, width: number, height: number) {
+// Utility: wrap string into array of lines based on maxWidth and current context font
+function wrapTextIntoLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  if (!text) return [];
+  const words = text.split(/[ \t]+/);
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const testW = ctx.measureText(testLine).width;
+    if (testW > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  return lines;
+}
+
+// Background for Morning Jacket (Health, Quotes, Positive Updates)
+async function drawMorningJacketBackground(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  bgStyle?: 'light-mesh' | 'sunrise' | 'green-nature' | 'pure-white' | 'custom-image',
+  customBgUrl?: string
+) {
   ctx.save();
-  const pillW = 540;
-  const pillH = 58;
-  const pillX = (width - pillW) / 2;
-  const pillY = height - 90;
+  if (customBgUrl && customBgUrl.trim().length > 0) {
+    try {
+      const bgImg = await loadImage(customBgUrl);
+      drawImageCover(ctx, bgImg, 0, 0, width, height, 0.5, 0.5, 1);
 
-  // Outer black rounded capsule with crisp white/gold border
-  ctx.fillStyle = '#000000';
-  ctx.beginPath();
-  ctx.roundRect(pillX, pillY, pillW, pillH, pillH / 2);
-  ctx.fill();
+      // 1. Subtle soft dark scrim (25% black) for high typography contrast - EXACT match to CardPreview bg-black/25
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+      ctx.fillRect(0, 0, width, height);
 
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+      // 2. Subtle top vignette to protect custom header PNG - EXACT match to CardPreview h-28 from-black/60 via-black/20
+      const topVignette = ctx.createLinearGradient(0, 0, 0, 240);
+      topVignette.addColorStop(0, 'rgba(0, 0, 0, 0.65)');
+      topVignette.addColorStop(0.5, 'rgba(0, 0, 0, 0.22)');
+      topVignette.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = topVignette;
+      ctx.fillRect(0, 0, width, 240);
 
-  // 1. Red Capsule "WATCH NOW ▶" on the left
-  const watchW = 148;
-  const watchH = 46;
-  const watchX = pillX + 6;
-  const watchY = pillY + 6;
+      // 3. Subtle bottom vignette to protect custom footer PNG - EXACT match to CardPreview h-32 from-black/70 via-black/30
+      const botVignette = ctx.createLinearGradient(0, height - 280, 0, height);
+      botVignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      botVignette.addColorStop(0.45, 'rgba(0, 0, 0, 0.30)');
+      botVignette.addColorStop(1, 'rgba(0, 0, 0, 0.75)');
+      ctx.fillStyle = botVignette;
+      ctx.fillRect(0, height - 280, width, 280);
 
-  ctx.fillStyle = '#DC2626';
-  ctx.beginPath();
-  ctx.roundRect(watchX, watchY, watchW, watchH, watchH / 2);
-  ctx.fill();
+      ctx.restore();
+      return;
+    } catch {
+      // Fallback to procedural background if custom image fails
+    }
+  }
 
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = '900 14px "Plus Jakarta Sans", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('WATCH NOW  ▶', watchX + watchW / 2, watchY + watchH / 2);
-
-  // 2. 6 Social Media circular icons with labels on the right
-  const icons = [
-    { label: 'FACEBOOK', color: '#1877F2', symbol: 'f' },
-    { label: 'INSTAGRAM', color: '#E1306C', symbol: '📷' },
-    { label: 'YOUTUBE', color: '#FF0000', symbol: '▶' },
-    { label: '𝕏', color: '#111111', symbol: '𝕏' },
-    { label: 'LINKEDIN', color: '#0A66C2', symbol: 'in' },
-    { label: 'PUBLIC APP', color: '#FF8C00', symbol: 'P' },
-  ];
-
-  const iconRadius = 14;
-  let curIconX = watchX + watchW + 28;
-  const iconCenterY = pillY + 22;
-
-  icons.forEach((ic) => {
-    // Circle background
-    ctx.beginPath();
-    ctx.arc(curIconX, iconCenterY, iconRadius, 0, Math.PI * 2);
-    ctx.fillStyle = ic.color;
-    ctx.fill();
-
-    // Circle border
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Icon symbol
+  if (bgStyle === 'pure-white') {
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ic.symbol, curIconX, iconCenterY);
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+    return;
+  }
 
-    // Mini label underneath
-    ctx.font = '700 8px system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillText(ic.label, curIconX, iconCenterY + iconRadius + 9);
+  if (bgStyle === 'sunrise') {
+    const sGrad = ctx.createLinearGradient(0, 0, width, height);
+    sGrad.addColorStop(0, '#D97706'); // amber-600
+    sGrad.addColorStop(0.5, '#EA580C'); // orange-500
+    sGrad.addColorStop(1, '#9A3412'); // amber-800
+    ctx.fillStyle = sGrad;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+    return;
+  }
 
-    curIconX += 54;
-  });
+  if (bgStyle === 'green-nature') {
+    const gGrad = ctx.createLinearGradient(0, 0, width, height);
+    gGrad.addColorStop(0, '#065F46'); // emerald-800
+    gGrad.addColorStop(0.5, '#134E4A'); // teal-900
+    gGrad.addColorStop(1, '#052E16'); // green-950
+    ctx.fillStyle = gGrad;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+    return;
+  }
+
+  // Default: Atmospheric dark morning gradient with ambient glow - EXACT match to CardPreview
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+  bgGrad.addColorStop(0, '#451A03'); // amber-950/80
+  bgGrad.addColorStop(0.5, '#0A0A0A'); // neutral-950
+  bgGrad.addColorStop(1, '#0A0A0A');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, width, height);
+
+  // Soft warm ambient circular glows
+  const rad1 = ctx.createRadialGradient(width - 50, 50, 10, width - 50, 50, 520);
+  rad1.addColorStop(0, 'rgba(245, 158, 11, 0.22)');
+  rad1.addColorStop(1, 'rgba(245, 158, 11, 0)');
+  ctx.fillStyle = rad1;
+  ctx.fillRect(0, 0, width, height);
+
+  const rad2 = ctx.createRadialGradient(50, height - 120, 10, 50, height - 120, 520);
+  rad2.addColorStop(0, 'rgba(234, 88, 12, 0.22)');
+  rad2.addColorStop(1, 'rgba(234, 88, 12, 0)');
+  ctx.fillStyle = rad2;
+  ctx.fillRect(0, 0, width, height);
 
   ctx.restore();
 }
 
-// Vertical AI GENERATED Watermark along Left Edge/Wall, Rotated 90°, Low Opacity
-function drawAiGeneratedWatermark(
+// Draw Morning Jacket Content (Headline, Sub-intro, Section Title, Cards, Takeaway, Note & Centered Callout Tag)
+async function drawMorningJacketContent(
+  ctx: CanvasRenderingContext2D,
+  card: NewsCardData,
+  width: number,
+  height: number,
+  footerBarHeight: number,
+  headerHeight: number
+) {
+  ctx.save();
+
+  // =========================================================================
+  // SINGLE SUVICHAR / MORNING JACKET (RICH THEMES & EXPANDABLE SIZING)
+  // =========================================================================
+  // Safe area between header and footer
+  const availableTop = headerHeight + 12;
+  const availableBottom = height - footerBarHeight - 14;
+  const availableH = availableBottom - availableTop;
+
+  // Box width based on card.morningBoxWidth ('standard' = 90%, 'wide' = 94%, 'expanded' = 97%)
+  const widthRatio = card.morningBoxWidth === 'expanded' ? 0.97 : (card.morningBoxWidth === 'wide' ? 0.94 : 0.90);
+  const boxW = Math.round(width * widthRatio);
+  const boxX = Math.round((width - boxW) / 2);
+
+  // Font calculations - Scales headline font size to 1080px canvas (allows larger text up to 94px)
+  let hlFontSize = Math.round((card.headlineFontSize || 26) * 2.2);
+  hlFontSize = Math.max(38, Math.min(94, hlFontSize));
+  const hlLineH = Math.round(hlFontSize * 1.36);
+
+  // Raw headline containing [yellow]...[/yellow] tags
+  const rawHeadline = card.formattedHeadline || card.headline || '';
+
+  ctx.font = `900 ${hlFontSize}px "Baloo 2", "Noto Sans Devanagari", sans-serif`;
+  const tokenLines = getHeadlineLines(
+    ctx,
+    rawHeadline,
+    card.highlightWords || [],
+    boxW - 90,
+    hlFontSize,
+    7 // Allow up to 7 lines comfortably
+  );
+  const totalHlH = tokenLines.length * hlLineH;
+
+  // Sub-quote text calculations
+  const subText = card.morningThoughtQuote || card.morningTakeaway || card.morningSubIntro || '';
+  let subFontSize = Math.round((card.morningSubQuoteFontSize || 14) * 1.9);
+  subFontSize = Math.max(22, Math.min(42, subFontSize));
+  const subLineH = Math.round(subFontSize * 1.36);
+
+  ctx.font = `600 ${subFontSize}px "Baloo 2", "Noto Sans Devanagari", sans-serif`;
+  const subLines = subText ? wrapTextIntoLines(ctx, subText, boxW - 100) : [];
+  const totalSubH = subLines.length > 0 ? (subLines.length * subLineH + 54) : 0;
+
+  // Natural content height calculation
+  const quoteMarkH = card.morningShowQuotes !== false ? 50 : 0;
+  const topPadding = 56;
+  const bottomPadding = 48;
+  const contentTotalH = topPadding + quoteMarkH + totalHlH + totalSubH + bottomPadding;
+
+  // Box Height calculation based on morningBoxHeightMode:
+  // 'auto': naturally hugs content based on larger font
+  // 'expanded': fills at least 72% of safe height
+  // 'fill-safe-area': fills up to 84% of safe height so header/footer don't look empty
+  let targetBoxH = contentTotalH;
+  if (card.morningBoxHeightMode === 'fill-safe-area') {
+    targetBoxH = Math.max(contentTotalH, Math.round(availableH * 0.84));
+  } else if (card.morningBoxHeightMode === 'expanded') {
+    targetBoxH = Math.max(contentTotalH, Math.round(availableH * 0.72));
+  }
+
+  const boxH = Math.min(availableH - 8, Math.max(280, targetBoxH));
+  const boxY = Math.round(availableTop + (availableH - boxH) / 2);
+
+  // Extra space distribution for vertical centering
+  const extraVertical = Math.max(0, boxH - contentTotalH);
+  const verticalShift = Math.round(extraVertical / 2);
+
+  const designStyle = card.morningDesignStyle || 'frosted-obsidian';
+  const isCinematic = designStyle === 'cinematic-text';
+  const isIvory = designStyle === 'editorial-ivory';
+  const isRoyal = designStyle === 'royal-gold';
+  const isDivine = designStyle === 'spiritual-divine';
+  const isEmerald = designStyle === 'emerald-zen';
+
+  if (!isCinematic) {
+    // Render the card box according to theme
+    if (isRoyal) {
+      // 1. Royal Gold Theme (Velvet Dark Obsidian with Double Gold Border & Ornamental Trim)
+      ctx.fillStyle = 'rgba(14, 10, 8, 0.90)';
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 28);
+      ctx.fill();
+
+      // Outer gold border
+      ctx.strokeStyle = '#D97706';
+      ctx.lineWidth = 3.5;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 28);
+      ctx.stroke();
+
+      // Inner thin gold border
+      ctx.strokeStyle = 'rgba(253, 224, 71, 0.45)';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, boxX + 8, boxY + 8, boxW - 16, boxH - 16, 22);
+      ctx.stroke();
+
+      // Soft amber center glow
+      const glow = ctx.createRadialGradient(width / 2, boxY + boxH / 2, 20, width / 2, boxY + boxH / 2, 380);
+      glow.addColorStop(0, 'rgba(245, 158, 11, 0.15)');
+      glow.addColorStop(1, 'rgba(245, 158, 11, 0)');
+      ctx.fillStyle = glow;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 28);
+      ctx.fill();
+    } else if (isDivine) {
+      // 2. Spiritual Divine Theme (Sacred Deep Saffron Amber with Glowing Aura)
+      ctx.fillStyle = 'rgba(28, 12, 4, 0.88)';
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.fill();
+
+      // Saffron to Gold border gradient
+      const divineGrad = ctx.createLinearGradient(boxX, boxY, boxX + boxW, boxY + boxH);
+      divineGrad.addColorStop(0, '#EA580C');
+      divineGrad.addColorStop(0.5, '#F59E0B');
+      divineGrad.addColorStop(1, '#EA580C');
+      ctx.strokeStyle = divineGrad;
+      ctx.lineWidth = 3.5;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.stroke();
+
+      const glow = ctx.createRadialGradient(width / 2, boxY + 30, 20, width / 2, boxY + 30, 320);
+      glow.addColorStop(0, 'rgba(234, 88, 12, 0.25)');
+      glow.addColorStop(1, 'rgba(234, 88, 12, 0)');
+      ctx.fillStyle = glow;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.fill();
+    } else if (isIvory) {
+      // 3. Editorial Ivory Theme (Frosted Ivory White Card with Luxury Gold & Charcoal)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 28);
+      ctx.fill();
+
+      ctx.strokeStyle = '#D97706';
+      ctx.lineWidth = 3;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 28);
+      ctx.stroke();
+
+      // Soft inner hairline
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+      ctx.lineWidth = 1;
+      drawRoundedRect(ctx, boxX + 6, boxY + 6, boxW - 12, boxH - 12, 24);
+      ctx.stroke();
+    } else if (isEmerald) {
+      // 4. Emerald Zen Theme (Deep Forest Jade with Golden Accents)
+      ctx.fillStyle = 'rgba(6, 32, 18, 0.88)';
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.fill();
+
+      ctx.strokeStyle = '#10B981';
+      ctx.lineWidth = 3;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.stroke();
+
+      const glow = ctx.createRadialGradient(width / 2, boxY + 20, 15, width / 2, boxY + 20, 280);
+      glow.addColorStop(0, 'rgba(16, 185, 129, 0.22)');
+      glow.addColorStop(1, 'rgba(16, 185, 129, 0)');
+      ctx.fillStyle = glow;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.fill();
+    } else {
+      // Default: 'frosted-obsidian'
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.80)';
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.32)';
+      ctx.lineWidth = 3;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.stroke();
+
+      const glow = ctx.createRadialGradient(width / 2, boxY + 10, 10, width / 2, boxY + 10, 300);
+      glow.addColorStop(0, 'rgba(251, 191, 36, 0.22)');
+      glow.addColorStop(1, 'rgba(251, 191, 36, 0)');
+      ctx.fillStyle = glow;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 32);
+      ctx.fill();
+    }
+  } else {
+    // 'cinematic-text': Full-width dark ambient scrim (no enclosing card box)
+    const scrimGrad = ctx.createLinearGradient(0, availableTop, 0, availableBottom);
+    scrimGrad.addColorStop(0, 'rgba(0, 0, 0, 0.45)');
+    scrimGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.72)');
+    scrimGrad.addColorStop(1, 'rgba(0, 0, 0, 0.45)');
+    ctx.fillStyle = scrimGrad;
+    ctx.fillRect(0, availableTop, width, availableH);
+  }
+
+  // 2. Top Attached Badge (Golden / Saffron / Jade / Crimson pill)
+  const badgeText = card.morningBadgeText || '🌅 आज का विचार';
+  ctx.font = '900 24px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+  const badgeTextW = ctx.measureText(badgeText).width;
+  const badgeW = badgeTextW + 68;
+  const badgeH = 54;
+  const badgeX = Math.round(width / 2 - badgeW / 2);
+  const badgeY = Math.round(boxY - badgeH / 2);
+
+  const bGrad = ctx.createLinearGradient(badgeX, 0, badgeX + badgeW, 0);
+  if (isDivine) {
+    bGrad.addColorStop(0, '#EA580C');
+    bGrad.addColorStop(0.5, '#F59E0B');
+    bGrad.addColorStop(1, '#EA580C');
+  } else if (isEmerald) {
+    bGrad.addColorStop(0, '#047857');
+    bGrad.addColorStop(0.5, '#10B981');
+    bGrad.addColorStop(1, '#047857');
+  } else if (isRoyal) {
+    bGrad.addColorStop(0, '#B45309');
+    bGrad.addColorStop(0.5, '#F59E0B');
+    bGrad.addColorStop(1, '#B45309');
+  } else {
+    bGrad.addColorStop(0, '#F59E0B');
+    bGrad.addColorStop(0.5, '#FACC15');
+    bGrad.addColorStop(1, '#F59E0B');
+  }
+  ctx.fillStyle = bGrad;
+  drawRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 27);
+  ctx.fill();
+
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 3.5;
+  drawRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 27);
+  ctx.stroke();
+
+  ctx.fillStyle = isEmerald ? '#FFFFFF' : '#0A0A0A';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillText(badgeText, width / 2, badgeY + badgeH / 2 + 2);
+  ctx.textBaseline = 'top';
+
+  // 3. Quotation Mark
+  let innerY = boxY + topPadding + verticalShift;
+  if (card.morningShowQuotes !== false) {
+    ctx.font = 'bold 54px serif';
+    ctx.fillStyle = isIvory ? '#B45309' : (isEmerald ? '#6EE7B7' : '#FACC15');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('“', width / 2, innerY);
+    innerY += quoteMarkH;
+  }
+
+  // 4. Headline (White & Yellow or Dark Charcoal & Ruby in Ivory)
+  const hlColor = isIvory ? (card.highlightColor || '#B45309') : (isEmerald ? '#FACC15' : (card.highlightColor || '#FFE600'));
+  drawRenderedHeadlineLines(
+    ctx,
+    tokenLines,
+    hlColor,
+    width,
+    innerY,
+    hlFontSize,
+    hlLineH,
+    card.morningTextAlignment || 'center',
+    boxX + 45,
+    isIvory, // isLightBackground
+    false    // disableStroke
+  );
+  innerY += totalHlH;
+
+  // 5. Sub-quote / Takeaway below divider
+  if (subLines.length > 0) {
+    innerY += 16;
+
+    // Divider
+    const divGrad = ctx.createLinearGradient(boxX + 45, 0, boxX + boxW - 45, 0);
+    if (isIvory) {
+      divGrad.addColorStop(0, 'rgba(180, 83, 9, 0.1)');
+      divGrad.addColorStop(0.5, '#D97706');
+      divGrad.addColorStop(1, 'rgba(180, 83, 9, 0.1)');
+    } else {
+      divGrad.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
+      divGrad.addColorStop(0.2, 'rgba(255, 255, 255, 0.65)');
+      divGrad.addColorStop(0.5, '#FDE047');
+      divGrad.addColorStop(0.8, 'rgba(255, 255, 255, 0.65)');
+      divGrad.addColorStop(1, 'rgba(255, 255, 255, 0.15)');
+    }
+
+    ctx.strokeStyle = divGrad;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(boxX + 45, innerY);
+    ctx.lineTo(boxX + boxW - 45, innerY);
+    ctx.stroke();
+
+    innerY += 24;
+
+    ctx.font = `600 ${subFontSize}px "Baloo 2", "Noto Sans Devanagari", sans-serif`;
+    ctx.fillStyle = isIvory ? '#374151' : (isEmerald ? '#D1FAE5' : '#FEF08A');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    subLines.forEach((sLine) => {
+      ctx.fillText(sLine, width / 2, innerY);
+      innerY += subLineH;
+    });
+  }
+
+  // NOTE: card.showCallout ("पूरी खबर डिस्क्रिप्शन में") is completely deleted from Morning Jacket per user instruction!
+
+  ctx.restore();
+}
+
+// Helper: Draw text line with true newspaper justification (spacing out words flush to margins)
+function drawJustifiedLine(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  targetWidth: number,
+  isLastLineOfParagraph: boolean = false
+) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length <= 1 || isLastLineOfParagraph) {
+    // Normal left-aligned for last line of paragraph or single word
+    ctx.textAlign = 'left';
+    ctx.fillText(trimmed, x, y);
+    return;
+  }
+
+  // Calculate width of each word
+  let totalWordsWidth = 0;
+  const wordWidths: number[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = ctx.measureText(words[i]).width;
+    wordWidths.push(w);
+    totalWordsWidth += w;
+  }
+
+  const spaceSlots = words.length - 1;
+  const remainingSpace = targetWidth - totalWordsWidth;
+  const standardSpaceWidth = ctx.measureText(' ').width;
+
+  // Safeguard: if words are too wide, or if space would stretch absurdly (> 3.2x normal space), fall back to left
+  if (remainingSpace <= 0 || (remainingSpace / spaceSlots) > standardSpaceWidth * 3.2) {
+    ctx.textAlign = 'left';
+    ctx.fillText(trimmed, x, y);
+    return;
+  }
+
+  const spaceWidth = remainingSpace / spaceSlots;
+  let currentX = x;
+  ctx.textAlign = 'left';
+
+  for (let i = 0; i < words.length; i++) {
+    ctx.fillText(words[i], currentX, y);
+    currentX += wordWidths[i] + spaceWidth;
+  }
+}
+
+// Helper: Wrap story text into lines while remembering which line ends a paragraph
+interface WrappedStoryLine {
+  text: string;
+  isParagraphEnd: boolean;
+}
+
+function wrapStoryIntoLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): WrappedStoryLine[] {
+  const rawParagraphs = text.split(/\r?\n/).map(p => p.trim()).filter(Boolean);
+  const result: WrappedStoryLine[] = [];
+
+  for (let pIdx = 0; pIdx < rawParagraphs.length; pIdx++) {
+    const pText = rawParagraphs[pIdx];
+    const words = pText.split(/\s+/).filter(Boolean);
+    let currentLine = '';
+
+    for (let wIdx = 0; wIdx < words.length; wIdx++) {
+      const testLine = currentLine ? `${currentLine} ${words[wIdx]}` : words[wIdx];
+      const testW = ctx.measureText(testLine).width;
+
+      if (testW <= maxWidth) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          result.push({ text: currentLine, isParagraphEnd: false });
+        }
+        currentLine = words[wIdx];
+      }
+    }
+
+    if (currentLine) {
+      result.push({ text: currentLine, isParagraphEnd: true });
+    }
+  }
+
+  return result;
+}
+
+// Helper: Resolve authentic e-paper font family and background for canvas export
+function getCanvasEpaperFont(card: NewsCardData): string {
+  switch (card.epaperFontFamily) {
+    case 'serif-traditional':
+      return '"Noto Serif Devanagari", Georgia, serif';
+    case 'serif-martel':
+      return '"Martel", Georgia, serif';
+    case 'sans-modern':
+      return '"Noto Sans Devanagari", sans-serif';
+    case 'baloo':
+      return '"Baloo 2", cursive, sans-serif';
+    default:
+      return '"Noto Serif Devanagari", Georgia, serif';
+  }
+}
+
+function getCanvasEpaperPaperBg(card: NewsCardData): string {
+  if (card.epaperTheme === 'pure-white') return '#FFFFFF';
+  return '#FAF8F2';
+}
+
+// Helper: Draw Leader / Official Quote Callout Box
+function drawEpaperQuoteBox(
+  ctx: CanvasRenderingContext2D,
+  quoteText: string,
+  speakerName: string,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+  fontFamily: string = '"Baloo 2", sans-serif'
+) {
+  ctx.fillStyle = '#FEF2F2';
+  drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 8);
+  ctx.fill();
+
+  ctx.strokeStyle = '#FECACA';
+  ctx.lineWidth = 1.5;
+  drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 8);
+  ctx.stroke();
+
+  // Left red accent bar
+  ctx.fillStyle = '#DC2626';
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, 6, boxH, [8, 0, 0, 8]);
+  ctx.fill();
+
+  // Large quotation mark & header
+  ctx.font = `900 24px ${fontFamily}`;
+  ctx.fillStyle = '#DC2626';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('“', boxX + 16, boxY + 8);
+
+  ctx.font = `800 16px ${fontFamily}`;
+  ctx.fillStyle = '#991B1B';
+  ctx.fillText('बयान / प्रतिक्रिया', boxX + 38, boxY + 12);
+
+  // Quote text wrapped
+  ctx.font = `italic 700 16px ${fontFamily}`;
+  ctx.fillStyle = '#1F2937';
+  const qLines = wrapTextIntoLines(ctx, `"${quoteText}"`, boxW - 32).slice(0, 4);
+  let qY = boxY + 36;
+  qLines.forEach((line) => {
+    ctx.fillText(line, boxX + 16, qY);
+    qY += 22;
+  });
+
+  // Speaker name
+  if (speakerName) {
+    ctx.font = `900 15px ${fontFamily}`;
+    ctx.fillStyle = '#DC2626';
+    ctx.textAlign = 'right';
+    ctx.fillText(`— ${speakerName}`, boxX + boxW - 16, boxY + boxH - 22);
+  }
+}
+
+// Helper: Draw E-Paper Highlights / Key Points Inset Box
+function drawEpaperHighlightsBox(
+  ctx: CanvasRenderingContext2D,
+  card: NewsCardData,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+  fontFamily: string = '"Baloo 2", sans-serif'
+) {
+  ctx.fillStyle = '#FFFDF5';
+  drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#E5E7EB';
+  ctx.lineWidth = 1.5;
+  drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 8);
+  ctx.stroke();
+
+  // Red accent on left border
+  ctx.fillStyle = '#DC2626';
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, 6, boxH, [8, 0, 0, 8]);
+  ctx.fill();
+
+  // Highlights Box Title
+  let hlY = boxY + 12;
+  ctx.font = `900 19px ${fontFamily}`;
+  ctx.fillStyle = '#B91C1C';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`📍 ${card.epaperHighlightsTitle || 'मुख्य बिंदु'}`, boxX + 16, hlY);
+  hlY += 28;
+
+  // Hairline separator inside box
+  ctx.strokeStyle = '#FEE2E2';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(boxX + 14, hlY);
+  ctx.lineTo(boxX + boxW - 14, hlY);
+  ctx.stroke();
+  hlY += 10;
+
+  // Highlights Bullets
+  const highlights = (card.epaperHighlights && card.epaperHighlights.length > 0)
+    ? card.epaperHighlights.slice(0, 4)
+    : [
+        'प्रशासनिक दल ने मौके पर पहुंचकर की त्वरित कार्रवाई',
+        'दोषियों के विरुद्ध सख्त वैधानिक धाराओं में केस दर्ज',
+      ];
+
+  const hlBulletSpacing = Math.max(4, Math.min(14, Math.floor((boxH - (hlY - boxY) - highlights.length * 40) / highlights.length)));
+
+  highlights.forEach((hlItem) => {
+    ctx.font = `700 18px ${fontFamily}`;
+    ctx.fillStyle = '#DC2626';
+    ctx.fillText('•', boxX + 16, hlY);
+
+    ctx.font = `600 17px ${fontFamily}`;
+    ctx.fillStyle = '#1F2937';
+    const bulletLines = wrapTextIntoLines(ctx, hlItem, boxW - 42).slice(0, 2);
+    bulletLines.forEach((bLine) => {
+      ctx.fillText(bLine, boxX + 28, hlY);
+      hlY += 23;
+    });
+    hlY += hlBulletSpacing;
+  });
+}
+
+// Helper: Draw E-Paper Advertisement / Space-Filling Box
+async function drawEpaperAdBox(
+  ctx: CanvasRenderingContext2D,
+  ad: any,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+  fontFamily: string = '"Baloo 2", sans-serif'
+) {
+  if (boxW <= 20 || boxH <= 20) return;
+  ctx.save();
+
+  // If user uploaded a custom graphic / banner
+  if (ad?.type === 'image' && ad?.imageUrl) {
+    try {
+      const adImg = await loadImage(ad.imageUrl);
+      ctx.fillStyle = '#FFFFFF';
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 6);
+      ctx.fill();
+
+      ctx.strokeStyle = '#DC2626';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 6);
+      ctx.stroke();
+
+      const cropX = (ad.crop?.x ?? 50) / 100;
+      const cropY = (ad.crop?.y ?? 50) / 100;
+      const cropZoom = Math.max(1, ad.crop?.zoom || 1);
+
+      ctx.save();
+      drawRoundedRect(ctx, boxX + 2, boxY + 2, boxW - 4, boxH - 4, 4);
+      ctx.clip();
+      drawImageCover(ctx, adImg, boxX + 2, boxY + 2, boxW - 4, boxH - 4, cropX, cropY, cropZoom);
+      ctx.restore();
+
+      // Top right label: "विज्ञापन"
+      ctx.fillStyle = 'rgba(220, 38, 38, 0.92)';
+      drawRoundedRect(ctx, boxX + boxW - 58, boxY + 3, 55, 18, 3);
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 11px "Baloo 2", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('विज्ञापन', boxX + boxW - 30, boxY + 12);
+
+      ctx.restore();
+      return;
+    } catch (err) {
+      console.warn('Epaper ad image load error:', err);
+    }
+  }
+
+  // Template Ad (Classified, Wishes, Commercial, Notice)
+  const isWishes = ad?.templateType === 'wishes';
+  const isCommercial = ad?.templateType === 'commercial';
+  const isNotice = ad?.templateType === 'notice';
+
+  // Backdrop: warm off-white / light cream / festive tint
+  ctx.fillStyle = isWishes ? '#FFFDF0' : isNotice ? '#F8FAFC' : '#FFF9F5';
+  drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 6);
+  ctx.fill();
+
+  // Outer border
+  ctx.strokeStyle = isNotice ? '#334155' : '#DC2626';
+  ctx.lineWidth = 2;
+  drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 6);
+  ctx.stroke();
+
+  // Inner dashed decorative border
+  ctx.strokeStyle = isNotice ? '#94A3B8' : '#F87171';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 4]);
+  drawRoundedRect(ctx, boxX + 4, boxY + 4, boxW - 8, boxH - 8, 4);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Top Badge / Header Pill
+  const pillText = isWishes
+    ? '💐 हार्दिक शुभकामनाएं'
+    : isCommercial
+    ? '🏢 व्यावसायिक विज्ञापन'
+    : isNotice
+    ? '📢 सार्वजनिक सूचना'
+    : '📢 स्थान रिक्त है • विज्ञापन';
+
+  ctx.font = '800 13px "Baloo 2", sans-serif';
+  const pillW = Math.min(boxW - 20, ctx.measureText(pillText).width + 20);
+  const pillH = 22;
+  const pillX = boxX + (boxW - pillW) / 2;
+  const pillY = boxY + 8;
+
+  ctx.fillStyle = isNotice ? '#1E293B' : '#DC2626';
+  drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 4);
+  ctx.fill();
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(pillText, pillX + pillW / 2, pillY + pillH / 2);
+
+  // Main Heading Title
+  const rawTitle = ad?.title || (
+    isWishes ? 'सफलता एवं उज्ज्वल भविष्य की अनंत बधाई' :
+    isCommercial ? 'व्यावसायिक प्रचार-प्रसार हेतु संपर्क करें' :
+    isNotice ? 'सर्वसाधारण को सूचित किया जाता है' :
+    'स्थान रिक्त है — विज्ञापन हेतु संपर्क करें'
+  );
+
+  let contentY = pillY + pillH + 10;
+  const titleFontSize = boxH > 160 ? 17 : 14;
+  ctx.font = `900 ${titleFontSize}px ${fontFamily}`;
+  ctx.fillStyle = isNotice ? '#0F172A' : '#7F1D1D';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  const titleLines = wrapTextIntoLines(ctx, rawTitle, boxW - 24).slice(0, 2);
+  titleLines.forEach((tLine) => {
+    ctx.fillText(tLine, boxX + boxW / 2, contentY);
+    contentY += titleFontSize + 4;
+  });
+
+  // Subtitle / message (if vertical space allows)
+  if (boxH > 110 && ad?.subtitle) {
+    ctx.font = `600 13px ${fontFamily}`;
+    ctx.fillStyle = '#4B5563';
+    const subLines = wrapTextIntoLines(ctx, ad.subtitle, boxW - 28).slice(0, 2);
+    subLines.forEach((sLine) => {
+      ctx.fillText(sLine, boxX + boxW / 2, contentY);
+      contentY += 17;
+    });
+  }
+
+  // Contact Phone Badge (prominent)
+  const phoneText = ad?.phone ? `📞 संपर्क: ${ad.phone}` : '📞 संपर्क: 96698-02408';
+  if (boxH >= 100) {
+    const phoneY = Math.min(boxY + boxH - 32, contentY + 6);
+    ctx.font = '800 14px "Baloo 2", sans-serif';
+    const phonePillW = Math.min(boxW - 24, ctx.measureText(phoneText).width + 16);
+    const phonePillH = 24;
+    const phoneX = boxX + (boxW - phonePillW) / 2;
+
+    ctx.fillStyle = isNotice ? '#F1F5F9' : '#FEF2F2';
+    drawRoundedRect(ctx, phoneX, phoneY, phonePillW, phonePillH, 4);
+    ctx.fill();
+    ctx.strokeStyle = isNotice ? '#CBD5E1' : '#FCA5A5';
+    ctx.lineWidth = 1;
+    drawRoundedRect(ctx, phoneX, phoneY, phonePillW, phonePillH, 4);
+    ctx.stroke();
+
+    ctx.fillStyle = isNotice ? '#1E293B' : '#DC2626';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(phoneText, phoneX + phonePillW / 2, phoneY + phonePillH / 2);
+  }
+
+  // Bottom Sponsor / Courtesy Line
+  if (boxH > 160 && ad?.sponsorName) {
+    ctx.font = `700 12px ${fontFamily}`;
+    ctx.fillStyle = '#6B7280';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(ad.sponsorName, boxX + boxW / 2, boxY + boxH - 8);
+  }
+
+  ctx.restore();
+}
+
+// Helper: Draw E-Paper Secondary News / Sidebar Story Box
+function drawEpaperSecondaryStoryBox(
+  ctx: CanvasRenderingContext2D,
+  card: NewsCardData,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+  fontFamily: string = '"Baloo 2", sans-serif'
+) {
+  if (boxW <= 20 || boxH <= 40) return;
+  ctx.save();
+
+  // Background
+  ctx.fillStyle = '#F9FAFB';
+  drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 6);
+  ctx.fill();
+
+  ctx.strokeStyle = '#E5E7EB';
+  ctx.lineWidth = 1.5;
+  drawRoundedRect(ctx, boxX, boxY, boxW, boxH, 6);
+  ctx.stroke();
+
+  // Left solid accent border (Navy blue)
+  ctx.fillStyle = '#1E40AF';
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, 5, boxH, [6, 0, 0, 6]);
+  ctx.fill();
+
+  // Header Title
+  const title = card.epaperSecondaryStoryTitle || 'संबंधित खबर / अन्य जानकारी';
+  ctx.font = `900 18px ${fontFamily}`;
+  ctx.fillStyle = '#1E3A8A';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`📰 ${title}`, boxX + 14, boxY + 10);
+
+  // Hairline divider
+  ctx.strokeStyle = '#DBEAFE';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(boxX + 12, boxY + 34);
+  ctx.lineTo(boxX + boxW - 12, boxY + 34);
+  ctx.stroke();
+
+  // Story Body Lines
+  const bodyText = card.epaperSecondaryStoryBody || '';
+  if (bodyText) {
+    const fontSize = 16;
+    const lineH = Math.round(fontSize * 1.38);
+    ctx.font = `600 ${fontSize}px ${fontFamily}`;
+    ctx.fillStyle = '#1F2937';
+    const lines = wrapTextIntoLines(ctx, bodyText, boxW - 24);
+    const maxLines = Math.floor((boxH - 44) / lineH);
+    let curLineY = boxY + 42;
+    lines.slice(0, maxLines).forEach((line) => {
+      ctx.fillText(line, boxX + 14, curLineY);
+      curLineY += lineH;
+    });
+  }
+
+  ctx.restore();
+}
+
+// Helper: Wrap story into lines with authentic Devanagari drop cap
+interface DropCapColData {
+  lines: { text: string; xOffset: number; width: number; isParagraphEnd: boolean }[];
+  dropChar: string | null;
+  dropCapW: number;
+  dropCapFontSize: number;
+}
+
+function wrapStoryIntoDropCapLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  colW: number,
+  epaperFont: string,
+  bodyFontSize: number,
+  bodyLineH: number,
+  hasDropCap: boolean
+): DropCapColData {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { lines: [], dropChar: null, dropCapW: 0, dropCapFontSize: 0 };
+  }
+
+  if (!hasDropCap) {
+    ctx.font = `600 ${bodyFontSize}px ${epaperFont}`;
+    const raw = wrapStoryIntoLines(ctx, trimmed, colW);
+    return {
+      lines: raw.map((r) => ({ text: r.text, xOffset: 0, width: colW, isParagraphEnd: r.isParagraphEnd })),
+      dropChar: null,
+      dropCapW: 0,
+      dropCapFontSize: 0,
+    };
+  }
+
+  // Authentic Devanagari Newspaper Drop Cap
+  const firstCharMatch = trimmed.match(/^[\u0900-\u097F\uA8E0-\uA8FF\w]/);
+  const dropChar = firstCharMatch ? firstCharMatch[0] : trimmed.charAt(0);
+  const remainingText = trimmed.slice(dropChar.length).trimStart();
+
+  const dropCapFontSize = Math.round(bodyLineH * 2.15);
+  ctx.save();
+  ctx.font = `900 ${dropCapFontSize}px ${epaperFont}`;
+  const dropCapW = Math.round(ctx.measureText(dropChar).width + 10);
+  ctx.restore();
+
+  ctx.font = `600 ${bodyFontSize}px ${epaperFont}`;
+
+  const rawParagraphs = remainingText.split(/\r?\n/).map((p) => p.trim()).filter(Boolean);
+  const lines: { text: string; xOffset: number; width: number; isParagraphEnd: boolean }[] = [];
+
+  let lineCount = 0;
+  for (let pIdx = 0; pIdx < rawParagraphs.length; pIdx++) {
+    const pText = rawParagraphs[pIdx];
+    const words = pText.split(/\s+/).filter(Boolean);
+    let currentLine = '';
+
+    for (let wIdx = 0; wIdx < words.length; wIdx++) {
+      const lineW = lineCount < 2 ? colW - dropCapW : colW;
+      const testLine = currentLine ? `${currentLine} ${words[wIdx]}` : words[wIdx];
+      const testW = ctx.measureText(testLine).width;
+
+      if (testW <= lineW) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          const xOff = lineCount < 2 ? dropCapW : 0;
+          lines.push({ text: currentLine, xOffset: xOff, width: lineW, isParagraphEnd: false });
+          lineCount++;
+        }
+        currentLine = words[wIdx];
+      }
+    }
+
+    if (currentLine) {
+      const lineW = lineCount < 2 ? colW - dropCapW : colW;
+      const xOff = lineCount < 2 ? dropCapW : 0;
+      lines.push({ text: currentLine, xOffset: xOff, width: lineW, isParagraphEnd: true });
+      lineCount++;
+    }
+  }
+
+  return { lines, dropChar, dropCapW, dropCapFontSize };
+}
+
+function renderStoryDropCapColumn(
+  ctx: CanvasRenderingContext2D,
+  colData: DropCapColData,
+  startX: number,
+  startY: number,
+  colW: number,
+  bodyFontSize: number,
+  bodyLineH: number,
+  epaperFont: string,
+  startLineIdx: number,
+  maxLinesToRender: number
+): number {
+  if (colData.dropChar && startLineIdx === 0) {
+    ctx.save();
+    ctx.font = `900 ${colData.dropCapFontSize}px ${epaperFont}`;
+    ctx.fillStyle = '#DC2626';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(colData.dropChar, startX, startY - 2);
+    ctx.restore();
+  }
+
+  ctx.font = `600 ${bodyFontSize}px ${epaperFont}`;
+  ctx.fillStyle = '#171717';
+  ctx.textBaseline = 'top';
+
+  const linesSlice = colData.lines.slice(startLineIdx, startLineIdx + maxLinesToRender);
+  let curLineY = startY;
+  linesSlice.forEach((line) => {
+    drawJustifiedLine(ctx, line.text, startX + line.xOffset, curLineY, line.width, line.isParagraphEnd);
+    curLineY += bodyLineH;
+  });
+
+  return linesSlice.length;
+}
+
+// Draw E-Paper Newspaper Jacket Content (Masthead kicker, Bold headline, Sub-headline, Byline with Promo CTA, 0-3 Photos, Space-filling 2-Column Story & Highlights Box)
+async function drawEPaperJacketContent(
+  ctx: CanvasRenderingContext2D,
+  card: NewsCardData,
+  width: number,
+  height: number,
+  footerBarHeight: number,
+  headerHeight: number
+) {
+  ctx.save();
+
+  const epaperFont = getCanvasEpaperFont(card);
+  const paperBg = getCanvasEpaperPaperBg(card);
+
+  // Background is pure crisp white (or authentic newsprint / subtle cream)
+  ctx.fillStyle = paperBg;
+  ctx.fillRect(0, 0, width, height);
+
+  // Margins and layout - 50px safe margins so side swooshes/curves never crop text
+  const marginX = 50;
+  const contentW = width - marginX * 2;
+  const startX = marginX;
+  // Header clearance: 30px breathing room below header graphic to prevent top curve collision
+  let curY = headerHeight + 30;
+
+  // 1. Top Newspaper Kicker Bar
+  const kickerText = card.epaperKicker || 'विशेष रिपोर्ट';
+  ctx.font = `900 18px ${epaperFont}`;
+  const kickerBadgeW = ctx.measureText(kickerText).width + 24;
+
+  ctx.fillStyle = '#DC2626';
+  drawRoundedRect(ctx, startX, curY, kickerBadgeW, 28, 4);
+  ctx.fill();
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(kickerText, startX + 12, curY + 14);
+
+  // Sub-kicker text
+  ctx.fillStyle = '#4B5563';
+  ctx.font = `700 18px ${epaperFont}`;
+  ctx.fillText('• ई-पेपर विशेष संस्करण', startX + kickerBadgeW + 12, curY + 14);
+
+  // Right date text
+  const dateText = card.dateStr || getFormattedHindiDate();
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#6B7280';
+  ctx.font = `700 18px ${epaperFont}`;
+  ctx.fillText(dateText, startX + contentW, curY + 14);
+
+  curY += 34;
+
+  // Hairline divider below kicker
+  ctx.strokeStyle = '#D1D5DB';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(startX, curY);
+  ctx.lineTo(startX + contentW, curY);
+  ctx.stroke();
+
+  curY += 16; // Breathing room below hairline so top vowel signs are never clipped
+
+  // 2. Main Newspaper Headline (Auto-scales to 2 lines, generous line-height for Hindi ascenders)
+  const rawHl = card.epaperHeadline || card.headline || '';
+  const userHlSize = card.headlineFontSize || 26;
+  const hlFontSize = Math.max(28, Math.min(42, Math.round(userHlSize * 1.28)));
+  const hlLineH = Math.round(hlFontSize * 1.35);
+  ctx.font = `900 ${hlFontSize}px ${epaperFont}`;
+  ctx.fillStyle = '#0A0A0A';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  const headlineLines = wrapTextIntoLines(ctx, rawHl, contentW).slice(0, 2);
+  headlineLines.forEach((line) => {
+    ctx.fillText(line, startX, curY);
+    curY += hlLineH;
+  });
+
+  curY += 4;
+
+  // 3. Sub-headline (if present)
+  if (card.epaperSubHeadline) {
+    ctx.font = `700 22px ${epaperFont}`;
+    ctx.fillStyle = '#374151';
+    const subLines = wrapTextIntoLines(ctx, card.epaperSubHeadline, contentW).slice(0, 2);
+    subLines.forEach((sLine) => {
+      ctx.fillText(sLine, startX, curY);
+      curY += 30;
+    });
+    curY += 4;
+  }
+
+  // 4. Byline Bar: Left Reporter Name, Right Promotional Line
+  curY += 6;
+  ctx.strokeStyle = '#D1D5DB';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(startX, curY);
+  ctx.lineTo(startX + contentW, curY);
+  ctx.stroke();
+
+  curY += 8;
+  ctx.font = `800 20px ${epaperFont}`;
+  ctx.fillStyle = '#111827';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const reporterByline = card.epaperByline || 'विशेष संवाददाता';
+  ctx.fillText(`✍️  ${reporterByline}`, startX, curY + 12);
+
+  // Right Side: Promotional Tagline / Call to Action
+  const promoText = card.epaperPromoTagline || '📢 अब आप भी भेजें अपनी खबर हम तक: 96698-02408';
+  ctx.textAlign = 'right';
+  ctx.font = `700 17px ${epaperFont}`;
+  ctx.fillStyle = '#DC2626';
+  ctx.fillText(promoText, startX + contentW, curY + 12);
+
+  curY += 24;
+  ctx.beginPath();
+  ctx.moveTo(startX, curY);
+  ctx.lineTo(startX + contentW, curY);
+  ctx.stroke();
+
+  curY += 14;
+
+  // 5. Layout Configuration & Space Filling Math
+  const bottomLimit = height - footerBarHeight - 14;
+  const bodyAreaTop = curY;
+  const bodyAreaBottom = bottomLimit;
+  const bodyAreaH = bodyAreaBottom - bodyAreaTop;
+  const bodyAreaW = contentW;
+  const availableRemainingH = bottomLimit - curY;
+
+  // Active photo layout
+  const photoLayout = card.epaperPhotoLayout || (
+    card.epaperPhotoCount === 0 ? '0_none' :
+    card.epaperPhotoCount === 2 ? '2_side' :
+    card.epaperPhotoCount === 3 ? '3_split' :
+    '1_top'
+  );
+
+  // Retrieve user crop/pan/zoom settings for all photos
+  const mainCrop = card.imagePositions?.main || { x: 50, y: 50, zoom: 1 };
+  const secondCrop = card.imagePositions?.second || { x: 50, y: 50, zoom: 1 };
+  const thirdCrop = card.imagePositions?.third || { x: 50, y: 50, zoom: 1 };
+
+  const mCropX = (mainCrop.x ?? 50) / 100;
+  const mCropY = (mainCrop.y ?? 50) / 100;
+  const mZoom = Math.max(1, mainCrop.zoom || 1);
+
+  const sCropX = (secondCrop.x ?? 50) / 100;
+  const sCropY = (secondCrop.y ?? 50) / 100;
+  const sZoom = Math.max(1, secondCrop.zoom || 1);
+
+  const tCropX = (thirdCrop.x ?? 50) / 100;
+  const tCropY = (thirdCrop.y ?? 50) / 100;
+  const tZoom = Math.max(1, thirdCrop.zoom || 1);
+
+  // Base Photo Section Height based on user height mode
+  let basePhotoH = Math.min(300, Math.max(190, Math.round(availableRemainingH * 0.38)));
+  if (card.epaperPhotoHeightMode === 'compact') {
+    basePhotoH = 190;
+  } else if (card.epaperPhotoHeightMode === 'tall') {
+    basePhotoH = 320;
+  } else if (card.epaperPhotoHeightMode === 'extra-tall') {
+    basePhotoH = 370;
+  }
+
+  // 6. Top Photos Rendering (for 1_top, 2_side, 3_split, 1_top_2_bottom)
+  if (photoLayout === '1_top' && card.images.main) {
+    try {
+      const img1 = await loadImage(card.images.main);
+      const captionH = card.epaperPhotoCaption ? 26 : 0;
+      const imgH = basePhotoH - captionH;
+
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, startX, curY, contentW, basePhotoH, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, startX, curY, contentW, basePhotoH, 8);
+      ctx.stroke();
+
+      ctx.save();
+      drawRoundedRect(ctx, startX + 4, curY + 4, contentW - 8, imgH - 4, 6);
+      ctx.clip();
+      drawImageCover(ctx, img1, startX + 4, curY + 4, contentW - 8, imgH - 4, mCropX, mCropY, mZoom);
+      ctx.restore();
+
+      if (card.epaperPhotoCaption) {
+        ctx.font = 'italic 600 17px "Baloo 2", sans-serif';
+        ctx.fillStyle = '#4B5563';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`📷 ${card.epaperPhotoCaption}`, startX + 12, curY + imgH + captionH / 2);
+      }
+
+      curY += basePhotoH + 14;
+    } catch (err) {
+      console.warn('Epaper image 1 load error:', err);
+    }
+  } else if (photoLayout === '2_side' && card.images.main) {
+    try {
+      const gap = 12;
+      const colW = (contentW - gap) / 2;
+      const captionH = (card.epaperPhotoCaption || card.epaperPhotoCaption2) ? 26 : 0;
+      const imgH = basePhotoH - captionH;
+
+      const [img1, img2] = await Promise.all([
+        loadImage(card.images.main),
+        loadImage(card.images.second || card.images.main),
+      ]);
+
+      // Photo 1
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, startX, curY, colW, basePhotoH, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, startX, curY, colW, basePhotoH, 8);
+      ctx.stroke();
+
+      ctx.save();
+      drawRoundedRect(ctx, startX + 4, curY + 4, colW - 8, imgH - 4, 6);
+      ctx.clip();
+      drawImageCover(ctx, img1, startX + 4, curY + 4, colW - 8, imgH - 4, mCropX, mCropY, mZoom);
+      ctx.restore();
+
+      if (card.epaperPhotoCaption) {
+        ctx.font = 'italic 600 16px "Baloo 2", sans-serif';
+        ctx.fillStyle = '#4B5563';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`📷 ${card.epaperPhotoCaption}`, startX + 8, curY + imgH + captionH / 2);
+      }
+
+      // Photo 2
+      const col2X = startX + colW + gap;
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, col2X, curY, colW, basePhotoH, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, col2X, curY, colW, basePhotoH, 8);
+      ctx.stroke();
+
+      ctx.save();
+      drawRoundedRect(ctx, col2X + 4, curY + 4, colW - 8, imgH - 4, 6);
+      ctx.clip();
+      drawImageCover(ctx, img2, col2X + 4, curY + 4, colW - 8, imgH - 4, sCropX, sCropY, sZoom);
+      ctx.restore();
+
+      if (card.epaperPhotoCaption2) {
+        ctx.font = 'italic 600 16px "Baloo 2", sans-serif';
+        ctx.fillStyle = '#4B5563';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`📷 ${card.epaperPhotoCaption2}`, col2X + 8, curY + imgH + captionH / 2);
+      }
+
+      curY += basePhotoH + 14;
+    } catch (err) {
+      console.warn('Epaper image 2 load error:', err);
+    }
+  } else if (photoLayout === '3_split' && card.images.main) {
+    try {
+      const gap = 12;
+      const leftColW = Math.round(contentW * 0.58);
+      const rightColW = contentW - leftColW - gap;
+      const [img1, img2, img3] = await Promise.all([
+        loadImage(card.images.main),
+        loadImage(card.images.second || card.images.main),
+        loadImage(card.images.third || card.images.main),
+      ]);
+
+      // Left Photo
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, startX, curY, leftColW, basePhotoH, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, startX, curY, leftColW, basePhotoH, 8);
+      ctx.stroke();
+
+      const leftCaptionH = card.epaperPhotoCaption ? 26 : 0;
+      ctx.save();
+      drawRoundedRect(ctx, startX + 4, curY + 4, leftColW - 8, basePhotoH - leftCaptionH - 4, 6);
+      ctx.clip();
+      drawImageCover(ctx, img1, startX + 4, curY + 4, leftColW - 8, basePhotoH - leftCaptionH - 4, mCropX, mCropY, mZoom);
+      ctx.restore();
+
+      if (card.epaperPhotoCaption) {
+        ctx.font = 'italic 600 16px "Baloo 2", sans-serif';
+        ctx.fillStyle = '#4B5563';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`📷 ${card.epaperPhotoCaption}`, startX + 8, curY + basePhotoH - leftCaptionH / 2);
+      }
+
+      // Right 2 small stacked photos
+      const rightColX = startX + leftColW + gap;
+      const smallH = (basePhotoH - gap) / 2;
+
+      // Small 1
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, rightColX, curY, rightColW, smallH, 6);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, rightColX, curY, rightColW, smallH, 6);
+      ctx.stroke();
+
+      ctx.save();
+      drawRoundedRect(ctx, rightColX + 3, curY + 3, rightColW - 6, smallH - 6, 4);
+      ctx.clip();
+      drawImageCover(ctx, img2, rightColX + 3, curY + 3, rightColW - 6, smallH - 6, sCropX, sCropY, sZoom);
+      ctx.restore();
+
+      // Small 2
+      const small2Y = curY + smallH + gap;
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, rightColX, small2Y, rightColW, smallH, 6);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, rightColX, small2Y, rightColW, smallH, 6);
+      ctx.stroke();
+
+      ctx.save();
+      drawRoundedRect(ctx, rightColX + 3, small2Y + 3, rightColW - 6, smallH - 6, 4);
+      ctx.clip();
+      drawImageCover(ctx, img3, rightColX + 3, small2Y + 3, rightColW - 6, smallH - 6, tCropX, tCropY, tZoom);
+      ctx.restore();
+
+      curY += basePhotoH + 14;
+    } catch (err) {
+      console.warn('Epaper image 3 load error:', err);
+    }
+  } else if (photoLayout === '1_top_2_bottom' && card.images.main) {
+    try {
+      const topH = Math.round(basePhotoH * 0.60);
+      const img1 = await loadImage(card.images.main);
+      const captionH = card.epaperPhotoCaption ? 24 : 0;
+      const imgH = topH - captionH;
+
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, startX, curY, contentW, topH, 8);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1.5;
+      drawRoundedRect(ctx, startX, curY, contentW, topH, 8);
+      ctx.stroke();
+
+      ctx.save();
+      drawRoundedRect(ctx, startX + 4, curY + 4, contentW - 8, imgH - 4, 6);
+      ctx.clip();
+      drawImageCover(ctx, img1, startX + 4, curY + 4, contentW - 8, imgH - 4, mCropX, mCropY, mZoom);
+      ctx.restore();
+
+      if (card.epaperPhotoCaption) {
+        ctx.font = 'italic 600 16px "Baloo 2", sans-serif';
+        ctx.fillStyle = '#4B5563';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`📷 ${card.epaperPhotoCaption}`, startX + 12, curY + imgH + captionH / 2);
+      }
+
+      curY += topH + 14;
+    } catch (err) {
+      console.warn('Epaper top image load error:', err);
+    }
+  }
+
+  // 7. Column Layout: Story Body & Highlights (Handling 1_below_highlights, 1_thumb_left, 2_column_bottom, etc.)
+  const articleGap = 16;
+  const articleLeftW = Math.round(contentW * 0.58);
+  const articleRightW = contentW - articleLeftW - articleGap;
+  const boxX = startX + articleLeftW + articleGap;
+  const boxW = articleRightW;
+
+  const hasBottomStrip = card.epaperAd?.showAd && card.epaperAd.placement === 'bottom_strip';
+  const bottomStripH = hasBottomStrip
+    ? Math.min(150, Math.max(75, Math.round(contentW * 0.13 * (card.epaperAd?.height ? card.epaperAd.height / 25 : 1))))
+    : 0;
+  const bottomStripGap = hasBottomStrip ? 12 : 0;
+
+  const hasBottomInlinePhotos = photoLayout === '1_top_2_bottom' || photoLayout === '2_column_bottom';
+  const inlinePhotoH = hasBottomInlinePhotos ? 140 : 0;
+  const inlinePhotoGap = hasBottomInlinePhotos ? 12 : 0;
+
+  const bottomPhotoY = bottomLimit - (hasBottomStrip ? (bottomStripH + bottomStripGap) : 0) - inlinePhotoH;
+  const reservedBottomH = (hasBottomStrip ? (bottomStripH + bottomStripGap) : 0) +
+                          (hasBottomInlinePhotos ? (inlinePhotoH + inlinePhotoGap) : 0);
+  const textSectionBottomLimit = bottomLimit - reservedBottomH;
+
+  // Typography for Body Text: user adjustable (default 17-20)
+  const bodyFontSize = card.epaperFontSize || 18;
+  const bodyLineH = Math.round(bodyFontSize * 1.40);
+  const hasDropCap = card.epaperDropCap !== false;
+  ctx.font = `600 ${bodyFontSize}px ${epaperFont}`;
+  ctx.fillStyle = '#171717';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  const fullArticleText = (card.epaperArticleBody || '').trim() ||
+    'जिले में प्रशासन और पुलिस की संयुक्त टीम ने बड़ी कार्रवाई करते हुए स्थिति को नियंत्रित किया। ग्रामीणों की शिकायतों के आधार पर वरिष्ठ अधिकारियों ने संयुक्त दल गठित कर मौके पर पहुंचकर जांच की और आवश्यक दिशा-निर्देश दिए।';
+
+  // Branch A: Layout '1_thumb_left' (Small thumbnail in left column, story flows under it)
+  if (photoLayout === '1_thumb_left' && card.images.main) {
+    const thumbH = 170;
+    try {
+      const img1 = await loadImage(card.images.main);
+      const capH = card.epaperPhotoCaption ? 24 : 0;
+      const actualImgH = thumbH - capH;
+
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, startX, curY, articleLeftW, thumbH, 6);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1;
+      drawRoundedRect(ctx, startX, curY, articleLeftW, thumbH, 6);
+      ctx.stroke();
+
+      ctx.save();
+      drawRoundedRect(ctx, startX + 3, curY + 3, articleLeftW - 6, actualImgH - 3, 4);
+      ctx.clip();
+      drawImageCover(ctx, img1, startX + 3, curY + 3, articleLeftW - 6, actualImgH - 3, mCropX, mCropY, mZoom);
+      ctx.restore();
+
+      if (card.epaperPhotoCaption) {
+        ctx.font = `italic 600 15px ${epaperFont}`;
+        ctx.fillStyle = '#4B5563';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`📷 ${card.epaperPhotoCaption}`, startX + 8, curY + actualImgH + capH / 2);
+      }
+    } catch (err) {
+      console.warn('Thumb left load error:', err);
+    }
+
+    // Story flows below the thumbnail down to textSectionBottomLimit with true newspaper justification
+    const storyStartY = curY + thumbH + 12;
+    const storyAvailableH = textSectionBottomLimit - storyStartY;
+    const maxStoryLines = Math.max(6, Math.floor(storyAvailableH / bodyLineH));
+
+    const colData = wrapStoryIntoDropCapLines(ctx, fullArticleText, articleLeftW, epaperFont, bodyFontSize, bodyLineH, hasDropCap);
+    renderStoryDropCapColumn(ctx, colData, startX, storyStartY, articleLeftW, bodyFontSize, bodyLineH, epaperFont, 0, maxStoryLines);
+
+    // Right Column: Highlights Box OR Highlights on top + Ad Box on bottom
+    const showRightAd = card.epaperAd?.showAd && (card.epaperAd.placement === 'auto_fill' || card.epaperAd.placement === 'right_column');
+    if (showRightAd) {
+      const fullRightH = textSectionBottomLimit - curY;
+      const hlBoxH = Math.min(230, Math.max(140, Math.round(fullRightH * 0.44)));
+      drawEpaperHighlightsBox(ctx, card, boxX, curY, boxW, hlBoxH, epaperFont);
+
+      const adY = curY + hlBoxH + 12;
+      const adH = textSectionBottomLimit - adY;
+      await drawEpaperAdBox(ctx, card.epaperAd!, boxX, adY, boxW, adH, epaperFont);
+    } else {
+      const boxH = textSectionBottomLimit - curY;
+      drawEpaperHighlightsBox(ctx, card, boxX, curY, boxW, boxH, epaperFont);
+    }
+  }
+  // Branch B: Layout '1_below_highlights' (Full story in left column; Right column has Highlights + Photo 1)
+  else if (photoLayout === '1_below_highlights' && card.images.main) {
+    const fullColH = textSectionBottomLimit - curY;
+    const maxStoryLines = Math.max(10, Math.floor(fullColH / bodyLineH));
+
+    const colData = wrapStoryIntoDropCapLines(ctx, fullArticleText, articleLeftW, epaperFont, bodyFontSize, bodyLineH, hasDropCap);
+    renderStoryDropCapColumn(ctx, colData, startX, curY, articleLeftW, bodyFontSize, bodyLineH, epaperFont, 0, maxStoryLines);
+
+    // Right Column: Upper section = Highlights Box (50%), Lower section = Photo 1 (50%)
+    const rightBoxH = Math.round(fullColH * 0.50);
+    drawEpaperHighlightsBox(ctx, card, boxX, curY, boxW, rightBoxH, epaperFont);
+
+    const rightPhotoY = curY + rightBoxH + 10;
+    const rightPhotoH = textSectionBottomLimit - rightPhotoY;
+
+    try {
+      const img1 = await loadImage(card.images.main);
+      const capH = card.epaperPhotoCaption ? 24 : 0;
+      const actualImgH = rightPhotoH - capH;
+
+      ctx.fillStyle = '#F3F4F6';
+      drawRoundedRect(ctx, boxX, rightPhotoY, boxW, rightPhotoH, 6);
+      ctx.fill();
+      ctx.strokeStyle = '#D1D5DB';
+      ctx.lineWidth = 1;
+      drawRoundedRect(ctx, boxX, rightPhotoY, boxW, rightPhotoH, 6);
+      ctx.stroke();
+
+      ctx.save();
+      drawRoundedRect(ctx, boxX + 3, rightPhotoY + 3, boxW - 6, actualImgH - 3, 4);
+      ctx.clip();
+      drawImageCover(ctx, img1, boxX + 3, rightPhotoY + 3, boxW - 6, actualImgH - 3, mCropX, mCropY, mZoom);
+      ctx.restore();
+
+      if (card.epaperPhotoCaption) {
+        ctx.font = `italic 600 15px ${epaperFont}`;
+        ctx.fillStyle = '#4B5563';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`📷 ${card.epaperPhotoCaption}`, boxX + 8, rightPhotoY + actualImgH + capH / 2);
+      }
+    } catch (err) {
+      console.warn('Right photo load error:', err);
+    }
+  }
+  // Branch C: 2-Column Story / Highlights / Quote Callout Options
+  else {
+    const remainingTextH = textSectionBottomLimit - curY;
+    const storyLayoutMode = card.epaperStoryLayout || '2_equal_cols';
+
+      // Option C1: 2 Equal Columns (Continuous story flowing directly below both photos, 100% Justified)
+    if (storyLayoutMode === '2_equal_cols') {
+      const colGap = 24;
+      const colW = Math.floor((contentW - colGap) / 2);
+      const col1X = startX;
+      const col2X = startX + colW + colGap;
+
+      const showCol2Ad = card.epaperAd?.showAd && (card.epaperAd.placement === 'auto_fill' || card.epaperAd.placement === 'right_column');
+      const adH = showCol2Ad ? Math.min(180, Math.max(90, Math.round(remainingTextH * 0.32))) : 0;
+      const col2StoryH = showCol2Ad ? (remainingTextH - adH - 12) : remainingTextH;
+
+      const maxLinesCol1 = Math.max(6, Math.floor(remainingTextH / bodyLineH));
+      const maxLinesCol2 = Math.max(3, Math.floor(col2StoryH / bodyLineH));
+      const colData = wrapStoryIntoDropCapLines(ctx, fullArticleText, colW, epaperFont, bodyFontSize, bodyLineH, hasDropCap);
+
+      // Distribute lines between the two columns
+      let col1Count = Math.min(maxLinesCol1, Math.ceil(colData.lines.length / 2));
+      if (showCol2Ad && colData.lines.length > maxLinesCol1 + maxLinesCol2) {
+        col1Count = maxLinesCol1;
+      } else if (!showCol2Ad && colData.lines.length > maxLinesCol1 * 2) {
+        col1Count = maxLinesCol1;
+      }
+      if (card.epaperBalanceColumns === false && colData.lines.length <= maxLinesCol1) {
+        col1Count = colData.lines.length;
+      }
+
+      // Render Column 1 (Under Left Photo with drop cap if enabled) - Justified
+      const linesCol1 = renderStoryDropCapColumn(ctx, colData, col1X, curY, colW, bodyFontSize, bodyLineH, epaperFont, 0, col1Count);
+
+      // Render Column 2 (Under Right Photo without drop cap) - Justified
+      const linesCol2 = renderStoryDropCapColumn(ctx, colData, col2X, curY, colW, bodyFontSize, bodyLineH, epaperFont, col1Count, maxLinesCol2);
+
+      // Vertical newspaper column hairline separator
+      ctx.strokeStyle = '#E5E7EB';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(startX + colW + colGap / 2, curY + 2);
+      ctx.lineTo(startX + colW + colGap / 2, textSectionBottomLimit - 4);
+      ctx.stroke();
+
+      if (showCol2Ad && card.epaperAd) {
+        const adY = textSectionBottomLimit - adH;
+        await drawEpaperAdBox(ctx, card.epaperAd, col2X, adY, colW, adH, epaperFont);
+      } else {
+        // Check remaining empty space in Column 2 below text
+        const col2UsedH = linesCol2 * bodyLineH;
+        const col2GapStartY = curY + col2UsedH + (linesCol2 > 0 ? 12 : 0);
+        const col2GapH = textSectionBottomLimit - col2GapStartY;
+
+        if (col2GapH >= 70 && card.epaperSecondaryStoryBody) {
+          drawEpaperSecondaryStoryBox(ctx, card, col2X, col2GapStartY, colW, col2GapH, epaperFont);
+        }
+      }
+    }
+    // Option C2: 2 Columns with Leader / Official Quote Callout Box
+    else if (storyLayoutMode === '2_cols_with_quote') {
+      const colGap = 24;
+      const colW = Math.floor((contentW - colGap) / 2);
+      const col1X = startX;
+      const col2X = startX + colW + colGap;
+
+      const maxLinesCol1 = Math.max(6, Math.floor(remainingTextH / bodyLineH));
+      const colData = wrapStoryIntoDropCapLines(ctx, fullArticleText, colW, epaperFont, bodyFontSize, bodyLineH, hasDropCap);
+
+      // Top Quote Box
+      const quoteBoxH = 150;
+      const quoteText = card.epaperQuoteText || 'जनहित और पारदर्शी प्रशासनिक व्यवस्था के लिए हम पूरी तरह प्रतिबद्ध हैं। किसी भी स्तर पर लापरवाही बर्दाश्त नहीं की जाएगी।';
+      const speakerName = card.epaperQuoteSpeaker || card.epaperByline?.split('/')[0]?.trim() || 'प्रशासनिक प्रवक्ता';
+      drawEpaperQuoteBox(ctx, quoteText, speakerName, col2X, curY, colW, quoteBoxH, epaperFont);
+
+      const col2StoryStartY = curY + quoteBoxH + 12;
+      const col2RemainingH = textSectionBottomLimit - col2StoryStartY;
+      const maxLinesCol2 = Math.max(3, Math.floor(col2RemainingH / bodyLineH));
+
+      // Intelligent column balancing so Column 2 under the quote isn't left empty
+      let col1Count = maxLinesCol1;
+      const totalLines = colData.lines.length;
+      if (card.epaperBalanceColumns !== false) {
+        if (totalLines <= maxLinesCol2 + 6) {
+          col1Count = Math.min(maxLinesCol1, Math.max(4, Math.ceil(totalLines * 0.58)));
+        } else if (totalLines < maxLinesCol1 + maxLinesCol2) {
+          col1Count = Math.min(maxLinesCol1, totalLines - Math.min(maxLinesCol2, Math.floor((totalLines - maxLinesCol1 * 0.3) / 2)));
+        }
+      }
+
+      // Render Column 1 (Full or balanced story down left side)
+      const linesCol1 = renderStoryDropCapColumn(ctx, colData, col1X, curY, colW, bodyFontSize, bodyLineH, epaperFont, 0, col1Count);
+
+      // Render Column 2 below the quote box
+      const linesCol2 = renderStoryDropCapColumn(ctx, colData, col2X, col2StoryStartY, colW, bodyFontSize, bodyLineH, epaperFont, col1Count, maxLinesCol2);
+
+      // Hairline separator
+      ctx.strokeStyle = '#E5E7EB';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(startX + colW + colGap / 2, curY + 2);
+      ctx.lineTo(startX + colW + colGap / 2, textSectionBottomLimit - 4);
+      ctx.stroke();
+
+      // Check remaining empty space in Column 2 below the story
+      const col2UsedH = linesCol2 * bodyLineH;
+      const col2GapStartY = col2StoryStartY + col2UsedH + (linesCol2 > 0 ? 12 : 0);
+      const col2GapH = textSectionBottomLimit - col2GapStartY;
+
+      if (col2GapH >= 70) {
+        if (card.epaperSecondaryStoryBody) {
+          drawEpaperSecondaryStoryBox(ctx, card, col2X, col2GapStartY, colW, col2GapH, epaperFont);
+        } else if (card.epaperAd?.showAd && (card.epaperAd.placement === 'auto_fill' || card.epaperAd.placement === 'right_column')) {
+          await drawEpaperAdBox(ctx, card.epaperAd, col2X, col2GapStartY, colW, col2GapH, epaperFont);
+        } else if (card.epaperAd?.showAd === true || (card.epaperAd?.showAd === undefined && linesCol2 === 0)) {
+          // Automatic fill with classified ad space filler
+          const defaultAd = card.epaperAd || {
+            type: 'template',
+            templateType: 'classified',
+            title: 'स्थान रिक्त है - विज्ञापन हेतु संपर्क करें',
+            subtitle: 'ई-पेपर विशेष संस्करण में प्रचार प्रसार के लिए',
+            phone: card.whatsappNumber || '96698-02408',
+            sponsorName: 'ब्रेकिंग न्यूज़ वाला डिजिटल नेटवर्क',
+          };
+          await drawEpaperAdBox(ctx, defaultAd, col2X, col2GapStartY, colW, col2GapH, epaperFont);
+        }
+      }
+    }
+    // Option C3: 2 Columns with Story + Bottom Highlights Box
+    else if (storyLayoutMode === '2_cols_with_highlights') {
+      const colGap = 24;
+      const colW = Math.floor((contentW - colGap) / 2);
+      const col1X = startX;
+      const col2X = startX + colW + colGap;
+
+      const maxLinesCol1 = Math.max(6, Math.floor(remainingTextH / bodyLineH));
+      const colData = wrapStoryIntoDropCapLines(ctx, fullArticleText, colW, epaperFont, bodyFontSize, bodyLineH, hasDropCap);
+
+      // Render Column 1 (Left side)
+      renderStoryDropCapColumn(ctx, colData, col1X, curY, colW, bodyFontSize, bodyLineH, epaperFont, 0, maxLinesCol1);
+
+      // Column 2: Story top + Highlights Box bottom
+      const hlBoxH = Math.min(220, Math.max(160, Math.round(remainingTextH * 0.52)));
+      const col2StoryH = remainingTextH - hlBoxH - 12;
+      const maxLinesCol2 = Math.max(2, Math.floor(col2StoryH / bodyLineH));
+
+      renderStoryDropCapColumn(ctx, colData, col2X, curY, colW, bodyFontSize, bodyLineH, epaperFont, maxLinesCol1, maxLinesCol2);
+
+      const hlBoxY = textSectionBottomLimit - hlBoxH;
+      drawEpaperHighlightsBox(ctx, card, col2X, hlBoxY, colW, hlBoxH, epaperFont);
+
+      // Hairline separator
+      ctx.strokeStyle = '#E5E7EB';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(startX + colW + colGap / 2, curY + 2);
+      ctx.lineTo(startX + colW + colGap / 2, textSectionBottomLimit - 4);
+      ctx.stroke();
+    }
+    // Option C4: Classic (Left Main Story ~58% width, Right Inset Highlights Box + Optional Ad)
+    else {
+      const maxPossibleLines = Math.max(6, Math.floor(remainingTextH / bodyLineH));
+      const colData = wrapStoryIntoDropCapLines(ctx, fullArticleText, articleLeftW, epaperFont, bodyFontSize, bodyLineH, hasDropCap);
+      renderStoryDropCapColumn(ctx, colData, startX, curY, articleLeftW, bodyFontSize, bodyLineH, epaperFont, 0, maxPossibleLines);
+
+      // Right Column: Inset Highlights Box (📍 मुख्य बिंदु) OR Highlights on top + Ad on bottom
+      const showRightAd = card.epaperAd?.showAd && (card.epaperAd.placement === 'auto_fill' || card.epaperAd.placement === 'right_column');
+      if (showRightAd) {
+        const fullRightH = textSectionBottomLimit - curY;
+        const hlBoxH = Math.min(230, Math.max(140, Math.round(fullRightH * 0.44)));
+        drawEpaperHighlightsBox(ctx, card, boxX, curY, boxW, hlBoxH, epaperFont);
+
+        const adY = curY + hlBoxH + 12;
+        const adH = textSectionBottomLimit - adY;
+        await drawEpaperAdBox(ctx, card.epaperAd!, boxX, adY, boxW, adH, epaperFont);
+      } else {
+        const boxH = Math.max(160, remainingTextH);
+        drawEpaperHighlightsBox(ctx, card, boxX, curY, boxW, boxH, epaperFont);
+      }
+    }
+  }
+
+  // Movable or Bottom Strip Advertisement (if enabled)
+  if (card.epaperAd?.showAd) {
+    const ad = card.epaperAd;
+    if (ad.placement === 'movable') {
+      const adX = startX + (bodyAreaW * (ad.x ?? 50)) / 100;
+      const adY = bodyAreaTop + (bodyAreaH * (ad.y ?? 60)) / 100;
+      const adW = (bodyAreaW * (ad.width ?? 45)) / 100;
+      const adH = (bodyAreaH * (ad.height ?? 25)) / 100;
+      await drawEpaperAdBox(ctx, ad, adX, adY, adW, adH, epaperFont);
+    } else if (hasBottomStrip) {
+      const stripY = bottomLimit - bottomStripH;
+      await drawEpaperAdBox(ctx, ad, startX, stripY, contentW, bottomStripH, epaperFont);
+    }
+  }
+
+  // Second Advertisement (Auto-Fill or Movable or Right Column - if enabled)
+  if (card.epaperSecondAd?.showAd) {
+    const ad2 = card.epaperSecondAd;
+    const rightColGap = 24;
+    const rightColW = Math.floor((contentW - rightColGap) / 2);
+    const rightColX = startX + rightColW + rightColGap;
+
+    if (ad2.placement === 'movable') {
+      const ad2X = startX + (bodyAreaW * (ad2.x ?? 52)) / 100;
+      const ad2Y = bodyAreaTop + (bodyAreaH * (ad2.y ?? 68)) / 100;
+      const ad2W = (bodyAreaW * (ad2.width ?? 44)) / 100;
+      const ad2H = (bodyAreaH * (ad2.height ?? 22)) / 100;
+      await drawEpaperAdBox(ctx, ad2, ad2X, ad2Y, ad2W, ad2H, epaperFont);
+    } else if (ad2.placement === 'bottom_strip') {
+      const stripY = bottomLimit - (hasBottomStrip ? bottomStripH * 2 : bottomStripH);
+      await drawEpaperAdBox(ctx, ad2, startX, stripY, contentW, bottomStripH, epaperFont);
+    } else if (ad2.placement === 'right_column') {
+      const ad2Y = curY;
+      const ad2H = Math.max(160, bottomLimit - curY);
+      await drawEpaperAdBox(ctx, ad2, rightColX, ad2Y, rightColW, ad2H, epaperFont);
+    } else if (ad2.placement === 'auto_fill') {
+      const ad2Y = Math.max(curY, bodyAreaTop + bodyAreaH * 0.55);
+      const ad2H = Math.max(140, bottomLimit - ad2Y);
+      await drawEpaperAdBox(ctx, ad2, rightColX, ad2Y, rightColW, ad2H, epaperFont);
+    }
+  }
+
+  // 8. Render Bottom Inline Photos (if 1_top_2_bottom or 2_column_bottom)
+  // Strictly placed at bottomPhotoY right above the footer so they NEVER get cut off or disappear!
+  if (hasBottomInlinePhotos) {
+    // Bottom Photo 1 (under left column)
+    const imgSecondSrc = card.images.second || card.images.main;
+    if (imgSecondSrc) {
+      try {
+        const bImg1 = await loadImage(imgSecondSrc);
+        const bCapH = card.epaperPhotoCaption2 ? 22 : 0;
+        const bImgH = inlinePhotoH - bCapH;
+
+        ctx.fillStyle = '#F3F4F6';
+        drawRoundedRect(ctx, startX, bottomPhotoY, articleLeftW, inlinePhotoH, 6);
+        ctx.fill();
+        ctx.strokeStyle = '#D1D5DB';
+        ctx.lineWidth = 1;
+        drawRoundedRect(ctx, startX, bottomPhotoY, articleLeftW, inlinePhotoH, 6);
+        ctx.stroke();
+
+        ctx.save();
+        drawRoundedRect(ctx, startX + 3, bottomPhotoY + 3, articleLeftW - 6, bImgH - 3, 4);
+        ctx.clip();
+        drawImageCover(ctx, bImg1, startX + 3, bottomPhotoY + 3, articleLeftW - 6, bImgH - 3, sCropX, sCropY, sZoom);
+        ctx.restore();
+
+        if (card.epaperPhotoCaption2) {
+          ctx.font = `italic 600 15px ${epaperFont}`;
+          ctx.fillStyle = '#4B5563';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`📷 ${card.epaperPhotoCaption2}`, startX + 8, bottomPhotoY + bImgH + bCapH / 2);
+        }
+      } catch (err) {
+        console.warn('Epaper bottom image 1 load error:', err);
+      }
+    }
+
+    // Bottom Photo 2 (under right highlights column)
+    const imgThirdSrc = card.images.third || card.images.second || card.images.main;
+    if (imgThirdSrc) {
+      try {
+        const bImg2 = await loadImage(imgThirdSrc);
+        const bCapH = card.epaperPhotoCaption3 ? 22 : 0;
+        const bImgH = inlinePhotoH - bCapH;
+
+        ctx.fillStyle = '#F3F4F6';
+        drawRoundedRect(ctx, boxX, bottomPhotoY, boxW, inlinePhotoH, 6);
+        ctx.fill();
+        ctx.strokeStyle = '#D1D5DB';
+        ctx.lineWidth = 1;
+        drawRoundedRect(ctx, boxX, bottomPhotoY, boxW, inlinePhotoH, 6);
+        ctx.stroke();
+
+        ctx.save();
+        drawRoundedRect(ctx, boxX + 3, bottomPhotoY + 3, boxW - 6, bImgH - 3, 4);
+        ctx.clip();
+        drawImageCover(ctx, bImg2, boxX + 3, bottomPhotoY + 3, boxW - 6, bImgH - 3, tCropX, tCropY, tZoom);
+        ctx.restore();
+
+        if (card.epaperPhotoCaption3) {
+          ctx.font = `italic 600 15px ${epaperFont}`;
+          ctx.fillStyle = '#4B5563';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`📷 ${card.epaperPhotoCaption3}`, boxX + 8, bottomPhotoY + bImgH + bCapH / 2);
+        }
+      } catch (err) {
+        console.warn('Epaper bottom image 2 load error:', err);
+      }
+    }
+  }
+
+  // 9. Watermark Overlay (Text or uploaded PNG Logo)
+  if (card.showWatermark || card.showSuperBreakingWatermark) {
+    await drawUniversalWatermark(ctx, width, height - footerBarHeight, card);
+  }
+
+  ctx.restore();
+}
+
+// Background for Text Breaking Jacket: Subtle 3D Isometric Geometric Hexagonal Mesh on Crisp Off-White
+async function drawGeometricTextBackground(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  text: string = 'AI GENERATED'
+  bgStyle?: 'light-geo' | 'pure-white' | 'dark-news' | 'custom-image',
+  customBgUrl?: string
 ) {
+  ctx.save();
+  if (bgStyle === 'custom-image' && customBgUrl) {
+    try {
+      const bgImg = await loadImage(customBgUrl);
+      ctx.drawImage(bgImg, 0, 0, width, height);
+      ctx.restore();
+      return;
+    } catch {
+      // Fallback to light-geo if custom image fails to load
+    }
+  }
+
+  if (bgStyle === 'pure-white') {
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+    return;
+  }
+
+  if (bgStyle === 'dark-news') {
+    ctx.fillStyle = '#090D16';
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+    return;
+  }
+
+  // Default: subtle isometric hexagonal / triangular pattern on crisp off-white
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
+  bgGrad.addColorStop(0, '#FFFFFF');
+  bgGrad.addColorStop(0.4, '#F8FAFC');
+  bgGrad.addColorStop(1, '#EEF2F6');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.strokeStyle = '#CBD5E1';
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.45;
+
+  const hexR = 52;
+  const hexH = hexR * Math.sqrt(3);
+
+  for (let y = -hexH; y < height + hexH * 2; y += hexH) {
+    for (let x = -hexR * 2; x < width + hexR * 3; x += hexR * 3) {
+      // Hexagon outline
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const rad = (Math.PI / 3) * i;
+        const hx = x + hexR * Math.cos(rad);
+        const hy = y + hexR * Math.sin(rad);
+        if (i === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      // Triangles inside hexagon
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + hexR, y);
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + hexR * Math.cos((Math.PI * 2) / 3), y + hexR * Math.sin((Math.PI * 2) / 3));
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + hexR * Math.cos((Math.PI * 4) / 3), y + hexR * Math.sin((Math.PI * 4) / 3));
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+// 3D Breaking News Badge for Text Breaking Jacket (9 Variations: 3D, Flat, Solid, Hindi)
+function drawTextBreaking3DBadge(
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  badgeCenterY: number,
+  style: TextBreakingBadgeStyle = 'breaking-3d-en',
+  customTitle?: string,
+  titleSize: 'sm' | 'md' | 'lg' = 'md'
+) {
+  ctx.save();
+  const centerX = Math.round(canvasWidth / 2);
+
+  // Apply scaling based on titleSize & text length
+  const baseScale = titleSize === 'sm' ? 0.8 : titleSize === 'lg' ? 1.15 : 1.0;
+  const textLen = customTitle ? customTitle.length : 12;
+  const lengthFactor = textLen > 18 ? 0.72 : textLen > 14 ? 0.82 : textLen > 10 ? 0.92 : 1.0;
+  const finalScale = baseScale * lengthFactor;
+
+  if (finalScale !== 1.0) {
+    ctx.translate(centerX, badgeCenterY);
+    ctx.scale(finalScale, finalScale);
+    ctx.translate(-centerX, -badgeCenterY);
+  }
+
+  // New Style 1: FLAT MODERN RED (Clean, Less 3D, High Readability)
+  if (style === 'breaking-flat-red') {
+    const word1 = customTitle ? customTitle.split(' ')[0] : 'BREAKING';
+    const word2 = customTitle ? customTitle.split(' ').slice(1).join(' ') || 'NEWS' : 'NEWS';
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = '900 62px "Impact", "Arial Black", "Montserrat", sans-serif';
+    const y1 = badgeCenterY - 38;
+    ctx.fillStyle = '#DC2626';
+    ctx.fillText(word1, centerX, y1);
+
+    ctx.font = '900 110px "Impact", "Arial Black", "Montserrat", sans-serif';
+    const y2 = badgeCenterY + 42;
+    ctx.fillStyle = '#B91C1C';
+    ctx.fillText(word2, centerX, y2);
+  } else if (style === 'breaking-solid-bar') {
+    // New Style 2: SOLID RED TV BAR (Solid Plate with crisp white text)
+    const text = customTitle || 'BREAKING NEWS';
+    ctx.font = '900 52px "Impact", "Montserrat", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const textW = ctx.measureText(text).width;
+    const barW = Math.max(520, textW + 120);
+    const barH = 82;
+    const barX = centerX - barW / 2;
+    const barY = badgeCenterY - barH / 2;
+
+    // Drop shadow
+    ctx.shadowColor = 'rgba(185, 28, 28, 0.45)';
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetY = 6;
+
+    // Solid red plate
+    const barGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    barGrad.addColorStop(0, '#991B1B');
+    barGrad.addColorStop(0.5, '#DC2626');
+    barGrad.addColorStop(1, '#991B1B');
+    ctx.fillStyle = barGrad;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 12);
+    ctx.fill();
+
+    // Border
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = 'rgba(254, 202, 202, 0.6)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Pulse dot + text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(barX + 36, badgeCenterY, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillText(text, centerX + 16, badgeCenterY + 2);
+  } else if (style === 'breaking-simple-hi') {
+    // New Style 3: SIMPLE HINDI BOLD (Clean Non-3D Hindi)
+    const word1 = customTitle ? customTitle.split(' ')[0] : 'ब्रेकिंग';
+    const word2 = customTitle ? customTitle.split(' ').slice(1).join(' ') || 'न्यूज़' : 'न्यूज़';
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = '900 70px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+    const y1 = badgeCenterY - 40;
+    ctx.fillStyle = '#DC2626';
+    ctx.fillText(word1, centerX, y1);
+
+    ctx.font = '900 114px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+    const y2 = badgeCenterY + 44;
+    ctx.fillStyle = '#991B1B';
+    ctx.fillText(word2, centerX, y2);
+  } else if (style === 'breaking-3d-en') {
+    // 1. 3D BOLD RED ENGLISH (BREAKING / NEWS) - Matches User's Sample!
+    const word1 = customTitle ? customTitle.split(' ')[0] : 'BREAKING';
+    const word2 = customTitle ? customTitle.split(' ').slice(1).join(' ') || 'NEWS' : 'NEWS';
+
+    // Word 1: BREAKING
+    ctx.font = '900 66px "Impact", "Arial Black", "Montserrat", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const y1 = badgeCenterY - 48;
+    // 3D Shadow Layers
+    for (let o = 5; o >= 1; o--) {
+      ctx.fillStyle = o <= 2 ? '#940c0c' : o <= 4 ? '#780909' : '#5c0707';
+      ctx.fillText(word1, centerX, y1 + o);
+    }
+    // Front Face
+    ctx.fillStyle = '#E01414';
+    ctx.fillText(word1, centerX, y1);
+
+    // Word 2: NEWS (Giant 3D Extruded)
+    ctx.font = '900 118px "Impact", "Arial Black", "Montserrat", sans-serif';
+    const y2 = badgeCenterY + 44;
+
+    // Drop Shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 8;
+
+    // 3D Extrusion
+    for (let o = 7; o >= 1; o--) {
+      ctx.shadowColor = 'transparent';
+      ctx.fillStyle = o <= 2 ? '#990c0c' : o <= 4 ? '#800909' : '#4d0505';
+      ctx.fillText(word2, centerX, y2 + o);
+    }
+
+    // Front Face with vibrant gradient
+    const newsGrad = ctx.createLinearGradient(0, y2 - 60, 0, y2 + 60);
+    newsGrad.addColorStop(0, '#FF2020');
+    newsGrad.addColorStop(0.5, '#E31212');
+    newsGrad.addColorStop(1, '#B90D0D');
+    ctx.fillStyle = newsGrad;
+    ctx.fillText(word2, centerX, y2);
+
+    // Subtle specular highlight on top bevel
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeText(word2, centerX, y2 - 1);
+    ctx.restore();
+  } else if (style === 'breaking-3d-hi') {
+    // 2. 3D BOLD RED HINDI (ब्रेकिंग / न्यूज़)
+    const word1 = customTitle ? customTitle.split(' ')[0] : 'ब्रेकिंग';
+    const word2 = customTitle ? customTitle.split(' ').slice(1).join(' ') || 'न्यूज़' : 'न्यूज़';
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Word 1: ब्रेकिंग
+    ctx.font = '900 74px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+    const y1 = badgeCenterY - 48;
+    for (let o = 5; o >= 1; o--) {
+      ctx.fillStyle = o <= 2 ? '#940c0c' : '#5c0707';
+      ctx.fillText(word1, centerX, y1 + o);
+    }
+    ctx.fillStyle = '#E01414';
+    ctx.fillText(word1, centerX, y1);
+
+    // Word 2: न्यूज़
+    ctx.font = '900 120px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+    const y2 = badgeCenterY + 46;
+    for (let o = 7; o >= 1; o--) {
+      ctx.fillStyle = o <= 2 ? '#990c0c' : '#4d0505';
+      ctx.fillText(word2, centerX, y2 + o);
+    }
+    const hiGrad = ctx.createLinearGradient(0, y2 - 60, 0, y2 + 60);
+    hiGrad.addColorStop(0, '#FF2020');
+    hiGrad.addColorStop(1, '#B90D0D');
+    ctx.fillStyle = hiGrad;
+    ctx.fillText(word2, centerX, y2);
+  } else if (style === 'breaking-ribbon') {
+    // 3. 3D GLOSSY RED RIBBON
+    const ribbonText = customTitle || 'BREAKING NEWS';
+    ctx.font = '900 48px "Impact", "Montserrat", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const textW = ctx.measureText(ribbonText).width;
+    const bannerW = Math.max(500, textW + 120);
+    const bannerH = 78;
+    const bannerX = centerX - bannerW / 2;
+    const bannerY = badgeCenterY - bannerH / 2;
+
+    // Outer Drop Shadow
+    ctx.shadowColor = 'rgba(200, 0, 0, 0.4)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 8;
+
+    // Crimson gradient
+    const grad = ctx.createLinearGradient(0, bannerY, 0, bannerY + bannerH);
+    grad.addColorStop(0, '#FF1A1A');
+    grad.addColorStop(0.5, '#C80000');
+    grad.addColorStop(1, '#7A0000');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.roundRect(bannerX, bannerY, bannerW, bannerH, 12);
+    ctx.fill();
+
+    // Gold border trim
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = '#FBBF24';
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+
+    // Text with Stars
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(`★ ${ribbonText} ★`, centerX, badgeCenterY + 2);
+  } else if (style === 'breaking-gold') {
+    // 4. ⚡ बड़ी ख़बर / BIG BREAKING
+    const titleText = customTitle || 'बड़ी ख़बर';
+
+    // Top Pill
+    const pillW = 260;
+    const pillH = 38;
+    const pillX = centerX - pillW / 2;
+    const pillY = badgeCenterY - 58;
+    const pillGrad = ctx.createLinearGradient(pillX, 0, pillX + pillW, 0);
+    pillGrad.addColorStop(0, '#991B1B');
+    pillGrad.addColorStop(0.5, '#DC2626');
+    pillGrad.addColorStop(1, '#991B1B');
+    ctx.fillStyle = pillGrad;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, 19);
+    ctx.fill();
+    ctx.strokeStyle = '#FBBF24';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = '900 20px "Baloo 2", sans-serif';
+    ctx.fillStyle = '#FEF08A';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('⚡ BIG BREAKING', centerX, pillY + pillH / 2 + 1);
+
+    // Giant Golden Text
+    ctx.font = '900 96px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+    const y2 = badgeCenterY + 34;
+    const goldGrad = ctx.createLinearGradient(0, y2 - 50, 0, y2 + 50);
+    goldGrad.addColorStop(0, '#FFDE00');
+    goldGrad.addColorStop(1, '#E65100');
+    ctx.fillStyle = goldGrad;
+    ctx.fillText(titleText, centerX, y2);
+  } else if (style === 'breaking-duotone') {
+    // 5. RED & BLACK DUOTONE
+    const word1 = customTitle ? customTitle.split(' ')[0] : 'BREAKING';
+    const word2 = customTitle ? customTitle.split(' ').slice(1).join(' ') || 'NEWS' : 'NEWS';
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.font = '900 70px "Impact", "Arial Black", sans-serif';
+    const y1 = badgeCenterY - 44;
+    ctx.fillStyle = '#DC2626';
+    ctx.fillText(word1, centerX, y1);
+
+    ctx.font = '900 120px "Impact", "Arial Black", sans-serif';
+    const y2 = badgeCenterY + 48;
+    ctx.fillStyle = '#0F172A';
+    ctx.fillText(word2, centerX, y2);
+  } else {
+    // 6. EXCLUSIVE BREAKING
+    const pillW = 200;
+    const pillH = 34;
+    const pillX = centerX - pillW / 2;
+    const pillY = badgeCenterY - 54;
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.font = '900 18px "Montserrat", sans-serif';
+    ctx.fillStyle = '#FBBF24';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('EXCLUSIVE', centerX, pillY + pillH / 2);
+
+    ctx.font = '900 86px "Impact", "Arial Black", sans-serif';
+    const y2 = badgeCenterY + 36;
+    ctx.fillStyle = '#E01414';
+    ctx.fillText(customTitle || 'BREAKING NEWS', centerX, y2);
+  }
+
+  ctx.restore();
+}
+
+// Speaker Attribution for Quote (बयान) template: Single Line Centered
+// Speaker Name (larger, bold white) + separator in yellow + Designation/Title (crisp light tone)
+function drawSpeakerAttribution(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  speakerY: number,
+  speakerName: string,
+  speakerTitle?: string
+) {
+  if (!speakerName && !speakerTitle) return;
+  ctx.save();
+  ctx.textBaseline = 'middle';
+
+  let cleanName = speakerName.trim();
+  if (cleanName && !cleanName.startsWith('—') && !cleanName.startsWith('-')) {
+    cleanName = `— ${cleanName}`;
+  }
+
+  const cleanTitle = speakerTitle ? speakerTitle.trim() : '';
+
+  const nameFont = '900 36px "Baloo 2", sans-serif';
+  const sepFont = '800 30px "Baloo 2", sans-serif';
+  const titleFont = '700 28px "Baloo 2", sans-serif';
+
+  ctx.font = nameFont;
+  const nameW = ctx.measureText(cleanName).width;
+
+  let sepW = 0;
+  let titleW = 0;
+  const sepText = ' | ';
+
+  if (cleanTitle) {
+    ctx.font = sepFont;
+    sepW = ctx.measureText(sepText).width;
+    ctx.font = titleFont;
+    titleW = ctx.measureText(cleanTitle).width;
+  }
+
+  const totalW = nameW + sepW + titleW;
+  let startX = Math.round((width - totalW) / 2);
+
+  // Open text layout per user request (no round box/pill), with clean drop shadow
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+
+  // Draw Speaker Name (slightly bigger, bold white)
+  ctx.font = nameFont;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'left';
+  ctx.fillText(cleanName, startX, speakerY);
+  startX += nameW;
+
+  // Draw Separator and Designation / Title
+  if (cleanTitle) {
+    ctx.font = sepFont;
+    ctx.fillStyle = '#FFE600';
+    ctx.fillText(sepText, startX, speakerY);
+    startX += sepW;
+
+    ctx.font = titleFont;
+    ctx.fillStyle = '#E2E8F0';
+    ctx.fillText(cleanTitle, startX, speakerY);
+  }
+
+  ctx.restore();
+}
+
+// Vertical Photo Disclaimer Watermark along Left Edge/Wall, Rotated 90° (AI GENERATED or प्रतीकात्मक फोटो)
+function drawPhotoDisclaimerWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  card: NewsCardData
+) {
+  const isDisclaimerActive =
+    card.photoDisclaimerType === 'ai' ||
+    card.photoDisclaimerType === 'representative' ||
+    (card.showAiGenerated && card.photoDisclaimerType !== 'none');
+
+  if (!isDisclaimerActive) return;
+
+  const disclaimerText =
+    card.photoDisclaimerType === 'representative'
+      ? card.representativePhotoText || 'प्रतीकात्मक फोटो'
+      : card.aiGeneratedText || 'AI GENERATED';
+
   ctx.save();
   // Placed right along the left wall of the photo area
   const x = 22;
@@ -1078,20 +3414,19 @@ function drawAiGeneratedWatermark(
   ctx.translate(x, y);
   ctx.rotate(-Math.PI / 2);
 
-  ctx.font = '800 14px system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.font = '800 14px "Baloo 2", system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
   if ('letterSpacing' in ctx) {
-    (ctx as any).letterSpacing = '3px';
+    (ctx as any).letterSpacing = '2px';
   }
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const uppercaseText = (text || 'AI GENERATED').toUpperCase();
-  // Generous horizontal space (50px padding) before and after text so it never touches the shadow or edge
-  const textWidth = ctx.measureText(uppercaseText).width + 50;
+  // Generous horizontal space (44px padding) before and after text
+  const textWidth = ctx.measureText(disclaimerText).width + 44;
   const pillH = 26;
 
   // Translucent dark backdrop
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.60)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
   ctx.beginPath();
   ctx.roundRect(-textWidth / 2, -pillH / 2, textWidth, pillH, 4);
   ctx.fill();
@@ -1101,9 +3436,75 @@ function drawAiGeneratedWatermark(
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Low opacity white uppercase text
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-  ctx.fillText(uppercaseText, 0, 1);
+  // Low opacity white text
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.90)';
+  ctx.fillText(disclaimerText, 0, 1);
+
+  ctx.restore();
+}
+
+function drawAiGeneratedWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  text: string = 'AI GENERATED'
+) {
+  ctx.save();
+  const x = 22;
+  const y = height * 0.44;
+  ctx.translate(x, y);
+  ctx.rotate(-Math.PI / 2);
+
+  ctx.font = '800 14px "Baloo 2", system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+  if ('letterSpacing' in ctx) {
+    (ctx as any).letterSpacing = '2px';
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const textWidth = ctx.measureText(text).width + 44;
+  const pillH = 26;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+  ctx.beginPath();
+  ctx.roundRect(-textWidth / 2, -pillH / 2, textWidth, pillH, 4);
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.90)';
+  ctx.fillText(text, 0, 1);
+
+  ctx.restore();
+}
+
+// Vertical Date Stamp along Right Edge, Rotated 90°, Positioned near header without box
+function drawDateStamp(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  dateText: string
+) {
+  ctx.save();
+  // Placed right along the right wall near the top/header area
+  const x = width - 24;
+  const y = Math.round(height * 0.22);
+  ctx.translate(x, y);
+  ctx.rotate((90 * Math.PI) / 180); // 90° clockwise
+
+  ctx.font = '700 20px "Baloo 2", "Noto Sans Devanagari", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Subtle shadow for readability without any background box
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+  ctx.fillText(dateText, 0, 0);
 
   ctx.restore();
 }
@@ -1141,13 +3542,14 @@ interface WordToken {
   isHighlight: boolean;
 }
 
-// Parse words and break into maximum 3 lines for clean news caption
+// Parse words and break into lines (supports 3 lines for standard breaking news, or 4-6 lines for quotes/jackets)
 function getHeadlineLines(
   ctx: CanvasRenderingContext2D,
   rawText: string,
   highlightWords: string[],
   maxWidth: number,
-  fontSize: number
+  fontSize: number,
+  maxLines: number = 3
 ): WordToken[][] {
   ctx.save();
   ctx.font = `800 ${fontSize}px "Baloo 2", "Noto Sans Devanagari", sans-serif`;
@@ -1158,11 +3560,21 @@ function getHeadlineLines(
     let lastIndex = 0;
     let match;
 
+    const checkIsHl = (word: string): boolean => {
+      if (!highlightWords || highlightWords.length === 0) return false;
+      const cleanW = word.trim().toLowerCase();
+      return highlightWords.some((hw) => {
+        if (!hw) return false;
+        const cleanHw = hw.trim().toLowerCase();
+        return cleanW.includes(cleanHw) || cleanHw.includes(cleanW);
+      });
+    };
+
     while ((match = yellowRegex.exec(chunk)) !== null) {
       if (match.index > lastIndex) {
         const regularChunk = chunk.substring(lastIndex, match.index);
         for (const w of regularChunk.split(/[ \t]+/)) {
-          if (w && w.trim()) tokens.push({ text: w.trim(), isHighlight: false });
+          if (w && w.trim()) tokens.push({ text: w.trim(), isHighlight: checkIsHl(w) });
         }
       }
       const highlightChunk = match[1];
@@ -1175,17 +3587,8 @@ function getHeadlineLines(
     if (lastIndex < chunk.length) {
       const tailChunk = chunk.substring(lastIndex);
       for (const w of tailChunk.split(/[ \t]+/)) {
-        if (w && w.trim()) tokens.push({ text: w.trim(), isHighlight: false });
+        if (w && w.trim()) tokens.push({ text: w.trim(), isHighlight: checkIsHl(w) });
       }
-    }
-
-    if (!chunk.includes('[yellow]') && highlightWords && highlightWords.length > 0) {
-      tokens.forEach((t) => {
-        const matchWord = highlightWords.some((hw) =>
-          hw && (t.text.toLowerCase().includes(hw.toLowerCase()) || hw.toLowerCase().includes(t.text.toLowerCase()))
-        );
-        if (matchWord) t.isHighlight = true;
-      });
     }
 
     return tokens;
@@ -1241,10 +3644,10 @@ function getHeadlineLines(
     }
   }
 
-  // Cap at 3 lines as requested: "फुटर पर तीन लाइन में कैप्शन जाएगा"
-  if (lines.length > 3) {
-    lines.splice(3);
-    const lastLine = lines[2];
+  // Cap lines only if maxLines > 0 (standard cards default to 3 lines, jackets can take 4-6 lines without truncation)
+  if (maxLines > 0 && lines.length > maxLines) {
+    lines.splice(maxLines);
+    const lastLine = lines[maxLines - 1];
     if (lastLine && lastLine.length > 0) {
       const last = lastLine[lastLine.length - 1];
       if (!last.text.endsWith('...')) {
@@ -1338,32 +3741,123 @@ async function drawSuperBreakingRibbon(
   ctx.restore();
 }
 
-// Render Subtle Exclusive Watermark across photo area (15% opacity)
-function drawSuperBreakingWatermark(
+// Crisp Double Quotation Mark Vector Icon (Opening or Closing)
+function drawQuoteVectorIcon(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  size: number = 22,
+  isClosing: boolean = false
+) {
+  ctx.save();
+  ctx.translate(centerX, centerY);
+  if (!isClosing) {
+    ctx.rotate(Math.PI);
+  }
+  ctx.fillStyle = '#000000';
+
+  const scale = size / 24;
+  const drawSingleComma = (ox: number) => {
+    ctx.save();
+    ctx.translate(ox, 0);
+
+    // 1. Head circle
+    ctx.beginPath();
+    ctx.arc(0, -3.5 * scale, 4.2 * scale, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 2. Smooth curved tail pointing down and curving left
+    ctx.beginPath();
+    ctx.moveTo(3.5 * scale, -2.5 * scale);
+    ctx.bezierCurveTo(3.5 * scale, 2.5 * scale, 1 * scale, 6.5 * scale, -4 * scale, 8.5 * scale);
+    ctx.lineTo(-3.8 * scale, 6.5 * scale);
+    ctx.bezierCurveTo(-0.5 * scale, 4 * scale, 1 * scale, 1.5 * scale, 1 * scale, -2.5 * scale);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  };
+
+  drawSingleComma(-6 * scale);
+  drawSingleComma(6 * scale);
+  ctx.restore();
+}
+
+// Render Subtle Watermark across canvas/photo area with Text or uploaded PNG Image Logo
+async function drawUniversalWatermark(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  watermarkText: string = '⚡ सुपर ब्रेकिंग',
-  opacity: number = 0.15
+  card: NewsCardData
 ) {
+  const isImageWatermark = card.watermarkType === 'image' && !!card.watermarkImage;
+  const opacity = card.watermarkOpacity ?? (card.breakingWatermarkOpacity ?? 0.12);
+  const color = card.watermarkColor || (card.breakingWatermarkColor ?? 'white');
+
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, width, height);
   ctx.clip();
 
-  ctx.rotate((-20 * Math.PI) / 180);
-  ctx.font = '900 36px "Baloo 2", sans-serif';
-  ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  if (isImageWatermark && card.watermarkImage) {
+    try {
+      const wmImg = await loadImage(card.watermarkImage);
+      ctx.globalAlpha = opacity;
 
-  const stepX = 380;
-  const stepY = 130;
-  for (let y = -height * 1.5; y < height * 2.5; y += stepY) {
-    for (let x = -width * 1.5; x < width * 2.5; x += stepX) {
-      ctx.fillText(watermarkText, x, y);
+      // Small logo width repeated in a neat diagonal staggered grid
+      const logoW = card.watermarkScale || 96;
+      const logoH = (wmImg.height / (wmImg.width || 1)) * logoW;
+      const stepX = logoW + 90;
+      const stepY = logoH + 70;
+
+      ctx.translate(width / 2, height / 2);
+      ctx.rotate((-22 * Math.PI) / 180);
+      ctx.translate(-width / 2, -height / 2);
+
+      for (let y = -height * 0.8; y < height * 1.8; y += stepY) {
+        // Stagger every other row
+        const rowOffset = (Math.round(y / stepY) % 2 === 0) ? 0 : stepX / 2;
+        for (let x = -width * 0.8; x < width * 1.8; x += stepX) {
+          ctx.drawImage(wmImg, x + rowOffset, y, logoW, logoH);
+        }
+      }
+    } catch (err) {
+      console.warn('Universal watermark image load error:', err);
+    }
+  } else {
+    // Text Watermark
+    ctx.rotate((-22 * Math.PI) / 180);
+    const fontSize = card.watermarkScale || 32;
+    ctx.font = `900 ${fontSize}px Arial, Helvetica, sans-serif`;
+
+    if (color === 'black') {
+      ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
+    } else if (color === 'red') {
+      ctx.fillStyle = `rgba(220, 38, 38, ${opacity})`;
+    } else {
+      ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+    }
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const textToDraw = (
+      card.watermarkText ||
+      card.breakingWatermarkText ||
+      'BREAKING NEWS WALA'
+    ).toUpperCase();
+
+    const stepX = Math.max(320, textToDraw.length * (fontSize * 0.65) + 110);
+    const stepY = fontSize * 3.4;
+
+    for (let y = -height * 1.5; y < height * 2.5; y += stepY) {
+      const rowOffset = (Math.round(y / stepY) % 2 === 0) ? 0 : stepX / 2;
+      for (let x = -width * 1.5; x < width * 2.5; x += stepX) {
+        ctx.fillText(textToDraw, x + rowOffset, y);
+      }
     }
   }
+
   ctx.restore();
 }
 
@@ -1378,11 +3872,15 @@ function drawRenderedHeadlineLines(
   lineHeight: number,
   align: 'justify' | 'center' | 'left' = 'justify',
   margin: number = 48,
-  isLightBackground: boolean = false
+  isLightBackground: boolean = false,
+  disableStroke: boolean = false
 ) {
   ctx.save();
   ctx.font = `800 ${fontSize}px "Baloo 2", "Noto Sans Devanagari", sans-serif`;
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
   const spaceWidth = ctx.measureText(' ').width;
   const targetLineWidth = canvasWidth - margin * 2;
 
@@ -1436,9 +3934,9 @@ function drawRenderedHeadlineLines(
     line.forEach((token) => {
       const wordW = ctx.measureText(token.text).width;
 
-      if (!isLightBackground) {
+      if (!isLightBackground && !disableStroke) {
         // Heavy stroke shadow for punchy readability
-        ctx.lineWidth = 7;
+        ctx.lineWidth = Math.min(6, Math.max(3, fontSize * 0.08));
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.95)';
         ctx.strokeText(token.text, curX, curY);
       }

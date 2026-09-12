@@ -1,21 +1,150 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { NewsCardData } from '../types';
-import { MapPin } from 'lucide-react';
+import { MapPin, Quote } from 'lucide-react';
 import { HeaderGraphic } from './HeaderGraphic';
 import { FooterGraphic } from './FooterGraphic';
+import { TextBreakingBadge } from './TextBreakingBadge';
+import { getActiveFooterPng } from '../lib/footerUtils';
+import { getActiveHeaderPng } from '../lib/headerUtils';
+import { getEffectiveSpeaker } from '../lib/speakerUtils';
+import { getFormattedHindiDate } from '../lib/dateUtils';
 
 interface CardPreviewProps {
   card: NewsCardData;
   scale?: number;
   className?: string;
+  onChange?: (updates: Partial<NewsCardData>) => void;
 }
 
-export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, className }) => {
+const FALLBACK_NEWS_BG =
+  'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="%2318181b"/><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%25" stop-color="%2327272a"/><stop offset="100%25" stop-color="%2309090b"/></linearGradient></defs><rect width="1080" height="1080" fill="url(%23g)"/><circle cx="540" cy="460" r="120" fill="%2327272a" stroke="%233f3f46" stroke-width="4"/><path d="M480 460h120M540 400v120" stroke="%23eab308" stroke-width="7" stroke-linecap="round"/><text x="540" y="640" fill="%23facc15" font-size="32" font-family="sans-serif" font-weight="bold" text-anchor="middle">फोटो लोड हो रही है या अपलोड करें</text><text x="540" y="690" fill="%23a1a1aa" font-size="22" font-family="sans-serif" text-anchor="middle">गैलरी से खबर की फोटो लगाएं</text></svg>';
+
+const handleImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+  const target = e.currentTarget;
+  target.onerror = null;
+  target.src = FALLBACK_NEWS_BG;
+};
+
+export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, className, onChange }) => {
   const isSuperBreaking = card.frameDesign === 'jacket-breaking-red';
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomPlateRef = useRef<HTMLDivElement>(null);
+  const contentAreaRef = useRef<HTMLDivElement>(null);
+  const bodyAreaRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(480);
   const [bottomPlateHeight, setBottomPlateHeight] = useState<number>(146);
+
+  // Interactive Movable Ad Box State
+  const [isDraggingAd, setIsDraggingAd] = useState(false);
+  const [isResizingAd, setIsResizingAd] = useState(false);
+  const dragStartRef = useRef<{ target: 'ad1' | 'ad2'; startX: number; startY: number; initX: number; initY: number; initW: number; initH: number } | null>(null);
+
+  const handleAdMouseDown = (e: React.MouseEvent, target: 'ad1' | 'ad2' = 'ad1') => {
+    e.stopPropagation();
+    if (!onChange) return;
+    setIsDraggingAd(true);
+    const adObj = target === 'ad2' ? card.epaperSecondAd : card.epaperAd;
+    dragStartRef.current = {
+      target,
+      startX: e.clientX,
+      startY: e.clientY,
+      initX: adObj?.x ?? (target === 'ad2' ? 52 : 50),
+      initY: adObj?.y ?? (target === 'ad2' ? 68 : 60),
+      initW: adObj?.width ?? (target === 'ad2' ? 44 : 45),
+      initH: adObj?.height ?? (target === 'ad2' ? 22 : 25),
+    };
+  };
+
+  const handleResizeMouseDown = (e: React.MouseEvent, target: 'ad1' | 'ad2' = 'ad1') => {
+    e.stopPropagation();
+    if (!onChange) return;
+    setIsResizingAd(true);
+    const adObj = target === 'ad2' ? card.epaperSecondAd : card.epaperAd;
+    dragStartRef.current = {
+      target,
+      startX: e.clientX,
+      startY: e.clientY,
+      initX: adObj?.x ?? (target === 'ad2' ? 52 : 50),
+      initY: adObj?.y ?? (target === 'ad2' ? 68 : 60),
+      initW: adObj?.width ?? (target === 'ad2' ? 44 : 45),
+      initH: adObj?.height ?? (target === 'ad2' ? 22 : 25),
+    };
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const container = bodyAreaRef.current || contentAreaRef.current;
+      if (!dragStartRef.current || !container) return;
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      const deltaXPercent = ((e.clientX - dragStartRef.current.startX) / rect.width) * 100;
+      const deltaYPercent = ((e.clientY - dragStartRef.current.startY) / rect.height) * 100;
+      const target = dragStartRef.current.target;
+      const curAd = target === 'ad2' ? card.epaperSecondAd : card.epaperAd;
+
+      if (isDraggingAd) {
+        const curW = curAd?.width ?? 45;
+        const curH = curAd?.height ?? 25;
+        const newX = Math.max(0, Math.min(100 - curW, Math.round(dragStartRef.current.initX + deltaXPercent)));
+        const newY = Math.max(0, Math.min(100 - curH, Math.round(dragStartRef.current.initY + deltaYPercent)));
+        if (target === 'ad2') {
+          onChange?.({
+            epaperSecondAd: {
+              ...(card.epaperSecondAd || ({} as any)),
+              x: newX,
+              y: newY,
+            },
+          });
+        } else {
+          onChange?.({
+            epaperAd: {
+              ...card.epaperAd!,
+              x: newX,
+              y: newY,
+            },
+          });
+        }
+      } else if (isResizingAd) {
+        const curX = curAd?.x ?? 0;
+        const curY = curAd?.y ?? 0;
+        const newW = Math.max(18, Math.min(100 - curX, Math.round(dragStartRef.current.initW + deltaXPercent)));
+        const newH = Math.max(10, Math.min(100 - curY, Math.round(dragStartRef.current.initH + deltaYPercent)));
+        if (target === 'ad2') {
+          onChange?.({
+            epaperSecondAd: {
+              ...(card.epaperSecondAd || ({} as any)),
+              width: newW,
+              height: newH,
+            },
+          });
+        } else {
+          onChange?.({
+            epaperAd: {
+              ...card.epaperAd!,
+              width: newW,
+              height: newH,
+            },
+          });
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingAd(false);
+      setIsResizingAd(false);
+      dragStartRef.current = null;
+    };
+
+    if (isDraggingAd || isResizingAd) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingAd, isResizingAd, card.epaperAd, onChange]);
 
   // Synchronize container width with ResizeObserver for 100% exact 1080px canvas font matching
   useEffect(() => {
@@ -54,6 +183,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
     card.headline,
     card.formattedHeadline,
     card.headlineFontSize,
+    card.showBreakingRibbon,
     card.breakingRibbonOffsetY,
     card.breakingRibbonScale,
     card.socialHandle,
@@ -62,9 +192,9 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
 
   // Exact proportional font size & padding matching CanvasExporter 1080px canvas
   const previewScale = containerWidth / 1080;
-  const canvasTargetFontSize = Math.max(54, Math.min(80, Math.round((card.headlineFontSize || 30) * 2.15)));
-  const effectivePreviewFontSize = Math.max(16, Math.round(canvasTargetFontSize * previewScale));
-  const effectivePaddingX = Math.max(16, Math.round(48 * previewScale));
+  const canvasTargetFontSize = Math.max(46, Math.min(86, Math.round((card.headlineFontSize || 30) * 2.15)));
+  const effectivePreviewFontSize = Math.max(10, Math.round(canvasTargetFontSize * previewScale));
+  const effectivePaddingX = Math.max(10, Math.round(48 * previewScale));
   // Parse formatted headline with [yellow]...[/yellow] or highlightWords, preserving manual lines
   const renderFormattedHeadline = () => {
     const raw = card.formattedHeadline || card.headline;
@@ -108,8 +238,21 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
       }
 
       const isSuperBreaking = card.frameDesign === 'jacket-breaking-red';
-      const baseTextColor = isSuperBreaking ? '#000000' : '#FFFFFF';
-      const highlightColor = isSuperBreaking
+      const isTextBreaking = card.frameDesign === 'jacket-text-breaking';
+      const isMorning = card.frameDesign === 'jacket-morning';
+      const isIvory = isMorning && card.morningDesignStyle === 'editorial-ivory';
+      const isEmerald = isMorning && card.morningDesignStyle === 'emerald-zen';
+      const isLightTemplate = isSuperBreaking || isTextBreaking || isIvory;
+
+      // Base and highlight colors
+      const baseTextColor = isIvory ? '#111827' : (isMorning ? '#FFFFFF' : (isLightTemplate ? '#000000' : '#FFFFFF'));
+      const highlightColor = isIvory
+        ? (card.highlightColor && card.highlightColor !== '#FFE600' ? card.highlightColor : '#B45309')
+        : isEmerald
+        ? '#FACC15'
+        : isMorning
+        ? (card.highlightColor || '#FFE600')
+        : isLightTemplate
         ? (card.highlightColor && card.highlightColor !== '#FFE600' ? card.highlightColor : '#DC2626')
         : (card.highlightColor || '#FFE600');
 
@@ -122,7 +265,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
           key={idx}
           style={{
             color: part.isYellow ? highlightColor : baseTextColor,
-            textShadow: isSuperBreaking ? 'none' : '0 2px 8px rgba(0,0,0,0.9), 0 4px 16px rgba(0,0,0,0.9)',
+            textShadow: isIvory ? 'none' : (isLightTemplate ? 'none' : '0 2px 8px rgba(0,0,0,0.9), 0 4px 16px rgba(0,0,0,0.9)'),
           }}
           className={part.isYellow ? 'font-black' : 'font-extrabold'}
         >
@@ -173,6 +316,26 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
   const fourthStyle = getImageStyle(card.imagePositions?.fourth);
   const insetCircleStyle = getImageStyle(card.imagePositions?.insetCircle);
 
+  // E-Paper authentic newspaper font family resolution
+  const getEpaperFontFamily = (family?: string) => {
+    switch (family) {
+      case 'serif-traditional':
+        return "'Noto Serif Devanagari', Georgia, serif";
+      case 'serif-martel':
+        return "'Martel', Georgia, serif";
+      case 'sans-modern':
+        return "'Noto Sans Devanagari', sans-serif";
+      case 'baloo':
+        return "'Baloo 2', cursive, sans-serif";
+      default:
+        return "'Noto Serif Devanagari', Georgia, serif";
+    }
+  };
+
+  const epaperFontFamily = getEpaperFontFamily(card.epaperFontFamily);
+  const epaperPaperBg = card.epaperTheme === 'pure-white' ? '#FFFFFF' : '#FAF8F2';
+  const hasDropCap = card.epaperDropCap !== false;
+
   return (
     <div
       ref={containerRef}
@@ -183,24 +346,97 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
       }}
     >
       {/* 1. BACKGROUND PHOTOS ACCORDING TO USER'S SELECTED LAYOUT */}
+      {card.frameDesign === 'jacket-morning' ? (
+        <div className="absolute inset-0 z-0 bg-neutral-950 overflow-hidden">
+          {(card.morningCustomBgUrl || (card.images.main && card.images.main.trim().length > 0)) ? (
+            <div className="w-full h-full relative">
+              <img
+                src={card.morningCustomBgUrl || card.images.main}
+                alt="Morning Background"
+                className="w-full h-full object-cover transform scale-105"
+                crossOrigin="anonymous"
+              />
+              {/* Subtle top & bottom vignette to protect custom header & footer PNGs */}
+              <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/60 via-black/20 to-transparent pointer-events-none" />
+              <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/70 via-black/30 to-transparent pointer-events-none" />
+              {/* Center subtle soft dark scrim for high typography contrast */}
+              <div className="absolute inset-0 bg-black/25 pointer-events-none" />
+            </div>
+          ) : card.morningBgStyle === 'sunrise' ? (
+            <div className="w-full h-full bg-gradient-to-br from-amber-600 via-orange-500 to-amber-800" />
+          ) : card.morningBgStyle === 'green-nature' ? (
+            <div className="w-full h-full bg-gradient-to-br from-emerald-800 via-teal-900 to-green-950" />
+          ) : (
+            <div className="w-full h-full relative bg-gradient-to-b from-amber-950/80 via-neutral-950 to-neutral-950 flex items-center justify-center">
+              <div className="absolute -top-10 -right-10 w-96 h-96 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-10 -left-10 w-96 h-96 bg-orange-600/20 rounded-full blur-3xl pointer-events-none" />
+            </div>
+          )}
+        </div>
+      ) : card.frameDesign === 'jacket-epaper' ? (
+        <div className="absolute inset-0 z-0 bg-white overflow-hidden" />
+      ) : card.frameDesign === 'jacket-text-breaking' ? (
+        <div className="absolute inset-0 z-0 bg-[#F6F7F9] overflow-hidden">
+          {card.textBreakingBgStyle === 'custom-image' && card.textBreakingCustomBgUrl ? (
+            <img
+              src={card.textBreakingCustomBgUrl}
+              alt="Custom Breaking Background"
+              className="w-full h-full object-cover"
+            />
+          ) : card.textBreakingBgStyle === 'pure-white' ? (
+            <div className="w-full h-full bg-white" />
+          ) : card.textBreakingBgStyle === 'dark-news' ? (
+            <div className="w-full h-full bg-[#090D16]" />
+          ) : (
+            <>
+              {/* Geometric isometric hexagonal / triangular mesh matching ABP Live sample */}
+              <svg className="absolute inset-0 w-full h-full opacity-35 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id="text-breaking-mesh" width="60" height="103.92" patternUnits="userSpaceOnUse">
+                    <path
+                      d="M30 0 L60 17.32 L60 51.96 L30 69.28 L0 51.96 L0 17.32 Z M30 51.96 L60 69.28 L60 103.92 L30 121.24 L0 103.92 L0 69.28 Z"
+                      fill="none"
+                      stroke="#CBD5E1"
+                      strokeWidth="0.8"
+                    />
+                    <path
+                      d="M30 0 L30 69.28 M0 17.32 L60 51.96 M60 17.32 L0 51.96 M30 51.96 L30 121.24 M0 69.28 L60 103.92 M60 69.28 L0 103.92"
+                      fill="none"
+                      stroke="#E2E8F0"
+                      strokeWidth="0.5"
+                    />
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#text-breaking-mesh)" />
+              </svg>
+              <div className="absolute inset-0 bg-gradient-to-b from-white/70 via-transparent to-neutral-900/5 pointer-events-none" />
+            </>
+          )}
+        </div>
+      ) : (
       <div
         className="absolute inset-x-0 top-0 z-0 overflow-hidden bg-neutral-950 transition-all duration-150"
         style={{
           bottom: isSuperBreaking
             ? `${bottomPlateHeight}px`
             : card.frameDesign === 'jacket-quote'
-            ? '52%'
+            ? '48%'
             : '84px',
         }}
       >
+        {/* Fade-out at the bottom of the photo into solid black for Quote Template */}
+        {card.frameDesign === 'jacket-quote' && (
+          <div className="absolute inset-x-0 bottom-0 h-36 sm:h-44 bg-gradient-to-b from-transparent via-black/75 to-black pointer-events-none z-10" />
+        )}
         {/* Layout 1: Single Image (Clear, Bright, Prominent) */}
         {(card.layout === 'single' || !card.layout) && (
           <div className="w-full h-full overflow-hidden relative">
             <img
               src={card.images.main}
-              alt="News background"
+              alt=""
               className="w-full h-full object-cover transition-all duration-150"
               style={mainStyle}
+              onError={handleImgError}
             />
           </div>
         )}
@@ -210,9 +446,10 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
           <div className="w-full h-full overflow-hidden relative">
             <img
               src={card.images.main}
-              alt="News full background"
+              alt=""
               className="w-full h-full object-cover transition-all duration-150"
               style={mainStyle}
+              onError={handleImgError}
             />
           </div>
         )}
@@ -224,18 +461,20 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
             <div className="w-full h-[35%] overflow-hidden relative border-b-2 border-white/40">
               <img
                 src={card.images.main}
-                alt="News top (35%)"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={mainStyle}
+                onError={handleImgError}
               />
             </div>
             {/* Bottom Frame: 65% Remaining Height with custom crop support */}
             <div className="w-full h-[65%] overflow-hidden relative">
               <img
                 src={card.images.second || card.images.main}
-                alt="News bottom (65%)"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={secondStyle}
+                onError={handleImgError}
               />
             </div>
           </div>
@@ -248,18 +487,20 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
             <div className="w-full h-[50%] overflow-hidden relative border-b-2 border-white/40">
               <img
                 src={card.images.main}
-                alt="News top (50%)"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={mainStyle}
+                onError={handleImgError}
               />
             </div>
             {/* Bottom Frame: 50% Height */}
             <div className="w-full h-[50%] overflow-hidden relative">
               <img
                 src={card.images.second || card.images.main}
-                alt="News bottom (50%)"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={secondStyle}
+                onError={handleImgError}
               />
             </div>
           </div>
@@ -271,17 +512,19 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
             <div className="w-full h-full overflow-hidden relative">
               <img
                 src={card.images.main}
-                alt="News left (50%)"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={mainStyle}
+                onError={handleImgError}
               />
             </div>
             <div className="w-full h-full overflow-hidden relative">
               <img
                 src={card.images.second || card.images.main}
-                alt="News right (50%)"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={secondStyle}
+                onError={handleImgError}
               />
             </div>
           </div>
@@ -294,26 +537,29 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
               <div className="w-full h-full overflow-hidden relative">
                 <img
                   src={card.images.main}
-                  alt="News top left"
+                  alt=""
                   className="w-full h-full object-cover transition-all duration-150"
                   style={mainStyle}
+                  onError={handleImgError}
                 />
               </div>
               <div className="w-full h-full overflow-hidden relative">
                 <img
                   src={card.images.second || card.images.main}
-                  alt="News top right"
+                  alt=""
                   className="w-full h-full object-cover transition-all duration-150"
                   style={secondStyle}
+                  onError={handleImgError}
                 />
               </div>
             </div>
             <div className="w-full h-[48%] overflow-hidden relative">
               <img
                 src={card.images.third || card.images.main}
-                alt="News bottom wide"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={thirdStyle}
+                onError={handleImgError}
               />
             </div>
           </div>
@@ -325,26 +571,29 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
             <div className="w-full h-[48%] overflow-hidden relative">
               <img
                 src={card.images.main}
-                alt="News top wide"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={mainStyle}
+                onError={handleImgError}
               />
             </div>
             <div className="w-full h-[52%] grid grid-cols-2 gap-0.5">
               <div className="w-full h-full overflow-hidden relative">
                 <img
                   src={card.images.second || card.images.main}
-                  alt="News bottom left"
+                  alt=""
                   className="w-full h-full object-cover transition-all duration-150"
                   style={secondStyle}
+                  onError={handleImgError}
                 />
               </div>
               <div className="w-full h-full overflow-hidden relative">
                 <img
                   src={card.images.third || card.images.main}
-                  alt="News bottom right"
+                  alt=""
                   className="w-full h-full object-cover transition-all duration-150"
                   style={thirdStyle}
+                  onError={handleImgError}
                 />
               </div>
             </div>
@@ -358,36 +607,40 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
             <div className="w-full h-full overflow-hidden relative">
               <img
                 src={card.images.main}
-                alt="News top left"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={mainStyle}
+                onError={handleImgError}
               />
             </div>
             {/* Top Right */}
             <div className="w-full h-full overflow-hidden relative">
               <img
                 src={card.images.second || card.images.main}
-                alt="News top right"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={secondStyle}
+                onError={handleImgError}
               />
             </div>
             {/* Bottom Left */}
             <div className="w-full h-full overflow-hidden relative">
               <img
                 src={card.images.third || card.images.main}
-                alt="News bottom left"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={thirdStyle}
+                onError={handleImgError}
               />
             </div>
             {/* Bottom Right */}
             <div className="w-full h-full overflow-hidden relative">
               <img
                 src={card.images.fourth || card.images.second || card.images.main}
-                alt="News bottom right"
+                alt=""
                 className="w-full h-full object-cover transition-all duration-150"
                 style={fourthStyle}
+                onError={handleImgError}
               />
             </div>
           </div>
@@ -398,9 +651,10 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
           <div className="relative w-full h-full overflow-hidden">
             <img
               src={card.images.main}
-              alt="News main background"
+              alt=""
               className="w-full h-full object-cover transition-all duration-150"
               style={mainStyle}
+              onError={handleImgError}
             />
 
             {/* Inset Circle Photo with Red Curved Pointer Arrow */}
@@ -413,8 +667,14 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
                   transform: 'translate(-50%, -50%)',
                 }}
               >
-                {/* Circular cutout with thick white border & intense drop shadow */}
-                <div className="relative w-32 h-32 sm:w-40 sm:h-40 rounded-full border-[5px] border-white shadow-[0_16px_40px_rgba(0,0,0,0.95)] overflow-hidden bg-neutral-800 shrink-0 ring-2 ring-black/40">
+                {/* Circular cutout with proportional sizing matching CanvasExporter (31% width) */}
+                <div
+                  className="relative rounded-full border-[4px] sm:border-[5px] border-white shadow-[0_16px_40px_rgba(0,0,0,0.95)] overflow-hidden bg-neutral-800 shrink-0 ring-2 ring-black/40"
+                  style={{
+                    width: `${Math.round(containerWidth * 0.31)}px`,
+                    height: `${Math.round(containerWidth * 0.31)}px`,
+                  }}
+                >
                   <img
                     src={card.images.insetCircle}
                     alt="Inset portrait"
@@ -435,24 +695,47 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
           />
         )}
 
-        {/* Exclusive "⚡ सुपर ब्रेकिंग" subtle watermark across photo area (15% opacity) */}
-        {card.showSuperBreakingWatermark && (
+        {/* Universal subtle watermark across photo area */}
+        {(card.showWatermark || card.showSuperBreakingWatermark) && (
           <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden flex flex-col justify-around select-none">
             <div className="w-[200%] -ml-[50%] flex flex-col gap-8 sm:gap-11 -rotate-20">
               {[...Array(6)].map((_, rIdx) => (
-                <div
-                  key={rIdx}
-                  className="flex whitespace-nowrap gap-12 sm:gap-16 font-black tracking-widest font-['Baloo_2']"
-                  style={{
-                    color: `rgba(255, 255, 255, ${card.breakingWatermarkOpacity ?? 0.15})`,
-                    textShadow: '0 1px 2px rgba(0,0,0,0.45)',
-                    fontSize: '15px',
-                  }}
-                >
+                <div key={rIdx} className="flex whitespace-nowrap gap-12 sm:gap-16 shrink-0 font-black tracking-widest">
                   {[...Array(8)].map((_, cIdx) => (
-                    <span key={cIdx} className="flex items-center gap-1.5 shrink-0">
-                      {card.breakingWatermarkText || '⚡ सुपर ब्रेकिंग'}
-                    </span>
+                    card.watermarkType === 'image' && card.watermarkImage ? (
+                      <img
+                        key={cIdx}
+                        src={card.watermarkImage}
+                        alt=""
+                        className="object-contain"
+                        style={{
+                          width: `${Math.round((card.watermarkScale || 90) * 0.45)}px`,
+                          opacity: card.watermarkOpacity ?? 0.15,
+                        }}
+                      />
+                    ) : (
+                      <span
+                        key={cIdx}
+                        className="flex items-center gap-1.5 shrink-0 uppercase"
+                        style={{
+                          fontFamily: 'Arial, Helvetica, sans-serif',
+                          fontWeight: 900,
+                          color:
+                            (card.watermarkColor || card.breakingWatermarkColor) === 'black'
+                              ? `rgba(0, 0, 0, ${card.watermarkOpacity ?? card.breakingWatermarkOpacity ?? 0.15})`
+                              : (card.watermarkColor || card.breakingWatermarkColor) === 'red'
+                              ? `rgba(220, 38, 38, ${card.watermarkOpacity ?? card.breakingWatermarkOpacity ?? 0.15})`
+                              : `rgba(255, 255, 255, ${card.watermarkOpacity ?? card.breakingWatermarkOpacity ?? 0.15})`,
+                          textShadow:
+                            (card.watermarkColor || card.breakingWatermarkColor) === 'black'
+                              ? '0 1px 2px rgba(255,255,255,0.15)'
+                              : '0 1px 2px rgba(0,0,0,0.45)',
+                          fontSize: '15px',
+                        }}
+                      >
+                        {card.watermarkText || card.breakingWatermarkText || 'BREAKING NEWS WALA'}
+                      </span>
+                    )
                   ))}
                 </div>
               ))}
@@ -460,10 +743,11 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
           </div>
         )}
       </div>
+      )}
 
-      {/* 2. THEME HEADER JACKET */}
-      {card.frameDesign === 'jacket-investigation' ? (
-        <div className="absolute top-0 inset-x-0 z-20 pointer-events-none">
+      {/* 2. THEME HEADER JACKET - Set to topmost layer z-40 so it stays above all borders and photo */}
+      <div className="relative z-40">
+        {card.frameDesign === 'jacket-investigation' ? (
           <div className="bg-gradient-to-r from-neutral-950 via-neutral-900 to-amber-950 text-white px-4 py-2 flex items-center justify-between shadow-xl border-b-2 border-yellow-500">
             <div className="flex items-center gap-2">
               <span className="bg-amber-500 text-neutral-950 text-xs font-black px-2 py-0.5 rounded shadow">
@@ -477,34 +761,25 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
               EXCLUSIVE
             </span>
           </div>
-        </div>
-      ) : card.frameDesign === 'custom-png' ? (
-        !card.hideDefaultHeaderInCustomFrame && (
+        ) : card.frameDesign === 'custom-png' ? (
+          !card.hideDefaultHeaderInCustomFrame && (
+            <HeaderGraphic
+              customHeaderPng={getActiveHeaderPng(card)}
+              brandTagline={card.brandTagline}
+              brandName={card.brandName}
+              customLogoUrl={card.customLogoUrl}
+            />
+          )
+        ) : (
+          /* jacket-original, jacket-breaking-red, jacket-quote & jacket-text-breaking use the brand header */
           <HeaderGraphic
-            customHeaderPng={card.customHeaderPng}
+            customHeaderPng={getActiveHeaderPng(card)}
             brandTagline={card.brandTagline}
             brandName={card.brandName}
             customLogoUrl={card.customLogoUrl}
           />
-        )
-      ) : (
-        /* jacket-original, jacket-breaking-red & jacket-quote all use the official brand header */
-        <HeaderGraphic
-          customHeaderPng={card.customHeaderPng}
-          brandTagline={card.brandTagline}
-          brandName={card.brandName}
-          customLogoUrl={card.customLogoUrl}
-        />
-      )}
-
-      {/* Double Golden Borders for Quote Template (IMAGE NEWS - TEAM (2).png) */}
-      {card.frameDesign === 'jacket-quote' && (
-        <div className="absolute inset-0 pointer-events-none z-25 p-2 sm:p-2.5 flex flex-col justify-between">
-          <div className="w-full h-full border-[2.5px] border-[#FFE600] p-1 rounded-sm">
-            <div className="w-full h-full border-[1.5px] border-dashed border-[#FFE600] rounded-sm" />
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Optional Full Frame Overlay PNG - ONLY active when custom-png frame is selected */}
       {card.frameDesign === 'custom-png' && card.customFrameOverlayPng && (
@@ -515,31 +790,1316 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
         />
       )}
 
-      {/* 2B. AI GENERATED Watermark: Vertical along Left Wall, Rotated 90°, Low Opacity */}
-      {card.showAiGenerated && (
+      {/* 2B. PHOTO DISCLAIMER Watermark (AI GENERATED or प्रतीकात्मक फोटो): Vertical along Left Wall, Rotated 90° */}
+      {(card.photoDisclaimerType === 'ai' ||
+        card.photoDisclaimerType === 'representative' ||
+        (card.showAiGenerated && card.photoDisclaimerType !== 'none')) && (
         <div
           className="absolute left-1.5 sm:left-2 top-[44%] -translate-y-1/2 pointer-events-none z-25 flex items-center justify-center select-none"
-          style={{ width: '28px', height: '130px' }}
+          style={{ width: '28px', height: '140px' }}
         >
-          <div className="absolute -rotate-90 whitespace-nowrap bg-black/60 backdrop-blur-[2px] border border-white/25 px-3.5 py-1 rounded-sm shadow-md flex items-center justify-center">
-            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-[0.2em] text-white/85 px-1.5 inline-block">
-              {card.aiGeneratedText || 'AI GENERATED'}
+          <div className="absolute -rotate-90 whitespace-nowrap bg-black/65 backdrop-blur-[2px] border border-white/25 px-3 py-0.5 sm:py-1 rounded-sm shadow-md flex items-center justify-center">
+            <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-[0.16em] text-white/90 px-1 inline-block font-['Baloo_2',sans-serif]">
+              {card.photoDisclaimerType === 'representative'
+                ? card.representativePhotoText || 'प्रतीकात्मक फोटो'
+                : card.aiGeneratedText || 'AI GENERATED'}
             </span>
           </div>
         </div>
       )}
 
-      {/* 3. BOTTOM SECTION: SUPER BREAKING JACKET vs QUOTE vs STANDARD ORIGINAL */}
-      {card.frameDesign === 'jacket-breaking-red' ? (
+      {/* 2C. DATE STAMP: Vertical along Right Wall, Rotated 90°, Text without background box, placed near header */}
+      {card.showDate !== false && card.frameDesign !== 'jacket-text-breaking' && card.frameDesign !== 'jacket-morning' && card.frameDesign !== 'jacket-epaper' && (
+        <div
+          className="absolute right-1 sm:right-2 top-[22%] -translate-y-1/2 pointer-events-none z-25 flex items-center justify-center select-none"
+          style={{ width: '24px', height: '180px' }}
+        >
+          <div
+            className="absolute whitespace-nowrap flex items-center justify-center"
+            style={{ transform: 'rotate(90deg)' }}
+          >
+            <span
+              className="font-bold tracking-wider text-white/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] font-['Baloo_2',sans-serif]"
+              style={{
+                fontSize: `${Math.max(10, Math.min(13, Math.round(20 * previewScale)))}px`,
+              }}
+            >
+              {card.dateStr || getFormattedHindiDate()}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 3. BOTTOM SECTION: MORNING JACKET vs TEXT BREAKING vs SUPER BREAKING vs QUOTE vs STANDARD ORIGINAL */}
+      {card.frameDesign === 'jacket-morning' ? (
+        /* ================= MORNING JACKET (THOUGHT / HEALTH / POSITIVE WITH BACKGROUND IMAGE) ================= */
+        <div className="absolute inset-x-0 bottom-0 top-[52px] sm:top-[68px] z-20 flex flex-col justify-between pointer-events-none">
+          {/* Middle Content: Clean, strictly inside header-to-footer safe zone */}
+          <div className="flex-1 flex flex-col justify-center px-2 sm:px-4 py-1 pointer-events-auto">
+            {(() => {
+              const theme = card.morningDesignStyle || 'frosted-obsidian';
+              const isIvory = theme === 'editorial-ivory';
+              const isEmerald = theme === 'emerald-zen';
+              const isRoyal = theme === 'royal-gold';
+              const isDivine = theme === 'spiritual-divine';
+              const isCinematic = theme === 'cinematic-text';
+
+              const boxMaxWidth = card.morningBoxWidth === 'expanded' ? '97%' : (card.morningBoxWidth === 'wide' ? '93%' : '88%');
+              const minHeightStyle = card.morningBoxHeightMode === 'fill-safe-area' ? '76%' : (card.morningBoxHeightMode === 'expanded' ? '62%' : 'auto');
+
+              // Theme-specific styles
+              let containerBg = 'bg-black/80';
+              let containerBorder = 'border-white/30';
+              let glowBg = 'bg-amber-400/20';
+              let quoteColor = 'text-yellow-400';
+              let textColor = 'text-white';
+              let subTextColor = 'text-yellow-100';
+              let dividerBorder = 'border-white/30';
+              let badgeBg = 'linear-gradient(to right, #F59E0B, #FACC15, #F59E0B)';
+              let badgeTextColor = 'text-neutral-950';
+
+              if (isRoyal) {
+                containerBg = 'bg-[#0E0A08]/92';
+                containerBorder = 'border-amber-500/80';
+                glowBg = 'bg-amber-500/30';
+                quoteColor = 'text-amber-400';
+                textColor = 'text-white';
+                subTextColor = 'text-amber-200';
+                dividerBorder = 'border-amber-500/40';
+                badgeBg = 'linear-gradient(to right, #D97706, #FDE68A, #D97706)';
+                badgeTextColor = 'text-neutral-950';
+              } else if (isDivine) {
+                containerBg = 'bg-[#180A04]/90';
+                containerBorder = 'border-orange-500/70';
+                glowBg = 'bg-orange-500/25';
+                quoteColor = 'text-amber-300';
+                textColor = 'text-white';
+                subTextColor = 'text-amber-100';
+                dividerBorder = 'border-orange-500/35';
+                badgeBg = 'linear-gradient(to right, #EA580C, #FDE047, #EA580C)';
+                badgeTextColor = 'text-neutral-950';
+              } else if (isIvory) {
+                containerBg = 'bg-[#FDFBF7]/95 shadow-2xl';
+                containerBorder = 'border-amber-700/50';
+                glowBg = 'bg-amber-500/10';
+                quoteColor = 'text-amber-700';
+                textColor = 'text-neutral-900';
+                subTextColor = 'text-neutral-700';
+                dividerBorder = 'border-amber-800/20';
+                badgeBg = 'linear-gradient(to right, #B45309, #D97706, #B45309)';
+                badgeTextColor = 'text-white';
+              } else if (isEmerald) {
+                containerBg = 'bg-[#041D10]/92';
+                containerBorder = 'border-emerald-500/70';
+                glowBg = 'bg-emerald-500/25';
+                quoteColor = 'text-emerald-400';
+                textColor = 'text-white';
+                subTextColor = 'text-emerald-100';
+                dividerBorder = 'border-emerald-500/35';
+                badgeBg = 'linear-gradient(to right, #059669, #34D399, #059669)';
+                badgeTextColor = 'text-neutral-950';
+              } else if (isCinematic) {
+                containerBg = 'bg-black/55 backdrop-blur-sm';
+                containerBorder = 'border-white/15';
+                glowBg = 'bg-amber-400/10';
+                quoteColor = 'text-yellow-400';
+                textColor = 'text-white';
+                subTextColor = 'text-yellow-200';
+                dividerBorder = 'border-white/20';
+                badgeBg = 'linear-gradient(to right, #D97706, #FBBF24, #D97706)';
+                badgeTextColor = 'text-neutral-950';
+              }
+
+              return (
+                <div
+                  className="w-full mx-auto relative flex flex-col items-center"
+                  style={{ maxWidth: boxMaxWidth }}
+                >
+                  {/* Top Badge: Attached directly to the top edge of the box, overlapping by half */}
+                  <div
+                    className="relative z-30 shadow-xl flex items-center justify-center"
+                    style={{
+                      marginBottom: `-${Math.round(20 * previewScale)}px`,
+                    }}
+                  >
+                    <div
+                      className={`inline-flex items-center justify-center font-black font-['Baloo_2'] tracking-wide border shadow-2xl ${badgeTextColor} whitespace-nowrap`}
+                      style={{
+                        height: `${Math.max(22, Math.round(52 * previewScale))}px`,
+                        padding: `0 ${Math.max(10, Math.round(24 * previewScale))}px`,
+                        fontSize: `${Math.max(9, Math.round(24 * previewScale))}px`,
+                        borderRadius: '9999px',
+                        borderWidth: `${Math.max(1.5, Math.round(3.5 * previewScale))}px`,
+                        borderColor: '#FFFFFF',
+                        background: badgeBg,
+                      }}
+                    >
+                      <span>{card.morningBadgeText || '🌅 आज का विचार'}</span>
+                    </div>
+                  </div>
+
+                  {/* Center Floating Card for the Thought */}
+                  <div
+                    className={`w-full ${containerBg} backdrop-blur-md border ${containerBorder} shadow-2xl flex flex-col items-center justify-center text-center relative`}
+                    style={{
+                      borderWidth: isCinematic ? '1px' : `${Math.max(1.5, Math.round(3 * previewScale))}px`,
+                      borderRadius: `${Math.max(12, Math.round(32 * previewScale))}px`,
+                      paddingTop: `${Math.max(14, Math.round(46 * previewScale))}px`,
+                      paddingBottom: `${Math.max(10, Math.round(36 * previewScale))}px`,
+                      paddingLeft: `${Math.max(10, Math.round(36 * previewScale))}px`,
+                      paddingRight: `${Math.max(10, Math.round(36 * previewScale))}px`,
+                      minHeight: minHeightStyle,
+                    }}
+                  >
+                    {/* Soft warm radial glow */}
+                    <div
+                      className={`absolute top-0 left-1/2 -translate-x-1/2 ${glowBg} rounded-full blur-xl pointer-events-none`}
+                      style={{
+                        width: `${Math.round(280 * previewScale)}px`,
+                        height: `${Math.round(120 * previewScale)}px`,
+                      }}
+                    />
+
+                    {/* Decorative quotation mark */}
+                    {card.morningShowQuotes !== false && (
+                      <span
+                        className={`font-serif ${quoteColor} leading-none select-none block drop-shadow`}
+                        style={{
+                          fontSize: `${Math.max(16, Math.round(50 * previewScale))}px`,
+                          marginBottom: `${Math.max(2, Math.round(8 * previewScale))}px`,
+                        }}
+                      >
+                        “
+                      </span>
+                    )}
+
+                    {/* Main Thought / Message */}
+                    <h1
+                      className={`font-black tracking-normal leading-[1.36] font-['Baloo_2'] text-center ${textColor} overflow-visible ${isIvory ? '' : 'drop-shadow-lg'}`}
+                      style={{
+                        fontSize: `${Math.max(10, Math.round(Math.max(36, Math.min(84, Math.round((card.headlineFontSize || 26) * 2.15))) * previewScale))}px`,
+                      }}
+                    >
+                      {renderFormattedHeadline()}
+                    </h1>
+
+                    {/* Sub-takeaway or quote elaboration if present */}
+                    {(card.morningThoughtQuote || card.morningTakeaway || card.morningSubIntro) && (
+                      <div
+                        className={`border-t ${dividerBorder} w-full relative`}
+                        style={{
+                          marginTop: `${Math.max(6, Math.round(18 * previewScale))}px`,
+                          paddingTop: `${Math.max(6, Math.round(14 * previewScale))}px`,
+                          borderTopWidth: `${Math.max(1, Math.round(2 * previewScale))}px`,
+                          maxWidth: '92%',
+                        }}
+                      >
+                        {/* Subtle center accent on partition line */}
+                        <div
+                          className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-yellow-400/80 rounded-full"
+                          style={{
+                            width: `${Math.round(96 * previewScale)}px`,
+                            height: `${Math.max(1.5, Math.round(2.5 * previewScale))}px`,
+                          }}
+                        />
+                        <p
+                          className={`${subTextColor} font-semibold leading-[1.35] font-['Baloo_2'] text-center whitespace-pre-line ${isIvory ? '' : 'drop-shadow'}`}
+                          style={{
+                            fontSize: `${Math.max(11, Math.round(Math.max(22, Math.min(38, Math.round((card.morningSubQuoteFontSize || 14) * 1.85))) * previewScale))}px`,
+                          }}
+                        >
+                          {card.morningThoughtQuote || card.morningTakeaway || card.morningSubIntro}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Footer Bar (Manual PNG or default) */}
+          <FooterGraphic
+            socialHandle={card.socialHandle}
+            whatsappNumber={card.whatsappNumber}
+            customFooterPng={getActiveFooterPng(card)}
+          />
+        </div>
+      ) : card.frameDesign === 'jacket-epaper' ? (
+        /* ================= E-PAPER JACKET (NEWSPAPER FRONT-PAGE 2-COLUMN ARTICLE) ================= */
+        <div
+          className="absolute inset-x-0 bottom-0 top-[58px] sm:top-[74px] z-20 flex flex-col justify-between pointer-events-none"
+          style={{ backgroundColor: epaperPaperBg }}
+        >
+          {/* Subtle Universal Watermark overlay in preview */}
+          {(card.showWatermark || card.showSuperBreakingWatermark) && (
+            <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden flex flex-col justify-around select-none">
+              <div className="w-[200%] -ml-[50%] flex flex-col gap-8 -rotate-20">
+                {[...Array(8)].map((_, rIdx) => (
+                  <div key={rIdx} className="flex whitespace-nowrap gap-12 shrink-0">
+                    {[...Array(8)].map((_, cIdx) => (
+                      card.watermarkType === 'image' && card.watermarkImage ? (
+                        <img
+                          key={cIdx}
+                          src={card.watermarkImage}
+                          alt=""
+                          className="object-contain"
+                          style={{
+                            width: `${Math.round((card.watermarkScale || 90) * 0.40)}px`,
+                            opacity: card.watermarkOpacity ?? 0.12,
+                          }}
+                        />
+                      ) : (
+                        <span
+                          key={cIdx}
+                          className="font-black uppercase tracking-widest text-[12px]"
+                          style={{
+                            fontFamily: 'Arial, Helvetica, sans-serif',
+                            color:
+                              card.watermarkColor === 'black'
+                                ? `rgba(0, 0, 0, ${card.watermarkOpacity ?? 0.12})`
+                                : card.watermarkColor === 'red'
+                                ? `rgba(220, 38, 38, ${card.watermarkOpacity ?? 0.12})`
+                                : `rgba(0, 0, 0, ${card.watermarkOpacity ?? 0.10})`,
+                          }}
+                        >
+                          {card.watermarkText || card.breakingWatermarkText || 'BREAKING NEWS WALA'}
+                        </span>
+                      )
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Middle Newspaper Article Area: strictly inside header-to-footer safe zone */}
+          <div
+            ref={contentAreaRef}
+            className="relative flex-1 flex flex-col justify-between px-4 sm:px-6 py-2.5 pointer-events-auto overflow-hidden text-neutral-900"
+            style={{ backgroundColor: epaperPaperBg, fontFamily: epaperFontFamily }}
+          >
+            {/* Top Newspaper Masthead / Kicker & Headline */}
+            <div className="w-full flex flex-col">
+              {/* Kicker Ribbon */}
+              <div className="flex items-center justify-between pb-1 border-b border-neutral-300">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block bg-red-600 text-white font-black uppercase tracking-wider rounded px-1.5 py-0.5"
+                    style={{
+                      fontFamily: epaperFontFamily,
+                      fontSize: `${Math.max(10, Math.round(18 * previewScale))}px`,
+                    }}
+                  >
+                    {card.epaperKicker || 'विशेष रिपोर्ट'}
+                  </span>
+                  <span
+                    className="font-bold text-neutral-600"
+                    style={{
+                      fontFamily: epaperFontFamily,
+                      fontSize: `${Math.max(10, Math.round(18 * previewScale))}px`,
+                    }}
+                  >
+                    • ई-पेपर विशेष संस्करण
+                  </span>
+                </div>
+                <span
+                  className="font-bold text-neutral-500"
+                  style={{
+                    fontFamily: epaperFontFamily,
+                    fontSize: `${Math.max(10, Math.round(18 * previewScale))}px`,
+                  }}
+                >
+                  {card.dateStr || getFormattedHindiDate()}
+                </span>
+              </div>
+
+              {/* Main Newspaper Headline (Line height & top padding prevent Hindi ascender clipping) */}
+              <h1
+                className="font-black text-neutral-950 leading-[1.32] tracking-tight pt-1 pb-0.5 line-clamp-2"
+                style={{
+                  fontFamily: epaperFontFamily,
+                  fontSize: `${Math.max(13, Math.round((card.headlineFontSize || 26) * 1.28 * previewScale))}px`,
+                }}
+              >
+                {card.epaperHeadline || card.headline}
+              </h1>
+
+              {/* Sub-headline */}
+              {card.epaperSubHeadline && (
+                <p
+                  className="text-neutral-700 font-semibold leading-tight mb-1 line-clamp-2"
+                  style={{
+                    fontFamily: epaperFontFamily,
+                    fontSize: `${Math.max(10.5, Math.round(20 * previewScale))}px`,
+                  }}
+                >
+                  {card.epaperSubHeadline}
+                </p>
+              )}
+
+              {/* Byline Bar: Left Reporter Name, Right Promotional Call-to-Action */}
+              <div
+                className="flex items-center justify-between py-0.5 border-y border-neutral-300 mb-1.5 font-bold text-neutral-800"
+                style={{
+                  fontFamily: epaperFontFamily,
+                  fontSize: `${Math.max(10, Math.round(18 * previewScale))}px`,
+                }}
+              >
+                <div className="flex items-center gap-1 truncate max-w-[55%]">
+                  <span>✍️</span>
+                  <span className="truncate">{card.epaperByline || 'विशेष संवाददाता'}</span>
+                </div>
+                <div className="text-red-600 font-bold text-right truncate max-w-[45%]">
+                  {card.epaperPromoTagline || '📢 अब आप भी भेजें अपनी खबर हम तक'}
+                </div>
+              </div>
+            </div>
+
+            {/* Reusable Ad Box Helper */}
+            {(() => null)()}
+            {/* Photos & Multi-Column Story Content */}
+            {(() => {
+              const renderAdBox = (ad: any, customClass: string = '') => {
+                if (!ad) return null;
+                const isImage = ad.type === 'image' && ad.imageUrl;
+                const isWishes = ad.templateType === 'wishes';
+                const isNotice = ad.templateType === 'notice';
+                const isCommercial = ad.templateType === 'commercial';
+
+                if (isImage) {
+                  const cropX = ad.crop?.x ?? 50;
+                  const cropY = ad.crop?.y ?? 50;
+                  const cropZoom = ad.crop?.zoom ?? 1;
+
+                  return (
+                    <div className={`relative border border-red-600 rounded bg-white overflow-hidden shadow-sm flex flex-col justify-center ${customClass}`}>
+                      <img
+                        src={ad.imageUrl}
+                        alt="Ad Banner"
+                        className="w-full h-full object-cover"
+                        style={{
+                          objectPosition: `${cropX}% ${cropY}%`,
+                          transform: `scale(${cropZoom})`,
+                          transformOrigin: `${cropX}% ${cropY}%`,
+                        }}
+                        onError={handleImgError}
+                      />
+                      <div className="absolute top-0.5 right-0.5 bg-red-600 text-white font-bold text-[8px] px-1 py-0.2 rounded shadow">
+                        विज्ञापन
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Template Ad Box
+                const bgClass = isWishes ? 'bg-amber-50/95 border-amber-500' : isNotice ? 'bg-slate-50 border-slate-700' : 'bg-red-50/90 border-red-600';
+                const pillBg = isNotice ? 'bg-slate-800' : 'bg-red-600';
+                const pillText = isWishes ? '💐 हार्दिक शुभकामनाएं' : isCommercial ? '🏢 व्यावसायिक विज्ञापन' : isNotice ? '📢 सार्वजनिक सूचना' : '📢 स्थान रिक्त है • विज्ञापन';
+                const titleText = ad.title || (isWishes ? 'सफलता एवं उज्ज्वल भविष्य की अनंत बधाई' : isCommercial ? 'व्यावसायिक प्रचार-प्रसार हेतु संपर्क करें' : isNotice ? 'सर्वसाधारण को सूचित किया जाता है' : 'स्थान रिक्त है — विज्ञापन हेतु संपर्क करें');
+                const phoneText = ad.phone ? `📞 ${ad.phone}` : (card.whatsappNumber ? `📞 ${card.whatsappNumber}` : '📞 96698-02408');
+
+                return (
+                  <div
+                    className={`border-2 border-dashed p-1.5 rounded flex flex-col justify-between items-center text-center shadow-xs overflow-hidden ${bgClass} ${customClass}`}
+                    style={{ fontFamily: epaperFontFamily }}
+                  >
+                    <div className="w-full flex flex-col items-center">
+                      <span className={`${pillBg} text-white font-black text-[8px] px-1.5 py-0.5 rounded-full uppercase tracking-wider mb-0.5`}>
+                        {pillText}
+                      </span>
+                      <p className="font-black text-neutral-900 leading-tight line-clamp-2" style={{ fontSize: `${Math.max(8.5, Math.round(15 * previewScale))}px` }}>
+                        {titleText}
+                      </p>
+                      {ad.subtitle && (
+                        <p className="text-neutral-600 text-[8px] font-medium mt-0.5 line-clamp-1">
+                          {ad.subtitle}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="w-full flex items-center justify-center gap-1 mt-0.5">
+                      <span className="bg-white/95 border border-red-300 text-red-700 font-black text-[8px] px-1.5 py-0.5 rounded shadow-xs">
+                        {phoneText}
+                      </span>
+                    </div>
+
+                    {ad.sponsorName && (
+                      <p className="text-neutral-500 text-[7.5px] font-semibold mt-0.5 truncate">
+                        {ad.sponsorName}
+                      </p>
+                    )}
+                  </div>
+                );
+              };
+
+              const renderSecondaryStoryBox = (customClass: string = '') => {
+                if (!card.epaperSecondaryStoryBody) return null;
+                return (
+                  <div
+                    className={`bg-blue-50/80 border-l-3 border-l-blue-700 border border-blue-200 rounded p-1.5 shadow-sm flex flex-col justify-between overflow-hidden ${customClass}`}
+                    style={{ fontFamily: epaperFontFamily }}
+                  >
+                    <div>
+                      <div
+                        className="font-black text-blue-900 flex items-center gap-1 mb-0.5 border-b border-blue-200 pb-0.5"
+                        style={{ fontSize: `${Math.max(7.5, Math.round(16 * previewScale))}px` }}
+                      >
+                        <span>📰 {card.epaperSecondaryStoryTitle || 'संबंधित खबर / अन्य जानकारी'}</span>
+                      </div>
+                      <p
+                        className="text-neutral-900 font-medium leading-snug line-clamp-5 whitespace-pre-line text-justify"
+                        style={{ fontSize: `${Math.max(7, Math.round(14.5 * previewScale))}px` }}
+                      >
+                        {card.epaperSecondaryStoryBody}
+                      </p>
+                    </div>
+                  </div>
+                );
+              };
+              const renderLayoutContent = () => {
+                const layout = card.epaperPhotoLayout || (
+                  card.epaperPhotoCount === 0 ? '0_none' :
+                  card.epaperPhotoCount === 2 ? '2_side' :
+                  card.epaperPhotoCount === 3 ? '3_split' :
+                  '1_top'
+                );
+
+              const mainCrop = card.imagePositions?.main || { x: 50, y: 50, zoom: 1 };
+              const secondCrop = card.imagePositions?.second || { x: 50, y: 50, zoom: 1 };
+              const thirdCrop = card.imagePositions?.third || { x: 50, y: 50, zoom: 1 };
+
+              const getCropStyle = (crop: { x?: number; y?: number; zoom?: number }) => ({
+                objectPosition: `${crop.x ?? 50}% ${crop.y ?? 50}%`,
+                transform: `scale(${crop.zoom ?? 1})`,
+                transformOrigin: `${crop.x ?? 50}% ${crop.y ?? 50}%`,
+              });
+
+              const heightClass =
+                card.epaperPhotoHeightMode === 'compact'
+                  ? 'h-20 sm:h-24'
+                  : card.epaperPhotoHeightMode === 'tall'
+                  ? 'h-32 sm:h-40'
+                  : card.epaperPhotoHeightMode === 'extra-tall'
+                  ? 'h-38 sm:h-46'
+                  : 'h-26 sm:h-32';
+
+              const renderHighlightsBox = (extraClass: string = '') => (
+                <div
+                  className={`bg-amber-50/80 border-l-3 border-l-red-600 border border-neutral-200 rounded p-1.5 shadow-sm flex flex-col justify-between ${extraClass}`}
+                  style={{ fontFamily: epaperFontFamily }}
+                >
+                  <div>
+                    <div
+                      className="font-black text-red-700 uppercase tracking-wide flex items-center gap-1 mb-1 border-b border-red-200 pb-0.5"
+                      style={{ fontSize: `${Math.max(7.5, Math.round(18 * previewScale))}px` }}
+                    >
+                      <span>📍</span>
+                      <span className="truncate">{card.epaperHighlightsTitle || 'मुख्य बिंदु'}</span>
+                    </div>
+                    <ul className="space-y-1">
+                      {(card.epaperHighlights && card.epaperHighlights.length > 0
+                        ? card.epaperHighlights.slice(0, 4)
+                        : [
+                            'प्रशासनिक दल ने मौके पर पहुंचकर की त्वरित कार्रवाई',
+                            'दोषियों के विरुद्ध सख्त वैधानिक धाराओं में केस दर्ज',
+                          ]
+                      ).map((hl, i) => (
+                        <li
+                          key={i}
+                          className="text-neutral-900 font-bold flex items-start gap-1 leading-snug"
+                          style={{ fontSize: `${Math.max(7, Math.round(16.5 * previewScale))}px` }}
+                        >
+                          <span className="text-red-600 font-black">•</span>
+                          <span>{hl}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              );
+
+              const renderQuoteBox = (extraClass: string = '') => (
+                <div
+                  className={`bg-red-50/90 border-l-3 border-l-red-600 border border-red-200 rounded p-1.5 shadow-sm flex flex-col justify-between ${extraClass}`}
+                  style={{ fontFamily: epaperFontFamily }}
+                >
+                  <div>
+                    <div
+                      className="font-black text-red-800 flex items-center gap-1 mb-0.5 border-b border-red-200/80 pb-0.5"
+                      style={{ fontSize: `${Math.max(7.5, Math.round(17 * previewScale))}px` }}
+                    >
+                      <span className="text-red-600 text-sm font-serif">“</span>
+                      <span>बयान / प्रतिक्रिया</span>
+                    </div>
+                    <p
+                      className="text-neutral-900 font-semibold italic leading-snug line-clamp-4"
+                      style={{ fontSize: `${Math.max(7.5, Math.round(16 * previewScale))}px` }}
+                    >
+                      "{card.epaperQuoteText || 'जनहित और निष्पक्ष कार्रवाई के लिए प्रशासन पूरी तरह मुस्तैद है। किसी भी स्तर पर लापरवाही बर्दाश्त नहीं होगी।'}"
+                    </p>
+                  </div>
+                  {(card.epaperQuoteSpeaker || card.epaperByline) && (
+                    <p
+                      className="text-red-700 font-black text-right mt-1 truncate"
+                      style={{ fontSize: `${Math.max(6.5, Math.round(14.5 * previewScale))}px` }}
+                    >
+                      — {card.epaperQuoteSpeaker || card.epaperByline?.split('/')[0]?.trim()}
+                    </p>
+                  )}
+                </div>
+              );
+
+              // Responsive, crisp newspaper story text size with justified margins matching CanvasExporter 100%
+              const canvasFontSize = Math.max(14, Math.min(28, card.epaperFontSize || 17));
+              const bodyFontSizePx = Math.max(8.5, Math.round(canvasFontSize * previewScale));
+              const bodyLineHPx = Math.round(bodyFontSizePx * 1.38);
+              const fullArticle = card.epaperArticleBody || 'जिले में प्रशासन और पुलिस की संयुक्त टीम ने बड़ी कार्रवाई करते हुए स्थिति को नियंत्रित किया। ग्रामीणों की शिकायतों के आधार पर वरिष्ठ अधिकारियों ने संयुक्त दल गठित कर मौके पर पहुंचकर जांच की और आवश्यक दिशा-निर्देश दिए।';
+
+              const dropCapClass = hasDropCap
+                ? 'first-letter:float-left first-letter:text-2xl sm:first-letter:text-3xl first-letter:font-black first-letter:mr-1.5 first-letter:text-red-700 first-letter:leading-none'
+                : '';
+
+              const renderStorySection = () => {
+                const storyLayoutMode = card.epaperStoryLayout || '2_equal_cols';
+
+                // 1. Option: 2 Equal Columns (Continuous story flowing directly below both photos, 100% Justified)
+                if (storyLayoutMode === '2_equal_cols') {
+                  const totalLen = fullArticle.length;
+                  const isBalanced = card.epaperBalanceColumns !== false;
+                  const splitRatio = isBalanced ? 0.50 : 0.60;
+                  let splitIndex = Math.floor(totalLen * splitRatio);
+                  const nextSpace = fullArticle.indexOf(' ', splitIndex);
+                  if (nextSpace !== -1 && nextSpace < splitIndex + 30) {
+                    splitIndex = nextSpace;
+                  }
+                  const col1Text = fullArticle.slice(0, splitIndex).trim();
+                  const col2Text = fullArticle.slice(splitIndex).trim();
+                  const showAdInCol2 = card.epaperAd?.showAd && (card.epaperAd.placement === 'auto_fill' || card.epaperAd.placement === 'right_column');
+
+                  return (
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                      <div className="grid grid-cols-2 gap-3 flex-1 min-h-0 overflow-hidden text-neutral-900" style={{ fontFamily: epaperFontFamily }}>
+                        <div
+                          className="flex flex-col font-semibold overflow-hidden border-r border-neutral-200 pr-2"
+                          style={{
+                            textAlign: 'justify',
+                            textJustify: 'inter-word',
+                            fontSize: `${bodyFontSizePx}px`,
+                            lineHeight: `${bodyLineHPx}px`,
+                          }}
+                        >
+                          <p className={`whitespace-pre-line ${dropCapClass}`}>
+                            {col1Text}
+                          </p>
+                        </div>
+                        <div
+                          className="flex flex-col justify-between font-semibold overflow-hidden pl-0.5"
+                          style={{
+                            textAlign: 'justify',
+                            textJustify: 'inter-word',
+                            fontSize: `${bodyFontSizePx}px`,
+                            lineHeight: `${bodyLineHPx}px`,
+                          }}
+                        >
+                          <p className="whitespace-pre-line flex-1 overflow-hidden">
+                            {col2Text}
+                          </p>
+                          {/* Optional Secondary Story or Auto-Fill Ad Box in empty Column space */}
+                          {card.epaperSecondaryStoryBody ? (
+                            <div className="mt-1 shrink-0">
+                              {renderSecondaryStoryBox('w-full')}
+                            </div>
+                          ) : showAdInCol2 ? (
+                            <div className="mt-1 shrink-0">
+                              {renderAdBox(card.epaperAd, 'w-full min-h-[65px]')}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // 2. Option: 2 Columns with Leader Quote Call-out
+                if (storyLayoutMode === '2_cols_with_quote') {
+                  const totalLen = fullArticle.length;
+                  const isBalanced = card.epaperBalanceColumns !== false;
+                  const splitRatio = isBalanced ? 0.56 : 0.72;
+                  let splitIndex = Math.floor(totalLen * splitRatio);
+                  const nextSpace = fullArticle.indexOf(' ', splitIndex);
+                  if (nextSpace !== -1 && nextSpace < splitIndex + 30) {
+                    splitIndex = nextSpace;
+                  }
+                  const col1Text = fullArticle.slice(0, splitIndex).trim();
+                  const col2Text = fullArticle.slice(splitIndex).trim();
+
+                  const shouldRenderAdInCol2 = card.epaperAd?.showAd && (card.epaperAd.placement === 'auto_fill' || card.epaperAd.placement === 'right_column');
+                  const shouldRenderSecondaryStory = !!card.epaperSecondaryStoryBody;
+
+                  return (
+                    <div className="grid grid-cols-12 gap-2 flex-1 min-h-0 overflow-hidden text-neutral-800" style={{ fontFamily: epaperFontFamily }}>
+                      <div
+                        className="col-span-6 flex flex-col font-semibold text-neutral-900 overflow-hidden border-r border-neutral-200 pr-1.5"
+                        style={{
+                          textAlign: 'justify',
+                          textJustify: 'inter-word',
+                          fontSize: `${bodyFontSizePx}px`,
+                          lineHeight: `${bodyLineHPx}px`,
+                        }}
+                      >
+                        <p className={`whitespace-pre-line ${dropCapClass}`}>
+                          {col1Text}
+                        </p>
+                      </div>
+                      <div className="col-span-6 flex flex-col justify-between overflow-hidden gap-1.5">
+                        {renderQuoteBox('shrink-0')}
+                        
+                        {col2Text && (
+                          <div
+                            className="flex-1 font-semibold text-neutral-900 overflow-hidden"
+                            style={{
+                              textAlign: 'justify',
+                              textJustify: 'inter-word',
+                              fontSize: `${bodyFontSizePx}px`,
+                              lineHeight: `${bodyLineHPx}px`,
+                            }}
+                          >
+                            <p className="whitespace-pre-line">
+                              {col2Text}
+                            </p>
+                          </div>
+                        )}
+
+                        {shouldRenderSecondaryStory ? (
+                          renderSecondaryStoryBox('shrink-0')
+                        ) : shouldRenderAdInCol2 ? (
+                          renderAdBox(card.epaperAd, 'shrink-0 min-h-[65px]')
+                        ) : (!col2Text || shouldRenderAdInCol2 || card.epaperAd?.showAd !== false) ? (
+                          renderAdBox(card.epaperAd || {
+                            type: 'template',
+                            templateType: 'classified',
+                            title: 'स्थान रिक्त है - विज्ञापन हेतु संपर्क करें',
+                            subtitle: 'ई-पेपर विशेष संस्करण में प्रचार प्रसार के लिए',
+                            phone: card.whatsappNumber || '96698-02408',
+                            sponsorName: 'ब्रेकिंग न्यूज़ वाला डिजिटल नेटवर्क',
+                          }, 'shrink-0 min-h-[65px]')
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // 3. Option: 2 Columns with Highlights Box
+                if (storyLayoutMode === '2_cols_with_highlights') {
+                  const halfLen = Math.floor(fullArticle.length * 0.52);
+                  const col1Text = fullArticle.slice(0, halfLen);
+                  const col2Text = fullArticle.slice(halfLen);
+
+                  return (
+                    <div className="grid grid-cols-12 gap-2 flex-1 min-h-0 overflow-hidden text-neutral-800" style={{ fontFamily: epaperFontFamily }}>
+                      <div
+                        className="col-span-6 flex flex-col font-semibold text-neutral-900 overflow-hidden border-r border-neutral-200 pr-1.5"
+                        style={{
+                          textAlign: 'justify',
+                          textJustify: 'inter-word',
+                          fontSize: `${bodyFontSizePx}px`,
+                          lineHeight: `${bodyLineHPx}px`,
+                        }}
+                      >
+                        <p className={`whitespace-pre-line ${dropCapClass}`}>
+                          {col1Text}
+                        </p>
+                      </div>
+                      <div className="col-span-6 flex flex-col justify-between overflow-hidden gap-1.5">
+                        <div
+                          className="flex-1 font-semibold text-neutral-900 overflow-hidden"
+                          style={{
+                            textAlign: 'justify',
+                            textJustify: 'inter-word',
+                            fontSize: `${bodyFontSizePx}px`,
+                            lineHeight: `${bodyLineHPx}px`,
+                          }}
+                        >
+                          <p className="whitespace-pre-line">
+                            {col2Text}
+                          </p>
+                        </div>
+                        {renderHighlightsBox('shrink-0')}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // 4. Option: Classic (Left Main Story ~58% width, Right Highlights Box + Optional Ad)
+                const showRightAd = card.epaperAd?.showAd && (card.epaperAd.placement === 'auto_fill' || card.epaperAd.placement === 'right_column');
+                return (
+                  <div className="grid grid-cols-12 gap-2 flex-1 min-h-0 overflow-hidden text-neutral-800" style={{ fontFamily: epaperFontFamily }}>
+                    <div
+                      className="col-span-7 flex flex-col justify-between overflow-hidden"
+                      style={{
+                        textAlign: 'justify',
+                        textJustify: 'inter-word',
+                        fontSize: `${bodyFontSizePx}px`,
+                        lineHeight: `${bodyLineHPx}px`,
+                      }}
+                    >
+                      <p className={`text-neutral-900 font-semibold whitespace-pre-line ${dropCapClass}`}>
+                        {fullArticle}
+                      </p>
+                    </div>
+                    <div className="col-span-5 flex flex-col justify-between overflow-hidden gap-1.5">
+                      <div className={showRightAd ? 'shrink-0' : 'h-full overflow-hidden'}>
+                        {renderHighlightsBox(showRightAd ? 'h-auto' : 'h-full')}
+                      </div>
+                      {showRightAd && (
+                        <div className="flex-1 min-h-[85px] overflow-hidden flex flex-col justify-end">
+                          {renderAdBox(card.epaperAd, 'w-full h-full min-h-[85px]')}
+                        </div>
+                      )}
+                      {card.epaperSecondaryStoryBody && renderSecondaryStoryBox('shrink-0')}
+                    </div>
+                  </div>
+                );
+              };
+
+              // 1. Layout: 1_below_highlights (Left: 100% full story height; Right: Highlights on top + Photo 1 below)
+              if (layout === '1_below_highlights' && card.images.main) {
+                return (
+                  <div className="flex-1 grid grid-cols-12 gap-2 overflow-hidden text-neutral-800" style={{ fontFamily: epaperFontFamily }}>
+                    <div
+                      className="col-span-7 flex flex-col justify-between leading-relaxed overflow-hidden"
+                      style={{
+                        textAlign: 'justify',
+                        textJustify: 'inter-word',
+                        fontSize: `${bodyFontSizePx}px`,
+                      }}
+                    >
+                      <p className={`text-neutral-900 font-semibold leading-relaxed whitespace-pre-line ${dropCapClass}`}>
+                        {fullArticle}
+                      </p>
+                    </div>
+                    <div className="col-span-5 flex flex-col justify-between overflow-hidden gap-1.5">
+                      <div className="flex-1 overflow-hidden">
+                        {renderHighlightsBox('h-full')}
+                      </div>
+                      <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm shrink-0">
+                        <div className="w-full h-20 sm:h-26 overflow-hidden rounded-sm bg-neutral-200">
+                          <img
+                            src={card.images.main}
+                            alt="News Photo"
+                            className="w-full h-full object-cover transition-transform"
+                            style={getCropStyle(mainCrop)}
+                          />
+                        </div>
+                        {card.epaperPhotoCaption && (
+                          <p
+                            className="text-neutral-600 font-medium italic mt-0.5 px-0.5 line-clamp-1"
+                            style={{
+                              fontFamily: epaperFontFamily,
+                              fontSize: `${Math.max(6.5, Math.round(15 * previewScale))}px`,
+                            }}
+                          >
+                            📷 {card.epaperPhotoCaption}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // 2. Layout: 1_thumb_left (Left: compact thumbnail with story below; Right: full highlights box OR highlights on top + Ad on bottom)
+              if (layout === '1_thumb_left' && card.images.main) {
+                const showRightAd = card.epaperAd?.showAd && (card.epaperAd.placement === 'auto_fill' || card.epaperAd.placement === 'right_column');
+                return (
+                  <div className="flex-1 grid grid-cols-12 gap-2 overflow-hidden text-neutral-800" style={{ fontFamily: epaperFontFamily }}>
+                    <div className="col-span-7 flex flex-col overflow-hidden leading-relaxed gap-1.5">
+                      <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm shrink-0">
+                        <div className="w-full h-18 sm:h-22 overflow-hidden rounded-sm bg-neutral-200">
+                          <img
+                            src={card.images.main}
+                            alt="News Photo"
+                            className="w-full h-full object-cover transition-transform"
+                            style={getCropStyle(mainCrop)}
+                          />
+                        </div>
+                        {card.epaperPhotoCaption && (
+                          <p
+                            className="text-neutral-600 font-medium italic mt-0.5 px-0.5 line-clamp-1"
+                            style={{
+                              fontFamily: epaperFontFamily,
+                              fontSize: `${Math.max(6.5, Math.round(15 * previewScale))}px`,
+                            }}
+                          >
+                            📷 {card.epaperPhotoCaption}
+                          </p>
+                        )}
+                      </div>
+                      <div
+                        className="flex-1 overflow-hidden"
+                        style={{
+                          textAlign: 'justify',
+                          textJustify: 'inter-word',
+                          fontSize: `${bodyFontSizePx}px`,
+                          lineHeight: `${bodyLineHPx}px`,
+                        }}
+                      >
+                        <p className={`text-neutral-900 font-semibold leading-relaxed whitespace-pre-line ${dropCapClass}`}>
+                          {fullArticle}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="col-span-5 flex flex-col justify-between overflow-hidden gap-1.5">
+                      <div className={showRightAd ? 'shrink-0' : 'h-full overflow-hidden'}>
+                        {renderHighlightsBox(showRightAd ? 'h-auto' : 'h-full')}
+                      </div>
+                      {showRightAd && (
+                        <div className="flex-1 min-h-[85px] overflow-hidden flex flex-col justify-end">
+                          {renderAdBox(card.epaperAd, 'w-full h-full min-h-[85px]')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              // 3. Layout: 2_column_bottom (Story & Highlights on top; 2 Photos strictly anchored at bottom above footer)
+              if (layout === '2_column_bottom') {
+                return (
+                  <div className="flex-1 flex flex-col justify-between overflow-hidden">
+                    <div className="flex-1 min-h-0 overflow-hidden mb-1">
+                      {renderStorySection()}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-1.5 shrink-0">
+                      <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                        <div className="w-full h-14 sm:h-18 overflow-hidden rounded-sm bg-neutral-200">
+                          <img
+                            src={card.images.second || card.images.main}
+                            alt="Photo 1"
+                            className="w-full h-full object-cover transition-transform"
+                            style={getCropStyle(secondCrop)}
+                          />
+                        </div>
+                        {card.epaperPhotoCaption2 && (
+                          <p
+                            className="text-neutral-600 italic truncate mt-0.5 px-0.5"
+                            style={{
+                              fontFamily: epaperFontFamily,
+                              fontSize: `${Math.max(6, Math.round(14 * previewScale))}px`,
+                            }}
+                          >
+                            📷 {card.epaperPhotoCaption2}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                        <div className="w-full h-14 sm:h-18 overflow-hidden rounded-sm bg-neutral-200">
+                          <img
+                            src={card.images.third || card.images.second || card.images.main}
+                            alt="Photo 2"
+                            className="w-full h-full object-cover transition-transform"
+                            style={getCropStyle(thirdCrop)}
+                          />
+                        </div>
+                        {card.epaperPhotoCaption3 && (
+                          <p
+                            className="text-neutral-600 italic truncate mt-0.5 px-0.5"
+                            style={{
+                              fontFamily: epaperFontFamily,
+                              fontSize: `${Math.max(6, Math.round(14 * previewScale))}px`,
+                            }}
+                          >
+                            📷 {card.epaperPhotoCaption3}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Standard Top Photos Layouts (1_top, 2_side, 3_split, 1_top_2_bottom, 0_none)
+              return (
+                <div className="flex-1 flex flex-col justify-between overflow-hidden" style={{ fontFamily: epaperFontFamily }}>
+                  {/* Top Photo Section */}
+                  {card.images.main && layout !== '0_none' && (
+                    <div className="w-full mb-1.5 shrink-0">
+                      {layout === '1_top' && (
+                        <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                          <div className={`w-full ${heightClass} overflow-hidden rounded-sm bg-neutral-200`}>
+                            <img
+                              src={card.images.main}
+                              alt="E-Paper News"
+                              className="w-full h-full object-cover transition-transform"
+                              style={getCropStyle(mainCrop)}
+                            />
+                          </div>
+                          {card.epaperPhotoCaption && (
+                            <p
+                              className="text-neutral-600 font-medium italic mt-0.5 px-1 line-clamp-1"
+                              style={{
+                                fontFamily: epaperFontFamily,
+                                fontSize: `${Math.max(6.5, Math.round(16 * previewScale))}px`,
+                              }}
+                            >
+                              📷 {card.epaperPhotoCaption}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {layout === '2_side' && (
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                            <div className={`w-full ${heightClass} overflow-hidden rounded-sm bg-neutral-200`}>
+                              <img
+                                src={card.images.main}
+                                alt="Photo 1"
+                                className="w-full h-full object-cover transition-transform"
+                                style={getCropStyle(mainCrop)}
+                              />
+                            </div>
+                            {card.epaperPhotoCaption && (
+                              <p
+                                className="text-neutral-600 font-medium italic mt-0.5 px-0.5 line-clamp-1"
+                                style={{
+                                  fontFamily: epaperFontFamily,
+                                  fontSize: `${Math.max(6, Math.round(15 * previewScale))}px`,
+                                }}
+                              >
+                                📷 {card.epaperPhotoCaption}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                            <div className={`w-full ${heightClass} overflow-hidden rounded-sm bg-neutral-200`}>
+                              <img
+                                src={card.images.second || card.images.main}
+                                alt="Photo 2"
+                                className="w-full h-full object-cover transition-transform"
+                                style={getCropStyle(secondCrop)}
+                              />
+                            </div>
+                            {card.epaperPhotoCaption2 && (
+                              <p
+                                className="text-neutral-600 font-medium italic mt-0.5 px-0.5 line-clamp-1"
+                                style={{
+                                  fontFamily: epaperFontFamily,
+                                  fontSize: `${Math.max(6, Math.round(15 * previewScale))}px`,
+                                }}
+                              >
+                                📷 {card.epaperPhotoCaption2}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {layout === '3_split' && (
+                        <div className="grid grid-cols-12 gap-1.5">
+                          <div className="col-span-7 flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                            <div className={`w-full ${heightClass} overflow-hidden rounded-sm bg-neutral-200`}>
+                              <img
+                                src={card.images.main}
+                                alt="Photo 1"
+                                className="w-full h-full object-cover transition-transform"
+                                style={getCropStyle(mainCrop)}
+                              />
+                            </div>
+                            {card.epaperPhotoCaption && (
+                              <p
+                                className="text-neutral-600 font-medium italic mt-0.5 px-0.5 line-clamp-1"
+                                style={{
+                                  fontFamily: epaperFontFamily,
+                                  fontSize: `${Math.max(6, Math.round(15 * previewScale))}px`,
+                                }}
+                              >
+                                📷 {card.epaperPhotoCaption}
+                              </p>
+                            )}
+                          </div>
+                          <div className="col-span-5 flex flex-col gap-1.5">
+                            <div className="flex-1 flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                              <div className="w-full h-11 sm:h-14 overflow-hidden rounded-sm bg-neutral-200">
+                                <img
+                                  src={card.images.second || card.images.main}
+                                  alt="Photo 2"
+                                  className="w-full h-full object-cover transition-transform"
+                                  style={getCropStyle(secondCrop)}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex-1 flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                              <div className="w-full h-11 sm:h-14 overflow-hidden rounded-sm bg-neutral-200">
+                                <img
+                                  src={card.images.third || card.images.main}
+                                  alt="Photo 3"
+                                  className="w-full h-full object-cover transition-transform"
+                                  style={getCropStyle(thirdCrop)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {layout === '1_top_2_bottom' && (
+                        <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-1 shadow-sm">
+                          <div className="w-full h-16 sm:h-20 overflow-hidden rounded-sm bg-neutral-200">
+                            <img
+                              src={card.images.main}
+                              alt="Top Photo"
+                              className="w-full h-full object-cover transition-transform"
+                              style={getCropStyle(mainCrop)}
+                            />
+                          </div>
+                          {card.epaperPhotoCaption && (
+                            <p
+                              className="text-neutral-600 font-medium italic mt-0.5 px-1 line-clamp-1 text-[6.5px]"
+                              style={{ fontFamily: epaperFontFamily }}
+                            >
+                              📷 {card.epaperPhotoCaption}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Dynamic Story & Highlights / Multi-Column Section */}
+                  <div className="flex-1 min-h-0 overflow-hidden mb-1 flex flex-col">
+                    {renderStorySection()}
+                  </div>
+
+                  {/* Bottom Photos for 1_top_2_bottom */}
+                  {layout === '1_top_2_bottom' && (
+                    <div className="grid grid-cols-2 gap-1.5 mt-1.5 shrink-0">
+                      <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-0.5">
+                        <div className="w-full h-11 sm:h-13 overflow-hidden rounded bg-neutral-200">
+                          <img
+                            src={card.images.second || card.images.main}
+                            alt="Bottom Photo 1"
+                            className="w-full h-full object-cover"
+                            style={getCropStyle(secondCrop)}
+                          />
+                        </div>
+                        {card.epaperPhotoCaption2 && (
+                          <p className="text-neutral-600 italic text-[6px] truncate mt-0.5" style={{ fontFamily: epaperFontFamily }}>
+                            📷 {card.epaperPhotoCaption2}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col bg-neutral-100 border border-neutral-300 rounded p-0.5">
+                        <div className="w-full h-11 sm:h-13 overflow-hidden rounded bg-neutral-200">
+                          <img
+                            src={card.images.third || card.images.second || card.images.main}
+                            alt="Bottom Photo 2"
+                            className="w-full h-full object-cover"
+                            style={getCropStyle(thirdCrop)}
+                          />
+                        </div>
+                        {card.epaperPhotoCaption3 && (
+                          <p className="text-neutral-600 italic text-[6px] truncate mt-0.5" style={{ fontFamily: epaperFontFamily }}>
+                            📷 {card.epaperPhotoCaption3}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            };
+
+            return (
+              <div
+                ref={bodyAreaRef}
+                className="flex-1 flex flex-col min-h-0 overflow-hidden relative justify-between"
+              >
+                {/* Photo & Story layout */}
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  {renderLayoutContent()}
+                </div>
+
+                {/* Bottom Strip Advertisement (Always pinned at bottom, story sits cleanly above it) */}
+                {card.epaperAd?.showAd && card.epaperAd.placement === 'bottom_strip' && (
+                  <div className="w-full shrink-0 pt-1.5 z-10">
+                    {renderAdBox(card.epaperAd, 'w-full h-14 sm:h-18')}
+                  </div>
+                )}
+
+                {/* Second Ad: Bottom Strip */}
+                {card.epaperSecondAd?.showAd && card.epaperSecondAd.placement === 'bottom_strip' && (
+                  <div className="w-full shrink-0 pt-1.5 z-10">
+                    {renderAdBox(card.epaperSecondAd, 'w-full h-14 sm:h-18')}
+                  </div>
+                )}
+
+                {/* Movable Advertisement 1 overlay inside the content area */}
+                {card.epaperAd?.showAd && card.epaperAd.placement === 'movable' && (
+                  <div
+                    className="absolute z-30 cursor-move select-none group border-2 border-red-500/80 hover:border-red-600 rounded shadow-md bg-white transition-shadow"
+                    style={{
+                      left: `${card.epaperAd.x ?? 50}%`,
+                      top: `${card.epaperAd.y ?? 60}%`,
+                      width: `${card.epaperAd.width ?? 45}%`,
+                      height: `${card.epaperAd.height ?? 25}%`,
+                    }}
+                    onMouseDown={(e) => handleAdMouseDown(e, 'ad1')}
+                  >
+                    <div className="w-full h-full relative overflow-hidden">
+                      {renderAdBox(card.epaperAd, 'w-full h-full')}
+                      <div className="absolute top-1 left-1 bg-neutral-950/80 text-white text-[8px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 pointer-events-none z-30">
+                        <span>✥ ड्रैग करें</span>
+                      </div>
+                      {/* Bottom-right corner resize handle */}
+                      <div
+                        className="absolute bottom-0 right-0 w-4 h-4 bg-red-600 text-white cursor-se-resize flex items-center justify-center text-[9px] font-black z-40 rounded-tl shadow"
+                        title="साइज बदलने के लिए खींचें"
+                        onMouseDown={(e) => handleResizeMouseDown(e, 'ad1')}
+                      >
+                        ↘
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Movable Advertisement 2 overlay inside the content area */}
+                {card.epaperSecondAd?.showAd && card.epaperSecondAd.placement === 'movable' && (
+                  <div
+                    className="absolute z-30 cursor-move select-none group border-2 border-amber-500/90 hover:border-amber-600 rounded shadow-md bg-white transition-shadow"
+                    style={{
+                      left: `${card.epaperSecondAd.x ?? 52}%`,
+                      top: `${card.epaperSecondAd.y ?? 68}%`,
+                      width: `${card.epaperSecondAd.width ?? 44}%`,
+                      height: `${card.epaperSecondAd.height ?? 22}%`,
+                    }}
+                    onMouseDown={(e) => handleAdMouseDown(e, 'ad2')}
+                  >
+                    <div className="w-full h-full relative overflow-hidden">
+                      {renderAdBox(card.epaperSecondAd, 'w-full h-full')}
+                      <div className="absolute top-1 left-1 bg-amber-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow flex items-center gap-0.5 pointer-events-none z-30">
+                        <span>✥ विज्ञापन 2</span>
+                      </div>
+                      {/* Bottom-right corner resize handle */}
+                      <div
+                        className="absolute bottom-0 right-0 w-4 h-4 bg-amber-600 text-white cursor-se-resize flex items-center justify-center text-[9px] font-black z-40 rounded-tl shadow"
+                        title="साइज बदलने के लिए खींचें"
+                        onMouseDown={(e) => handleResizeMouseDown(e, 'ad2')}
+                      >
+                        ↘
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          </div>
+
+          {/* Yellow/Custom Footer Graphic at Bottom */}
+          <FooterGraphic
+            socialHandle={card.socialHandle}
+            whatsappNumber={card.whatsappNumber}
+            customFooterPng={getActiveFooterPng(card)}
+          />
+        </div>
+      ) : card.frameDesign === 'jacket-text-breaking' ? (
+        /* ================= TEXT BREAKING JACKET (EXCLUSIVE TEXT-ONLY) ================= */
+        <div className="absolute inset-x-0 bottom-0 top-[66px] sm:top-[80px] z-20 flex flex-col justify-between">
+          {/* Middle Main Content: 3D Breaking News Badge + Centered Partition Line + Headline */}
+          <div className="flex-1 flex flex-col justify-start items-center px-4 sm:px-8 pt-2 sm:pt-3 pb-2">
+            {/* 3D Breaking News Badge (Moved upwards closer to header) */}
+            <div className="mb-2">
+              <TextBreakingBadge
+                style={card.textBreakingStyle || 'breaking-3d-en'}
+                customTitle={card.textBreakingCustomTitle}
+                titleSize={card.textBreakingTitleSize}
+              />
+            </div>
+
+            {/* Centered Partition Line (Elegant middle divider, not full width) */}
+            <div className="flex items-center justify-center gap-2 mb-3 sm:mb-4 w-full max-w-[42%] mx-auto">
+              <div className="h-[2px] sm:h-[2.5px] flex-1 bg-gradient-to-r from-transparent via-red-600 to-red-600 rounded-full" />
+              <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rotate-45 bg-red-600 shrink-0 shadow-sm" />
+              <div className="h-[2px] sm:h-[2.5px] flex-1 bg-gradient-to-r from-red-600 via-red-600 to-transparent rounded-full" />
+            </div>
+
+            {/* Centered Headline with highlighted words in red */}
+            <div className="flex-1 flex items-center justify-center w-full max-w-[96%] mx-auto px-2">
+              <h1
+                className="font-black tracking-normal leading-[1.3] font-['Baloo_2'] text-center overflow-visible text-neutral-950"
+                style={{
+                  fontSize: `${Math.round(effectivePreviewFontSize * 1.15)}px`,
+                }}
+              >
+                {renderFormattedHeadline()}
+              </h1>
+            </div>
+          </div>
+
+          {/* Above Footer: Location & "पूरी खबर डिस्क्रिप्शन में" Strip */}
+          <div className="flex flex-col justify-end w-full">
+            <div className="flex items-center justify-between px-3 sm:px-6 mb-2">
+              {/* Location Badge (Left) */}
+              {card.showLocation !== false && card.location ? (
+                <div
+                  className="bg-red-600 border border-red-500/90 text-white rounded px-2 sm:px-2.5 flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap max-w-[48%] overflow-hidden"
+                  style={{
+                    height: `${Math.max(22, Math.min(32, Math.round(44 * previewScale)))}px`,
+                    fontSize: `${Math.max(11, Math.min(14, Math.round(24 * previewScale)))}px`,
+                  }}
+                >
+                  <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white fill-white shrink-0" />
+                  <span className="font-black font-['Baloo_2'] tracking-wide truncate">
+                    {card.location}
+                  </span>
+                </div>
+              ) : (
+                <div />
+              )}
+
+              {/* Callout Tag: "🔴 पूरी खबर डिस्क्रिप्शन में" (Right) */}
+              {card.showCallout && (
+                <div
+                  className="bg-white border-2 border-yellow-400 rounded px-2 sm:px-2.5 shadow-md flex items-center gap-1 shrink-0 whitespace-nowrap max-w-[48%] overflow-hidden"
+                  style={{
+                    height: `${Math.max(22, Math.min(32, Math.round(44 * previewScale)))}px`,
+                    fontSize: `${Math.max(11, Math.min(14, Math.round(24 * previewScale)))}px`,
+                  }}
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse shrink-0" />
+                  <span className="text-neutral-950 font-black font-['Baloo_2'] truncate">
+                    {card.calloutTag.replace('🔴', '').trim() || 'पूरी खबर डिस्क्रिप्शन में'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Yellow Footer Graphic */}
+            <FooterGraphic
+              socialHandle={card.socialHandle}
+              whatsappNumber={card.whatsappNumber}
+              customFooterPng={getActiveFooterPng(card)}
+            />
+          </div>
+        </div>
+      ) : card.frameDesign === 'jacket-breaking-red' ? (
         /* ================= SUPER BREAKING JACKET LAYOUT ================= */
         <div className="absolute bottom-0 inset-x-0 z-20 flex flex-col justify-end">
-          {/* A. Location & Callout Tag floating ABOVE the Breaking News ribbon */}
-          <div className="flex items-center justify-between px-4 sm:px-6 mb-2 pointer-events-none">
+          {/* A. Location & Callout Tag floating ABOVE the Breaking News ribbon or resting above white box if ribbon is hidden */}
+          <div className={`flex items-center justify-between px-3 sm:px-6 pointer-events-none ${card.showBreakingRibbon === false ? 'mb-1.5' : 'mb-2'}`}>
             {/* Location Badge (Left) */}
             {card.location ? (
-              <div className="bg-red-600 border border-red-500/90 text-white rounded-md px-2.5 py-1 flex items-center gap-1.5 shadow-[0_4px_12px_rgba(0,0,0,0.6)]">
-                <MapPin className="w-3 h-3 text-white fill-white shrink-0" />
-                <span className="font-black text-[11px] sm:text-xs font-['Baloo_2'] tracking-wide">
+              <div
+                className="bg-red-600 border border-red-500/90 text-white rounded px-2 sm:px-2.5 flex items-center gap-1 shadow-[0_4px_12px_rgba(0,0,0,0.6)] shrink-0 whitespace-nowrap max-w-[48%] overflow-hidden pointer-events-auto"
+                style={{
+                  height: `${Math.max(22, Math.min(32, Math.round(44 * previewScale)))}px`,
+                  fontSize: `${Math.max(11, Math.min(14, Math.round(24 * previewScale)))}px`,
+                }}
+              >
+                <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white fill-white shrink-0" />
+                <span className="font-black font-['Baloo_2'] tracking-wide truncate">
                   {card.location}
                 </span>
               </div>
@@ -549,37 +2109,45 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
 
             {/* Callout Tag (Right) */}
             {card.showCallout && (
-              <div className="bg-white border-2 border-yellow-400 rounded-md px-3 py-0.5 sm:py-1 shadow-[0_4px_12px_rgba(0,0,0,0.6)] flex items-center gap-1.5">
+              <div
+                className="bg-white border-2 border-yellow-400 rounded px-2 sm:px-2.5 shadow-[0_4px_12px_rgba(0,0,0,0.6)] flex items-center gap-1 shrink-0 whitespace-nowrap max-w-[48%] overflow-hidden pointer-events-auto"
+                style={{
+                  height: `${Math.max(22, Math.min(32, Math.round(44 * previewScale)))}px`,
+                  fontSize: `${Math.max(11, Math.min(14, Math.round(24 * previewScale)))}px`,
+                }}
+              >
                 <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse shrink-0" />
-                <span className="text-neutral-950 font-black text-[11px] sm:text-xs font-['Baloo_2']">
+                <span className="text-neutral-950 font-black font-['Baloo_2'] truncate">
                   {card.calloutTag.replace('🔴', '').trim() || 'पूरी खबर डिस्क्रिप्शन में'}
                 </span>
               </div>
             )}
           </div>
 
-          {/* B. BREAKING NEWS Ribbon (Centered, 70% width, half-in half-out of white box) */}
-          <div className="relative w-full z-25 flex justify-center items-center select-none -mb-2.5 px-6">
-            <img
-              src={card.customBreakingRibbonPng || '/assets/breaking_news_ribbon.svg'}
-              alt="BREAKING NEWS"
-              className="h-auto object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.30)] transition-all"
-              style={{
-                width: '70%',
-                maxWidth: '440px',
-              }}
-            />
-          </div>
+          {/* B. BREAKING NEWS Ribbon (Centered, 70% width, half-in half-out of white box) - Can be hidden by editor */}
+          {card.showBreakingRibbon !== false && (
+            <div className="relative w-full z-25 flex justify-center items-center select-none -mb-2 px-6">
+              <img
+                src={card.customBreakingRibbonPng || '/assets/breaking_news_ribbon.svg'}
+                alt="BREAKING NEWS"
+                className="h-auto object-contain filter drop-shadow-[0_4px_8px_rgba(0,0,0,0.30)] transition-all"
+                style={{
+                  width: '70%',
+                  maxWidth: '440px',
+                }}
+              />
+            </div>
+          )}
 
           {/* Wrapper for Bottom White Headline Plate + Footer (Measured by bottomPlateRef) */}
           <div ref={bottomPlateRef} className="w-full flex flex-col z-20">
-            {/* C. Solid Pure White Background with Fixed Space for 2-3 Line Headline */}
+            {/* C. Solid Pure White Background with Headline positioned closer to Footer, removing unwanted space */}
             <div
-              className="bg-white pb-3 shadow-xl min-h-[96px] sm:min-h-[114px] flex flex-col justify-center border-t border-neutral-200"
+              className="bg-white pb-1.5 sm:pb-2 shadow-xl flex flex-col justify-end border-t border-neutral-200"
               style={{
                 paddingLeft: `${effectivePaddingX}px`,
                 paddingRight: `${effectivePaddingX}px`,
-                paddingTop: '34px',
+                paddingTop: card.showBreakingRibbon === false ? '14px' : '36px',
               }}
             >
               <h1
@@ -602,75 +2170,144 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
             <FooterGraphic
               socialHandle={card.socialHandle}
               whatsappNumber={card.whatsappNumber}
-              customFooterPng={card.customFooterPng}
+              customFooterPng={getActiveFooterPng(card)}
             />
           </div>
         </div>
       ) : card.frameDesign === 'jacket-quote' ? (
-        /* ================= QUOTE (बयान) JACKET LAYOUT ================= */
-        <div className="absolute bottom-0 inset-x-0 z-20 flex flex-col justify-end pt-4 pb-3 sm:pb-4 px-3 sm:px-5 bg-gradient-to-t from-black via-black via-75% to-transparent">
-          {/* A. Top Quote Line & Yellow Badge “ */}
-          <div className="flex items-center justify-center gap-2 sm:gap-3 mb-2">
-            <div className="h-[2px] flex-1 bg-[#FFE600] max-w-[120px]" />
-            <div className="bg-[#FFE600] text-black px-2 py-0.5 rounded font-black text-sm sm:text-base flex items-center justify-center shadow">
-              “
-            </div>
-            <div className="h-[2px] flex-1 bg-[#FFE600] max-w-[120px]" />
-          </div>
+        /* ================= QUOTE (बयान) JACKET LAYOUT (52/48 split, Centered Statement) ================= */
+        (() => {
+          const effectiveSpeaker = getEffectiveSpeaker(card.speakerName, card.speakerTitle, card.headline);
+          const hasSpeaker = Boolean(effectiveSpeaker.name);
 
-          {/* B. 2-3 Line Headline / Statement Quote */}
-          <div className="px-2 py-1 text-center">
-            <h1
-              className="font-black tracking-normal leading-[1.38] font-['Baloo_2'] text-center text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]"
-              style={{
-                fontSize: `${effectivePreviewFontSize}px`,
-              }}
-            >
-              {renderFormattedHeadline()}
-            </h1>
-          </div>
+          return (
+            <div className="absolute bottom-0 inset-x-0 top-[52%] z-20 flex flex-col justify-between bg-black">
+              {/* Top Strip: Location (Left) & Callout Tag (Right) floating on photo above black plate */}
+              <div className="absolute top-[-36px] sm:top-[-40px] inset-x-0 flex items-center justify-between px-3 sm:px-4 z-20 pointer-events-none">
+                {card.showLocation !== false && card.location ? (
+                  <div
+                    className="bg-red-600 border border-red-500/90 text-white rounded px-2 sm:px-2.5 flex items-center gap-1 shadow-[0_4px_12px_rgba(0,0,0,0.6)] shrink-0 whitespace-nowrap max-w-[48%] overflow-hidden"
+                    style={{
+                      height: `${Math.max(22, Math.min(32, Math.round(44 * previewScale)))}px`,
+                      fontSize: `${Math.max(11, Math.min(14, Math.round(24 * previewScale)))}px`,
+                    }}
+                  >
+                    <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white fill-white shrink-0" />
+                    <span className="font-black font-['Baloo_2'] tracking-wide truncate">
+                      {card.location}
+                    </span>
+                  </div>
+                ) : (
+                  <div />
+                )}
 
-          {/* C. Bottom Quote Line & Yellow Badge ” */}
-          <div className="flex items-center justify-center gap-2 sm:gap-3 mt-2 mb-1.5">
-            <div className="h-[2px] flex-1 bg-[#FFE600] max-w-[120px]" />
-            <div className="bg-[#FFE600] text-black px-2 py-0.5 rounded font-black text-sm sm:text-base flex items-center justify-center shadow">
-              ”
-            </div>
-            <div className="h-[2px] flex-1 bg-[#FFE600] max-w-[120px]" />
-          </div>
-
-          {/* D. Speaker Name & Designation (Single Line centered) */}
-          <div className="text-center text-white font-black text-xs sm:text-sm font-['Baloo_2'] mb-3 tracking-wide drop-shadow-sm">
-            {card.speakerName || 'अनिरुद्धाचार्य महाराज, कथावाचक'}
-          </div>
-
-          {/* E. Dedicated Quote Footer Capsule Pill */}
-          <div className="w-full flex justify-center pb-1">
-            <div className="bg-black border border-white/90 rounded-full px-2 sm:px-3 py-1 flex items-center gap-1.5 sm:gap-2.5 shadow-lg max-w-[95%]">
-              <div className="bg-red-600 text-white text-[9px] sm:text-[10px] font-black px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full whitespace-nowrap shadow">
-                WATCH NOW  ▶
+                {card.showCallout && card.calloutTag ? (
+                  <div
+                    className="bg-white border-2 border-yellow-400 rounded px-2 sm:px-2.5 shadow-[0_4px_12px_rgba(0,0,0,0.6)] flex items-center gap-1 shrink-0 whitespace-nowrap max-w-[48%] overflow-hidden"
+                    style={{
+                      height: `${Math.max(22, Math.min(32, Math.round(44 * previewScale)))}px`,
+                      fontSize: `${Math.max(11, Math.min(14, Math.round(24 * previewScale)))}px`,
+                    }}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse shrink-0" />
+                    <span className="text-neutral-950 font-black font-['Baloo_2'] truncate">
+                      {card.calloutTag.replace('🔴', '').trim() || 'पूरी खबर डिस्क्रिप्शन में'}
+                    </span>
+                  </div>
+                ) : null}
               </div>
-              <div className="flex items-center gap-1 sm:gap-1.5 text-[8px] sm:text-[9px]">
-                <span className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full bg-[#1877F2] text-white flex items-center justify-center font-bold text-[8px]">f</span>
-                <span className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full bg-[#E1306C] text-white flex items-center justify-center font-bold text-[8px]">📷</span>
-                <span className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full bg-[#FF0000] text-white flex items-center justify-center font-bold text-[8px]">▶</span>
-                <span className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full bg-[#111111] border border-white/40 text-white flex items-center justify-center font-bold text-[8px]">𝕏</span>
-                <span className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full bg-[#0A66C2] text-white flex items-center justify-center font-bold text-[8px]">in</span>
-                <span className="w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full bg-[#FF8C00] text-white flex items-center justify-center font-bold text-[8px]">P</span>
+
+              {/* Main Statement Container - perfectly distributed in black area */}
+              <div className="flex-1 flex flex-col justify-evenly px-3 sm:px-6 py-1.5">
+                {/* A. Top Quote Line & Yellow Badge with Quote Icon */}
+                <div className="flex items-center justify-center gap-2 sm:gap-3">
+                  <div className="h-[2px] flex-1 bg-[#FFE600] max-w-[80px] sm:max-w-[120px]" />
+                  <div className="bg-[#FFE600] text-black px-3.5 py-1 rounded-lg flex items-center justify-center shadow-md">
+                    <Quote className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black fill-black" />
+                  </div>
+                  <div className="h-[2px] flex-1 bg-[#FFE600] max-w-[80px] sm:max-w-[120px]" />
+                </div>
+
+                {/* B. 2-3 Line Headline / Statement Quote */}
+                <div className="px-2 sm:px-4 py-0.5">
+                  <h1
+                    className={`font-black tracking-normal leading-[1.36] font-['Baloo_2'] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] ${
+                      card.headlineAlign === 'center'
+                        ? 'text-center'
+                        : card.headlineAlign === 'left'
+                        ? 'text-left'
+                        : 'text-justify'
+                    }`}
+                    style={{
+                      fontSize: `${effectivePreviewFontSize}px`,
+                      textAlignLast:
+                        card.headlineAlign === 'center'
+                          ? 'center'
+                          : card.headlineAlign === 'left'
+                          ? 'left'
+                          : 'center',
+                    }}
+                  >
+                    {renderFormattedHeadline()}
+                  </h1>
+                </div>
+
+                {/* C. Bottom Quote Line & Yellow Badge with Closing Quote Icon */}
+                <div className="flex items-center justify-center gap-2 sm:gap-3">
+                  <div className="h-[2px] flex-1 bg-[#FFE600] max-w-[80px] sm:max-w-[120px]" />
+                  <div className="bg-[#FFE600] text-black px-3.5 py-1 rounded-lg flex items-center justify-center shadow-md">
+                    <Quote className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black fill-black rotate-180" />
+                  </div>
+                  <div className="h-[2px] flex-1 bg-[#FFE600] max-w-[80px] sm:max-w-[120px]" />
+                </div>
+
+                {/* D. Speaker Name & Designation (Open Text, No Round Box) */}
+                {hasSpeaker && (
+                  <div className="flex items-center justify-center pt-1 pb-0.5">
+                    <div className="inline-flex items-center gap-2 text-center font-['Baloo_2'] tracking-wide max-w-[95%] overflow-hidden">
+                      <span className="text-white font-black text-sm sm:text-base whitespace-nowrap drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                        {effectiveSpeaker.name.startsWith('—') || effectiveSpeaker.name.startsWith('-')
+                          ? effectiveSpeaker.name
+                          : `— ${effectiveSpeaker.name}`}
+                      </span>
+                      {effectiveSpeaker.title && (
+                        <>
+                          <span className="text-[#FFE600] font-bold text-sm shrink-0">|</span>
+                          <span className="text-neutral-200 font-semibold text-xs sm:text-sm truncate drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                            {effectiveSpeaker.title}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* E. Yellow Footer Graphic (Same as all other templates) */}
+              <FooterGraphic
+                socialHandle={card.socialHandle}
+                whatsappNumber={card.whatsappNumber}
+                customFooterPng={getActiveFooterPng(card)}
+              />
             </div>
-          </div>
-        </div>
+          );
+        })()
       ) : (
         /* ================= STANDARD ORIGINAL JACKET LAYOUT ================= */
         <div className="absolute bottom-0 inset-x-0 z-20 flex flex-col justify-end pt-8 pb-0 bg-gradient-to-t from-black via-black/95 via-50% to-transparent">
           {/* Top Strip above Caption: Location & "🔴 पूरी खबर डिस्क्रिप्शन में" */}
-          <div className="flex items-center justify-between px-4 sm:px-6 mb-3 sm:mb-4">
+          <div className="flex items-center justify-between px-3 sm:px-6 mb-2 sm:mb-3">
             {/* Location Badge (Placed at top space above headline) */}
             {card.location ? (
-              <div className="bg-red-600 border border-red-500/80 text-white rounded-md px-2.5 py-1 flex items-center gap-1.5 shadow-md">
-                <MapPin className="w-3 h-3 text-white fill-white shrink-0" />
-                <span className="font-black text-[11px] sm:text-xs font-['Baloo_2'] tracking-wide">
+              <div
+                className="bg-red-600 border border-red-500/80 text-white rounded px-2 sm:px-2.5 flex items-center gap-1 shadow-md shrink-0 whitespace-nowrap max-w-[48%] overflow-hidden"
+                style={{
+                  height: `${Math.max(22, Math.min(32, Math.round(44 * previewScale)))}px`,
+                  fontSize: `${Math.max(11, Math.min(14, Math.round(24 * previewScale)))}px`,
+                }}
+              >
+                <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white fill-white shrink-0" />
+                <span className="font-black font-['Baloo_2'] tracking-wide truncate">
                   {card.location}
                 </span>
               </div>
@@ -680,9 +2317,15 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
 
             {/* Callout Tag: "🔴 पूरी खबर डिस्क्रिप्शन में" */}
             {card.showCallout && (
-              <div className="bg-white border-2 border-yellow-400 rounded-md px-3 py-0.5 sm:py-1 shadow-md flex items-center gap-1.5">
+              <div
+                className="bg-white border-2 border-yellow-400 rounded px-2 sm:px-2.5 shadow-md flex items-center gap-1 shrink-0 whitespace-nowrap max-w-[48%] overflow-hidden"
+                style={{
+                  height: `${Math.max(22, Math.min(32, Math.round(44 * previewScale)))}px`,
+                  fontSize: `${Math.max(11, Math.min(14, Math.round(24 * previewScale)))}px`,
+                }}
+              >
                 <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse shrink-0" />
-                <span className="text-neutral-950 font-black text-[11px] sm:text-xs font-['Baloo_2']">
+                <span className="text-neutral-950 font-black font-['Baloo_2'] truncate">
                   {card.calloutTag.replace('🔴', '').trim() || 'पूरी खबर डिस्क्रिप्शन में'}
                 </span>
               </div>
@@ -725,7 +2368,7 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
             <FooterGraphic
               socialHandle={card.socialHandle}
               whatsappNumber={card.whatsappNumber}
-              customFooterPng={card.customFooterPng}
+              customFooterPng={getActiveFooterPng(card)}
             />
           )}
         </div>

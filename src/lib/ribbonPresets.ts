@@ -52,6 +52,31 @@ export const BUILTIN_RIBBONS: RibbonPreset[] = [
     url: '/assets/ribbon_vibrant_red_white.svg',
   },
   {
+    id: 'live-update',
+    name: '🔴 LIVE UPDATE (लाइव अपडेट)',
+    url: '/assets/ribbon_live_update.svg',
+  },
+  {
+    id: 'ground-report',
+    name: 'ग्राउंड रिपोर्ट (GROUND REPORT)',
+    url: '/assets/ribbon_ground_report.svg',
+  },
+  {
+    id: 'viral-sach',
+    name: 'वायरल सच (VIRAL SACH)',
+    url: '/assets/ribbon_viral_sach.svg',
+  },
+  {
+    id: 'fact-check',
+    name: 'सच का खुलासा / पड़ताल (FACT CHECK)',
+    url: '/assets/ribbon_fact_check.svg',
+  },
+  {
+    id: 'big-story',
+    name: 'देश की बड़ी बात (BIG STORY)',
+    url: '/assets/ribbon_big_story.svg',
+  },
+  {
     id: 'cyber-neon',
     name: 'टॉप न्यूज़ (TOP NEWS)',
     url: '/assets/ribbon_cyber_neon.svg',
