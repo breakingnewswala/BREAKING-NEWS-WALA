@@ -112,6 +112,7 @@ export default function App() {
   const [isMobile, setIsMobile] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1024 : false
   );
+  const [aiResetKey, setAiResetKey] = useState<number>(0);
 
   useEffect(() => {
     const handleResize = () => {
@@ -185,7 +186,10 @@ export default function App() {
       // ignore
     }
 
-    showToast('✨ नया कार्ड तैयार! डमी फोटो व गाइड टेक्स्ट लोड हो गया है।');
+    // Fully reset AI Prompt & Link inputs
+    setAiResetKey((prev) => prev + 1);
+
+    showToast('✨ नया कार्ड तैयार! एआई टूल व कार्ड डेटा पूरी तरह रिफ्रेश हो गया।');
   };
 
   const handleLoginSuccess = (user: ReporterUser) => {
@@ -373,12 +377,12 @@ export default function App() {
               <span className="hidden xxs:inline">गाइड</span>
             </button>
 
-            {/* Reset / Clean All button (रिफ्रेश) */}
+            {/* Reset / Clean All button (रिफ्रेश) - Hidden on mobile as user requested */}
             <button
               type="button"
               onClick={handleResetCard}
               title="कार्ड रिफ्रेश करें - नया कार्ड बनाएं"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-xs font-bold border border-neutral-700 transition-all cursor-pointer shadow-sm active:scale-95"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-xs font-bold border border-neutral-700 transition-all cursor-pointer shadow-sm active:scale-95"
             >
               <RefreshCw className="w-3.5 h-3.5 text-yellow-400" />
               <span>रिफ्रेश</span>
@@ -450,41 +454,38 @@ export default function App() {
                 />
               </div>
 
-              {/* Desktop Quick Action Buttons */}
+              {/* Desktop Quick Action Buttons: 1. डाउनलोड, 2. रिफ्रेश, 3. कैप्शन एंड शेयर */}
               <div className="w-full grid grid-cols-3 gap-2 pt-1">
+                {/* 1. डाउनलोड */}
                 <button
                   onClick={handleDownload}
                   disabled={downloading}
-                  className="py-2.5 px-3 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-neutral-950 font-black text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
+                  className="py-2.5 px-3 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-neutral-950 font-black text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer active:scale-95"
+                  title="कार्ड डाउनलोड करें (JPG)"
                 >
                   <Download className="w-4 h-4" />
                   <span>{downloading ? 'बन रहा है...' : 'डाउनलोड (JPG)'}</span>
                 </button>
 
+                {/* 2. रिफ्रेश */}
                 <button
-                  onClick={handleCopyToClipboard}
-                  disabled={downloading}
-                  className="py-2.5 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  type="button"
+                  onClick={handleResetCard}
+                  className="py-2.5 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white font-bold text-xs border border-neutral-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm"
+                  title="कार्ड व एआई टूल पूरा रिफ्रेश करें"
                 >
-                  {copied ? (
-                    <>
-                      <Check className="w-4 h-4 text-green-400" />
-                      <span>कॉपी हुआ!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      <span>कॉपी इमेज</span>
-                    </>
-                  )}
+                  <RefreshCw className="w-4 h-4 text-yellow-400" />
+                  <span>रिफ्रेश</span>
                 </button>
 
+                {/* 3. कैप्शन एंड शेयर */}
                 <button
                   onClick={() => setIsCaptionModalOpen(true)}
-                  className="py-2.5 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs border border-neutral-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  className="py-2.5 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white font-bold text-xs border border-neutral-700 flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm"
+                  title="कैप्शन कॉपी व सोशल मीडिया शेयर"
                 >
                   <Share2 className="w-4 h-4 text-green-400" />
-                  <span>कैप्शन व शेयर</span>
+                  <span>कैप्शन एंड शेयर</span>
                 </button>
               </div>
 
@@ -509,36 +510,38 @@ export default function App() {
                 </span>
 
                 <div className="flex items-center gap-1.5">
+                  {/* 1. डाउनलोड */}
                   <button
                     type="button"
                     onClick={handleDownload}
                     disabled={downloading}
-                    className="px-2.5 py-1 rounded-lg bg-yellow-400 hover:bg-yellow-300 text-neutral-950 font-black text-xs flex items-center gap-1 cursor-pointer shadow active:scale-95"
-                    title="डाउनलोड करें"
+                    className="px-2.5 py-1.5 rounded-lg bg-yellow-400 hover:bg-yellow-300 text-neutral-950 font-black text-xs flex items-center gap-1 cursor-pointer shadow active:scale-95"
+                    title="कार्ड डाउनलोड करें"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>{downloading ? '...' : 'डाउनलोड'}</span>
                   </button>
 
+                  {/* 2. रिफ्रेश (Easy to touch, slightly larger padding) */}
                   <button
                     type="button"
-                    onClick={handleCopyToClipboard}
-                    disabled={downloading}
-                    className="px-2 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-sm"
-                    title="कॉपी इमेज"
+                    onClick={handleResetCard}
+                    className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white border border-neutral-700 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                    title="कार्ड व एआई टूल पूरा रिफ्रेश करें"
                   >
-                    {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span className="hidden xxs:inline">कॉपी</span>
+                    <RefreshCw className="w-3.5 h-3.5 text-yellow-400" />
+                    <span>रिफ्रेश</span>
                   </button>
 
+                  {/* 3. कैप्शन एंड शेयर */}
                   <button
                     type="button"
                     onClick={() => setIsCaptionModalOpen(true)}
-                    className="px-2 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-sm"
+                    className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 text-xs font-bold flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
                     title="कैप्शन व शेयर"
                   >
                     <Share2 className="w-3.5 h-3.5 text-green-400" />
-                    <span className="hidden xxs:inline">कैप्शन</span>
+                    <span>कैप्शन</span>
                   </button>
 
                   {/* Collapse / Expand toggle so reporter can hide preview when needed */}
@@ -592,6 +595,7 @@ export default function App() {
             onOpenAIAnalyze={() => setIsAIAnalyzeOpen(true)}
             onOpenCommandModal={() => setIsCommandModalOpen(true)}
             onOpenCaptionModal={() => setIsCaptionModalOpen(true)}
+            onResetAI={handleResetCard}
             activeStep={activeStep}
             onStepChange={setActiveStep}
             currentUser={currentUser}
@@ -641,6 +645,7 @@ export default function App() {
 
       {/* News Command & Link Modal */}
       <NewsCommandModal
+        key={aiResetKey}
         isOpen={isCommandModalOpen}
         onClose={() => setIsCommandModalOpen(false)}
         onApplyResult={handleApplyAIResult}

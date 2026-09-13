@@ -489,13 +489,17 @@ Description: ${metaDescMatch ? metaDescMatch[1] : ""}
 
     const prompt = `
 आप भारत के न्यूज़ चैनल "ब्रेकिंग न्यूज़ वाला" के चीफ एडिटर हैं।
-यूज़र ने यह कमांड / समाचार विवरण दिया है:
+यूज़र ने यह कमांड / कच्ची स्क्रिप्ट / समाचार विवरण या प्रेस नोट दिया है:
 ${effectiveInput || ""}
 ${fetchedArticleSnippet ? `वेबसाइट सामग्री: ${fetchedArticleSnippet}` : ""}
-${customPrompt ? `यूज़र का विशेष निर्देश / प्रॉम्प्ट (Prompt / Focus / Raw Script): ${customPrompt}` : ""}
+${customPrompt ? `यूज़र का विशेष निर्देश / प्रॉम्प्ट या कच्ची स्क्रिप्ट (Prompt / Raw Script / Press Note): ${customPrompt}` : ""}
+
+विशेष संपादकीय नियम (प्रेस नोट / स्क्रिप्ट रूपांतरण):
+- यदि यूज़र ने बिना किसी लिंक के सीधे प्रॉम्प्ट बॉक्स या इनपुट बॉक्स में कोई कच्ची स्क्रिप्ट, प्रेस नोट, सरकारी विज्ञप्ति या नेताओं का बयान दिया है, तो उस पूरी सामग्री को निष्पक्ष, प्रामाणिक और प्रभावशाली न्यूज़ ग्राफिक में बदलें।
+- आदरसूचक व चाटुकारिता शब्दों का पूर्ण निष्कासन (MANDATORY): हेडलाइन, हेडलाइन विकल्पों और पूरी स्क्रिप्ट (summary) में से 'श्री', 'श्रीमान', 'श्रीमती', 'सुश्री', 'माननीय', 'सम्माननीय', 'सम्मानीय', 'आदरणीय', 'महोदय', 'जी' जैसे सभी औपचारिक व सरकारी/पीआर शब्दों को पूरी तरह हटा दें। सीधे नेता या अधिकारी का पद और नाम लिखें (जैसे: 'माननीय मुख्यमंत्री श्री ... जी' के स्थान पर 'मुख्यमंत्री ...', 'श्रीमान कलेक्टर महोदय' के स्थान पर 'कलेक्टर')।
 
 कृपया इस जानकारी और निर्देश से एक शक्तिशाली, वायरल और ऑथेंटिक हिंदी इमेज न्यूज़ (न्यूज़ ग्राफिक कार्ड) तैयार करें:
-1. "headline": मुख्य, स्पष्ट और प्रभावकारी हिंदी हेडलाइन (लगभग 12-22 शब्द, देवनागरी लिपि में)।
+1. "headline": मुख्य, स्पष्ट और प्रभावकारी हिंदी हेडलाइन (लगभग 12-22 शब्द, देवनागरी लिपि में, बिना किसी आदरसूचक शब्द के)।
 2. "headlineOptions": 3 अलग-अलग, शक्तिशाली हिंदी हेडलाइन विकल्प ताकि एडिटर सबसे सटीक हेडलाइन चुन सकें:
    - विकल्प 1: हाई-इम्पैक्ट / ब्रेकिंग न्यूज़ स्टाइल
    - विकल्प 2: तथ्यात्मक व विस्तृत जानकारी स्टाइल
@@ -503,11 +507,11 @@ ${customPrompt ? `यूज़र का विशेष निर्देश /
 3. "highlightWords": हेडलाइन में से 2-4 मुख्य शब्द जिन्हें पीले रंग (Yellow) में हाइलाइट करना है।
 4. "formattedHeadline": हेडलाइन में हाइलाइट होने वाले शब्दों के चारों ओर [yellow]शब्द[/yellow] लगाएं।
 5. "location": संबंधित शहर, जिला या राज्य (जैसे "मध्य प्रदेश", "शहडोल, मप्र", "रीवा", "भोपाल", आदि)।
-6. "summary": सोशल मीडिया (Instagram व Facebook पोस्ट) के लिए कम से कम 2 और विवरण अधिक होने पर 3 विस्तृत पैराग्राफ में पूरी खबर विस्तार से लिखें ताकि पाठक को लगे कि "पूरी खबर डिस्क्रिप्शन में" मिल गई है। उसके ठीक बाद एक खाली लाइन छोड़कर अंत में हैशटैग लगाएं, जिसमें सबसे पहला हैशटैग अनिवार्य रूप से #breakingnewswala होगा, बीच में 4-6 प्रासंगिक हैशटैग (जैसे #BreakingNews #HindiNews आदि), और सबसे अंतिम हैशटैग अनिवार्य रूप से #BNWTV होगा। इसके अलावा कोई अन्य हेडिंग, फोन नंबर या सोशल लिंक नहीं होना चाहिए।
+6. "summary": सोशल मीडिया (Instagram व Facebook पोस्ट) तथा अपलोडिंग हेतु कम से कम 2 और विवरण अधिक होने पर 3 विस्तृत पैराग्राफ में पूरी निष्पक्ष खबर विस्तार से लिखें (प्रेस नोट की चाटुकारिता व आदरसूचक शब्द हटाकर) ताकि पाठक को लगे कि "पूरी खबर डिस्क्रिप्शन में" मिल गई है। उसके ठीक बाद एक खाली लाइन छोड़कर अंत में हैशटैग लगाएं, जिसमें सबसे पहला हैशटैग अनिवार्य रूप से #breakingnewswala होगा, बीच में 4-6 प्रासंगिक हैशटैग (जैसे #BreakingNews #HindiNews आदि), और सबसे अंतिम हैशटैग अनिवार्य रूप से #BNWTV होगा। इसके अलावा कोई अन्य हेडिंग, फोन नंबर या सोशल लिंक नहीं होना चाहिए।
 7. "category": न्यूज़ श्रेणी (हादसा / प्रशासन / राजनीति / विकास / अपराध / जनआंदोलन)।
 8. "suggestedImagePrompt": यदि यूज़र के पास फोटो नहीं है तो AI इमेज जनरेट करने के लिए एक सटीक अंग्रेजी प्रॉम्प्ट।
 9. "isAiGeneratedPhoto": क्या यूज़र के कमांड, टेक्स्ट या लिंक में यह लिखा है या संकेत है कि फोटो AI जनरेटेड है / काल्पनिक है / इलस्ट्रेशन है (जैसे 'AI generated', 'एआई फोटो', 'AI image', 'काल्पनिक चित्र', 'सिंथेटिक')? (true या false).
-10. "speakerName": यदि यह किसी नेता, मंत्री या व्यक्ति का बयान/कोटेशन है तो उनका नाम (उदा. "दिग्विजय सिंह", "डॉ. मोहन यादव"), अन्यथा खाली स्ट्रिंग ("")।
+10. "speakerName": यदि यह किसी नेता, मंत्री या व्यक्ति का बयान/कोटेशन है तो उनका नाम (उदा. "दिग्विजय सिंह", "मोहन यादव"), अन्यथा खाली स्ट्रिंग ("")।
 11. "speakerTitle": उनका पद या पदवी (उदा. "पूर्व मुख्यमंत्री", "मुख्यमंत्री, मप्र"), अन्यथा खाली स्ट्रिंग ("")।
 `;
 
@@ -523,7 +527,7 @@ ${customPrompt ? `यूज़र का विशेष निर्देश /
           messages: [
             {
               role: "system",
-              content: `You are the chief editor of "ब्रेकिंग न्यूज़ वाला" (Breaking News Wala), a premier Indian digital news channel. Always respond in strictly valid JSON format with keys: headline, headlineOptions (array of 3 strings), highlightWords (array of strings), formattedHeadline, location, summary, category, suggestedImagePrompt, isAiGeneratedPhoto (boolean), speakerName, speakerTitle.`,
+              content: `You are the chief editor of "ब्रेकिंग न्यूज़ वाला" (Breaking News Wala), a premier Indian digital news channel. Always respond in strictly valid JSON format with keys: headline, headlineOptions (array of 3 strings), highlightWords (array of strings), formattedHeadline, location, summary, category, suggestedImagePrompt, isAiGeneratedPhoto (boolean), speakerName, speakerTitle. Stripping all honorifics ('श्री', 'श्रीमान', 'श्रीमती', 'माननीय', 'सम्मानीय', 'आदरणीय', 'महोदय', 'जी') is strictly mandatory.`,
             },
             {
               role: "user",
@@ -599,6 +603,20 @@ ${customPrompt ? `यूज़र का विशेष निर्देश /
       }
     }
 
+    // Sanitize any honorifics or press note flattery from generated fields
+    if (parsedData) {
+      if (parsedData.headline) parsedData.headline = sanitizePressNoteFlattery(parsedData.headline);
+      if (Array.isArray(parsedData.headlineOptions)) {
+        parsedData.headlineOptions = parsedData.headlineOptions.map(sanitizePressNoteFlattery);
+      }
+      if (parsedData.formattedHeadline) {
+        parsedData.formattedHeadline = sanitizePressNoteFlattery(parsedData.formattedHeadline);
+      }
+      if (parsedData.summary) parsedData.summary = sanitizePressNoteFlattery(parsedData.summary);
+      if (parsedData.speakerName) parsedData.speakerName = sanitizePressNoteFlattery(parsedData.speakerName);
+      if (parsedData.speakerTitle) parsedData.speakerTitle = sanitizePressNoteFlattery(parsedData.speakerTitle);
+    }
+
     // Attach picked images from the URL if any
     parsedData.pickedImages = pickedImages;
     return res.json({ success: true, data: parsedData });
@@ -610,13 +628,25 @@ ${customPrompt ? `यूज़र का विशेष निर्देश /
   }
 });
 
-// Helper: Clean flattering / formal prefixes from news text
+// Helper: Clean flattering / formal prefixes from news text (Devanagari Unicode Safe)
 function sanitizePressNoteFlattery(text: string): string {
-  if (!text) return "";
-  return text
-    .replace(/\b(श्रीमान|श्रीमती|सुश्री|सम्मानीय|माननीय|आदरणीय|श्री|महोदय|जी)\b/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  if (!text || typeof text !== "string") return text || "";
+  let cleaned = text;
+  // 1. Remove prefixes like 'माननीय', 'सम्माननीय', 'सम्मानीय', 'आदरणीय', 'श्रीमान', 'श्रीमती', 'सुश्री', 'पूज्य', 'परम पूज्य'
+  cleaned = cleaned.replace(
+    /(?:^|[^\p{L}\p{M}])(माननीय|सम्माननीय|सम्मानीय|आदरणीय|श्रीमान|श्रीमती|सुश्री|परम पूज्य|पूज्य)\s+/gu,
+    " "
+  );
+  // 2. Remove standalone 'श्री' followed by word (avoid matching inside names like 'श्रीनगर' or 'श्रीवास्तव')
+  cleaned = cleaned.replace(
+    /(?:^|[^\p{L}\p{M}])श्री\s+(?=[\p{L}])/gu,
+    " "
+  );
+  // 3. Remove postfix 'महोदय' and 'जी'
+  cleaned = cleaned.replace(/\s+महोदय(?=[,\s.!?।\n]|$)/gu, "");
+  cleaned = cleaned.replace(/\s+जी(?=[,\s.!?।\n]|$)/gu, "");
+
+  return cleaned.replace(/[ \t]{2,}/g, " ").trim();
 }
 
 // Fallback generator for E-Paper Press Note

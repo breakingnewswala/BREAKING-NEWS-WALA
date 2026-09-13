@@ -59,6 +59,7 @@ interface CardEditorProps {
   onOpenAIAnalyze: () => void;
   onOpenCommandModal: () => void;
   onOpenCaptionModal: () => void;
+  onResetAI?: () => void;
   activeStep?: number;
   onStepChange?: (step: number) => void;
   currentUser?: ReporterUser | null;
@@ -72,6 +73,7 @@ export const CardEditor: React.FC<CardEditorProps> = ({
   onOpenAIAnalyze,
   onOpenCommandModal,
   onOpenCaptionModal,
+  onResetAI,
   activeStep: propActiveStep,
   onStepChange,
   currentUser,
@@ -979,10 +981,33 @@ export const CardEditor: React.FC<CardEditorProps> = ({
               <div className="w-8 h-8 rounded-lg bg-yellow-400/20 text-yellow-400 border border-yellow-400/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
                 <RefreshCw className="w-4 h-4" />
               </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-yellow-300 flex items-center gap-1.5">
-                  <span>AI न्यूज़ (लिंक व प्रॉम्प्ट से बनाएं)</span>
-                  <span className="bg-yellow-400 text-neutral-950 text-[9px] font-extrabold px-1 rounded">Create News</span>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold text-yellow-300 flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span>AI न्यूज़ (लिंक व प्रॉम्प्ट से बनाएं)</span>
+                    <span className="bg-yellow-400 text-neutral-950 text-[9px] font-extrabold px-1 rounded">Create News</span>
+                  </div>
+                  {onResetAI && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onResetAI();
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation();
+                          onResetAI();
+                        }
+                      }}
+                      title="AI इनपुट बॉक्स रिफ्रेश करें"
+                      className="px-1.5 py-0.5 rounded bg-neutral-700 hover:bg-neutral-600 text-yellow-400 hover:text-yellow-300 text-[9px] font-black border border-yellow-400/30 flex items-center gap-1 cursor-pointer transition-all active:scale-95 shrink-0"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      <span>रिफ्रेश</span>
+                    </span>
+                  )}
                 </div>
                 <p className="text-[11px] text-neutral-300 mt-0.5 leading-snug">
                   न्यूज़ लिंक या प्रॉम्प्ट डालें — AI स्वतः हेडलाइन, हाइलाइट्स व फ़ोटो सेट करके कार्ड तैयार कर देगा

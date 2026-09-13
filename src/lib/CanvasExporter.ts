@@ -872,7 +872,40 @@ export async function renderCardToCanvas(card: NewsCardData): Promise<HTMLCanvas
     );
   }
 
+  // 9. Permanent Hardcoded Brand Watermark (Subtle, non-optional on all graphics)
+  drawPermanentBrandWatermark(ctx, width, height, card.frameDesign);
+
   return canvas;
+}
+
+// Helper: Permanent low-opacity brand watermark across the graphic
+function drawPermanentBrandWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  frameDesign?: string
+) {
+  ctx.save();
+  const isLightBg = frameDesign === 'jacket-epaper';
+  // Reduced, subtle opacity as requested
+  const color = isLightBg ? 'rgba(0, 0, 0, 0.035)' : 'rgba(255, 255, 255, 0.045)';
+
+  // Horizontally centered, shifted slightly towards the upper middle (38% of height)
+  const centerX = width / 2;
+  const centerY = Math.round(height * 0.38);
+
+  ctx.translate(centerX, centerY);
+  ctx.rotate((-16 * Math.PI) / 180);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+
+  // Clean, crisp standard Arial font (not heavy Arial Black or chunky 900) so text is clearly legible
+  const fontSize = Math.round(width * 0.042); // ~45px on 1080p canvas
+  ctx.font = `bold ${fontSize}px Arial, "Segoe UI", sans-serif`;
+  ctx.fillText('BREAKING NEWS WALA', 0, 0);
+
+  ctx.restore();
 }
 
 // Helper: Draw image with cover aspect ratio, custom crop (X/Y) and zoom

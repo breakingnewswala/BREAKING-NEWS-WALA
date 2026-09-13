@@ -32,6 +32,18 @@ export const NewsCommandModal: React.FC<NewsCommandModalProps> = ({
   const [aiPhotoPrompt, setAiPhotoPrompt] = useState<string>('');
   const [aiPhotoVariation, setAiPhotoVariation] = useState<number>(0);
 
+  const handleResetAiBox = () => {
+    setInputText('');
+    setLinkUrl('');
+    setCustomPrompt('');
+    setResult(null);
+    setHeadlineOptions([]);
+    setSelectedHeadlineIndex(0);
+    setGeneratedAiImageUrl(null);
+    setAiPhotoPrompt('');
+    setError(null);
+  };
+
   // AI Provider selections
   const [newsAiProvider, setNewsAiProvider] = useState<'gemini' | 'openai'>('gemini');
   const [photoAiProvider, setPhotoAiProvider] = useState<'gemini' | 'openai'>('gemini');
@@ -259,14 +271,25 @@ export const NewsCommandModal: React.FC<NewsCommandModalProps> = ({
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-bold text-white text-base sm:text-lg flex items-center gap-2">
-                <span>AI न्यूज़ बनाएं</span>
-                <span className="text-xs bg-yellow-400 text-neutral-950 px-1.5 py-0.5 rounded font-black">
-                  Create News
-                </span>
-              </h2>
-              <p className="text-xs text-neutral-400">
-                न्यूज़ लिंक या खबर दर्ज करें, AI तुरंत हेडलाइन व फोटो तैयार करेगा
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-white text-base sm:text-lg flex items-center gap-2">
+                  <span>AI न्यूज़ बनाएं</span>
+                  <span className="text-xs bg-yellow-400 text-neutral-950 px-1.5 py-0.5 rounded font-black">
+                    Create News
+                  </span>
+                </h2>
+                <button
+                  type="button"
+                  onClick={handleResetAiBox}
+                  title="AI इनपुट रिफ्रेश करें - लिंक व स्क्रिप्ट साफ़ करें"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-yellow-400 hover:text-yellow-300 text-xs font-bold border border-neutral-700 transition-all cursor-pointer active:scale-95"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>रिफ्रेश</span>
+                </button>
+              </div>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                न्यूज़ लिंक, कच्ची स्क्रिप्ट या प्रेस नोट दर्ज करें, AI तुरंत हेडलाइन व फोटो तैयार करेगा
               </p>
             </div>
           </div>
@@ -429,23 +452,36 @@ export const NewsCommandModal: React.FC<NewsCommandModalProps> = ({
             )}
           </div>
 
-          <button
-            onClick={handleProcess}
-            disabled={loading}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 disabled:opacity-50 text-neutral-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>{newsAiProvider === 'openai' ? 'ChatGPT' : 'Gemini'} न्यूज़ तैयार कर रहा है...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                <span>AI न्यूज़ बनाएं ({newsAiProvider === 'openai' ? 'Via ChatGPT' : 'Via Gemini'})</span>
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleProcess}
+              disabled={loading}
+              className="flex-1 py-3 rounded-xl bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 disabled:opacity-50 text-neutral-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-all active:scale-[0.99]"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>{newsAiProvider === 'openai' ? 'ChatGPT' : 'Gemini'} न्यूज़ तैयार कर रहा है...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>AI न्यूज़ बनाएं ({newsAiProvider === 'openai' ? 'Via ChatGPT' : 'Via Gemini'})</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleResetAiBox}
+              disabled={loading}
+              title="AI इनपुट रिफ्रेश करें (लिंक, स्क्रिप्ट, प्रॉम्प्ट व परिणाम पूरी तरह साफ़ करें)"
+              className="py-3 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white border border-neutral-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 shrink-0 shadow"
+            >
+              <RotateCcw className="w-4 h-4 text-yellow-400" />
+              <span>रिफ्रेश</span>
+            </button>
+          </div>
 
           {/* Error */}
           {error && (

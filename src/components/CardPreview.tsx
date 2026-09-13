@@ -2373,6 +2373,29 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ card, scale = 1, class
           )}
         </div>
       )}
+
+      {/* Permanent Hardcoded Brand Watermark (Non-optional, subtle, upper-middle in Arial font) */}
+      <div
+        className="absolute pointer-events-none select-none z-30 flex items-center justify-center"
+        style={{
+          top: '38%',
+          left: '50%',
+          transform: 'translate(-50%, -50%) rotate(-16deg)',
+          opacity: card.frameDesign === 'jacket-epaper' ? 0.035 : 0.045,
+        }}
+      >
+        <span
+          className={`font-bold text-center whitespace-nowrap tracking-[0.18em] uppercase ${
+            card.frameDesign === 'jacket-epaper' ? 'text-black' : 'text-white'
+          }`}
+          style={{
+            fontSize: 'clamp(14px, 4.2vw, 28px)',
+            fontFamily: 'Arial, "Segoe UI", sans-serif',
+          }}
+        >
+          BREAKING NEWS WALA
+        </span>
+      </div>
     </div>
   );
 };
