@@ -1,9 +1,24 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Builds and Caches
 build/
 dist/
 coverage/
+.turbo/
+.next/
+
+# System and logs
 .DS_Store
 *.log
-.env*
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
 !.env.example
+
+# AI and IDE temp
 .aistudio/
