@@ -1,0 +1,91 @@
+# BREAKING NEWS WALA (ब्रेकिंग न्यूज़ वाला)
+# Local Development Database Infrastructure
+# Document Reference: docs/11-Architecture.md, docs/22-Setup.md
+# Authoritative Decisions: DEC-017 (PostgreSQL 16), DEC-014 (Redis 7), DEC-022 (PgBouncer)
+#
+# Startup Command:  docker compose up -d
+# Shutdown Command: docker compose down
+# Health Check:     docker compose ps
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Primary Relational Database: PostgreSQL 16 (DEC-017)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: bnw-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-breaking_news_wala_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-breaking_news_wala_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bnw-network
+
+  # ---------------------------------------------------------------------------
+  # 2. In-Memory Cache & Asynchronous Job Queue: Redis 7 (DEC-014, DEC-015)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: bnw-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bnw-network
+
+  # ---------------------------------------------------------------------------
+  # 3. Connection Pooling Proxy: PgBouncer in Transaction Pooling Mode (DEC-022)
+  # ---------------------------------------------------------------------------
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.21.0
+    container_name: bnw-pgbouncer
+    restart: unless-stopped
+    ports:
+      - "${PGBOUNCER_PORT:-6432}:6432"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_NAME: ${POSTGRES_DB:-breaking_news_wala_dev}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 100
+      DEFAULT_POOL_SIZE: 20
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bnw-network
+
+volumes:
+  postgres_data:
+    driver: local
+    name: bnw_postgres_data
+  redis_data:
+    driver: local
+    name: bnw_redis_data
+
+networks:
+  bnw-network:
+    driver: bridge
+    name: bnw_network

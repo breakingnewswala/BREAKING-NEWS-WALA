@@ -69,7 +69,7 @@ flowchart TD
 4. **Admin Control Console**: A comprehensive governance workspace (`/admin/*`) enabling System Administrators to manage user roles, certify reporter territory assignments, monitor platform health, and audit editorial actions.
 5. **Reporter Graphics Studio**: A mobile-optimized canvas studio (`ReporterGraphicsStudio.tsx`) enabling reporters and editors to instantly convert verified news excerpts into branded visual quote cards, statistical banners, and breaking news slates.
 6. **AI-Assisted Newsroom Engine**: A centralized Multi-Provider AI API Pool (`docs/19-API-Pool.md`) operating under strict human-in-the-loop governance (`RULE-AI-001`), providing Devanagari grammar correction, headline generation, and structured news synthesis.
-7. **Future Native Android Application**: A planned Stage B mobile application authored in pure Kotlin (Android SDK 34+ / Jetpack Compose) sharing the identical backend APIs, authentication, and database without embedded WebViews (`RULE-MOB-002`).
+7. **Native Android Ecosystem**: Fully realized native Android mobile applications authored in 100% pure Kotlin and Jetpack Compose (`android/`) delivering the Public News Reader (`:app-reader` - `com.breakingnewswala.reader`) and Field Reporter App (`:app-reporter` - `com.breakingnewswala.reporter`), sharing the central Node.js backend (`/api/v1/*`) and PostgreSQL cluster without embedded WebViews (`DEC-002`, `docs/ANDROID-ARCHITECTURE.md`).
 
 ### 3.2 Vision vs. Current Repository Implementation State
 To ensure complete transparency across the engineering team, all stakeholders must recognize the project's current lifecycle transition:
@@ -84,7 +84,7 @@ To ensure complete transparency across the engineering team, all stakeholders mu
   - Redis 7 and BullMQ background queue cluster for asynchronous wire polling and notifications (`docs/11-Architecture.md`).
   - Cloudflare R2 / AWS S3 media storage with Cloudflare CDN edge caching (`docs/16-Storage.md`).
   - Centralized Multi-Provider AI API Pool with sub-1.5s automatic fallback across Gemini, Claude, and OpenAI (`docs/19-API-Pool.md`).
-  - Stage B Native Android application implementation in native Kotlin (`docs/10-Responsive-Design.md`).
+  - Native Android multi-module application implementation in pure Kotlin and Jetpack Compose (`android/`, `docs/ANDROID-ARCHITECTURE.md`).
 
 ---
 

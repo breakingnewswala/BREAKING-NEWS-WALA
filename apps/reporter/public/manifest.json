@@ -1,0 +1,21 @@
+{
+  "name": "BREAKING NEWS WALA — रिपोर्टर पोर्टल",
+  "short_name": "रिपोर्टर",
+  "description": "मध्य प्रदेश हाइपरलोकल फील्ड रिपोर्टिंग एवं संवाददाता पोर्टल",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FFFFFF",
+  "theme_color": "#ED1727",
+  "lang": "hi",
+  "categories": ["news", "productivity"],
+  "icons": [
+    {
+      "src": "/brand/logo.png",
+      "sizes": "600x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

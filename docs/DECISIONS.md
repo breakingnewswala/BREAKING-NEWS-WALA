@@ -2953,6 +2953,58 @@ Institutionalize **Mandatory Operational Runbooks and Blameless Post-Mortems**:
 - *Risk*: Action items from post-mortems being forgotten in Jira backlogs.
 - *Mitigation*: Review open post-mortem action items weekly in engineering leadership meetings until 100% resolved.
 
+---
+
+### DEC-079: Android Package Namespace, Multi-Module Structure, and Target SDK Baseline
+
+| Attribute | Specification Details |
+| :--- | :--- |
+| **Decision ID** | `DEC-079` |
+| **Category** | Mobile Architecture & Release Engineering |
+| **Status** | **Pending Approval** |
+| **Approval Evidence** | `BNW-MASTER-010` Specification, `docs/ANDROID-ARCHITECTURE.md` |
+| **Related Documents** | `docs/01-PRD.md`, `docs/11-Architecture.md`, `docs/ANDROID-ARCHITECTURE.md`, `docs/ANDROID-RELEASE-RUNBOOK.md`, `docs/ANDROID-SECURITY-REVIEW.md` |
+| **Last Reviewed** | 2026-11-02 |
+
+#### Context & Problem Statement
+Phase 3 of BREAKING NEWS WALA introduces native mobile applications to serve millions of Hindi news readers and hundreds of field stringers across Madhya Pradesh. Operating both consumer reading workflows and protected newsroom reporting workflows within a single monolithic mobile binary creates excessive APK download sizes for citizens, bloats device memory, and expands the attack surface by bundling internal reporter tools, draft caching, and media upload engines on reader devices. Furthermore, Google Play Store enforces strict Target SDK policies (minimum Target SDK 35 for 2025/2026 submissions).
+
+#### Decision
+Establish a **Dual Native Application Architecture with Shared Core Multi-Module Scaffolding** under canonical package namespaces:
+1. **Application Partitioning**:
+   - **Public News Reader (`:app-reader`)**: Package namespace `com.breakingnewswala.reader`. Focused strictly on rapid Devanagari news consumption, offline reading, native PDF e-paper rendering, breaking alerts, and ASCI-compliant local merchant ad displays.
+   - **Field Reporter App (`:app-reporter`)**: Package namespace `com.breakingnewswala.reporter`. Restricted newsroom binary for accredited journalists featuring two-phase presigned media uploads, beat/territory enforcement (`RULE-GEO-001`), draft autosave, and editorial review feedback tracking.
+2. **Shared Modular Foundation (`:core:*`)**:
+   - `:core:model` (Pure Kotlin immutable domain models and kotlinx.serialization envelopes)
+   - `:core:network` (Retrofit2, OkHttp4, single-flight token refresh authenticator)
+   - `:core:auth` (EncryptedSharedPreferences with Android Keystore AES-256 SIV/GCM, StateFlow reactive auth)
+   - `:core:designsystem` (Canonical tri-color palette `#FDE900`, `#ED1727`, `#344FD6`, Devanagari typography, BnwMasthead, ticker)
+   - `:core:analytics` (Privacy-preserving event emission matching backend `DOM-O` taxonomy)
+   - `:core:notifications` (FCM topic and district alert channels with deep links)
+   - `:core:media` (Chunked presigned S3/MinIO upload client with progress tracking)
+   - `:core:pdf` (Zero-dependency native `android.graphics.pdf.PdfRenderer` e-paper engine)
+3. **SDK Baseline & Minimum SDK Options (DEF-AND-05 Review)**:
+   - `compileSdk = 36`
+   - `targetSdk = 35` (Google Play 2025/2026 compliance)
+   - `minSdk Baseline Options (Pending Final Sign-Off)`:
+     - **Current Codebase Implementation**: `minSdk = 24` (Android 7.0 Nougat+, maximizing reach on legacy budget devices across rural Madhya Pradesh; uses runtime `Build.VERSION.SDK_INT >= 26` checks for notification channels).
+     - **Alternative Proposed Baseline**: `minSdk = 26` (Android 8.0 Oreo+, covering 99.4% of active devices in India, eliminating pre-Oreo runtime notification branches).
+4. **Governance Status**:
+   - Marked **Pending Approval** awaiting executive editorial and IT board confirmation prior to signing key production generation, Google Play Console developer account registration, and formal selection of minSdk 24 vs 26.
+
+#### Rationale & Technical Grounding
+1. **Clean Separation of Concerns**: Public readers download a lean ~12MB APK without stringer upload dependencies; reporters receive dedicated resilient draft and beat validation capabilities.
+2. **Code Reuse Without Duplication**: All API contracts, authentication lifecycles, design tokens, and telemetry events are defined once in `:core:*` and consumed across both apps without divergence.
+3. **Security Invariant Enforcement**: Protects internal stringer endpoints and permission scopes from public consumer binaries.
+
+#### Consequences & Operational Impact
+- **Positive**: Modular isolation, parallel Gradle compilation, strict package encapsulation, zero WebView latency.
+- **Negative**: Requires maintaining two separate Google Play Console app listings and separate upload signing keystores.
+
+#### Risks & Mitigations
+- *Risk*: Desynchronization of domain models between Android client and backend Express API.
+- *Mitigation*: Multi-module `:core:model` derives directly from `/api/v1/` JSON contracts with automated serialization integration tests.
+
 
 ---
 
@@ -3028,9 +3080,9 @@ To prevent unauthorized, informal architectural drift, state transitions require
 
 ---
 
-## 16. Master Project Decision Register Table (DEC-001 to DEC-078)
+## 16. Master Project Decision Register Table (DEC-001 to DEC-079)
 
-This master table indexes all 78 architectural, product, security, editorial, commercial, and operational decisions governing the BREAKING NEWS WALA platform. It establishes the single source of truth across all 34 preceding domain documents.
+This master table indexes all 79 architectural, product, security, editorial, commercial, and operational decisions governing the BREAKING NEWS WALA platform. It establishes the single source of truth across all 34 preceding domain documents.
 
 | Decision ID | Category | Title | Status | Approval Evidence / Milestone | Related Core Documents | Last Reviewed |
 | :---: | :--- | :--- | :---: | :--- | :--- | :---: |
@@ -3112,6 +3164,7 @@ This master table indexes all 78 architectural, product, security, editorial, co
 | **`DEC-076`** | SRE Operations | Formal 4-Tier Severity (P1 to P4) & Escalation SLA Matrix | **Confirmed** | `docs/27-Debugging.md` (5), `docs/Monitoring.md` (5) | `docs/04-NFR.md`, `27-Debugging.md`, `Monitoring.md` | 2026-10-31 |
 | **`DEC-077`** | Deployment | Zero-Downtime Blue-Green / Rolling Deployments with Fast Rollback | **Confirmed** | `docs/24-Deployment.md` (2), `docs/25-Environment.md` | `docs/11-Architecture.md`, `24-Deployment.md`, `CHANGELOG.md` | 2026-10-31 |
 | **`DEC-078`** | Operational Culture | Mandatory Operational Runbooks and Blameless Post-Mortems | **Confirmed** | `docs/27-Debugging.md` (6), `docs/Monitoring.md` | `docs/26-Testing.md`, `27-Debugging.md`, `Monitoring.md` | 2026-10-31 |
+| **`DEC-079`** | Mobile Architecture | Android Package Namespace, Multi-Module Structure, and Target SDK Baseline | **Pending Approval** | `BNW-MASTER-010` Specification, `docs/ANDROID-ARCHITECTURE.md` | `docs/01-PRD.md`, `11-Architecture.md`, `docs/ANDROID-ARCHITECTURE.md` | 2026-11-02 |
 
 
 ---
@@ -3360,7 +3413,7 @@ In strict adherence to the governing instructions for Document 35/36:
 - [x] Monetization, Advertising & Commercial Governance Decisions (DEC-063 to DEC-070) authored with full structural fields.
 - [x] Operations, Observability & SRE Reliability Decisions (DEC-071 to DEC-078) authored with full structural fields.
 - [x] Master Decision Lifecycle State Machine documented with valid transitions and Mermaid diagram.
-- [x] Comprehensive Master Decision Register Table indexing all 78 decisions complete with status, approval evidence, and document links.
+- [x] Comprehensive Master Decision Register Table indexing all 79 decisions complete with status, approval evidence, and document links.
 - [x] Cross-Document Decision Conflicts & Assumption Management Analysis detailed with exact verbatim quotes and recommended resolutions.
 - [x] Change, Review & Evolution Policy defined with RFC procedures and review cadences.
 - [x] Cross-Document Traceability Matrix mapping all 34 prior documents complete.

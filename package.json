@@ -1,0 +1,24 @@
+{
+  "name": "breaking-news-wala",
+  "version": "1.6.0",
+  "private": true,
+  "description": "BREAKING NEWS WALA — Integrated Hyperlocal Digital News Platform (Madhya Pradesh)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

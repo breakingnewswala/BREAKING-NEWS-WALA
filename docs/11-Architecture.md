@@ -351,9 +351,9 @@ All API endpoints across the platform adhere to a strict architectural standard:
 
 ---
 
-## 7. Native Android Readiness & Shared Backend Contract
+## 7. Native Android Ecosystem & Shared Backend Contract
 
-The Stage B Native Android Application will be developed using modern Android engineering practices: Kotlin, Android SDK 34+, Jetpack Compose, Kotlin Coroutines, StateFlow, Retrofit/Ktor, and Room Database.
+The Native Android Ecosystem is realized under `android/` as a 10-module Gradle architecture delivering two distinct applications: **Public News Reader (`:app-reader`)** and **Field Reporter App (`:app-reporter`)** developed strictly using pure Kotlin, Android SDK 35/36, Jetpack Compose, Kotlin Coroutines/Flow, Retrofit2/OkHttp4, and EncryptedSharedPreferences (detailed in [`docs/ANDROID-ARCHITECTURE.md`](file:///c:/Users/pp/Downloads/BREAKING-NEWS-WALA-main/docs/ANDROID-ARCHITECTURE.md) and [`docs/ANDROID-RELEASE-RUNBOOK.md`](file:///c:/Users/pp/Downloads/BREAKING-NEWS-WALA-main/docs/ANDROID-RELEASE-RUNBOOK.md)). Zero WebViews are permitted (`DEC-002`).
 
 ### 7.1 Architectural Domain Separation: Shared vs. Platform-Specific
 

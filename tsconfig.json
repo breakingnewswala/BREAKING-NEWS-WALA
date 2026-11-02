@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@bnw/types": [
+        "packages/types/src"
+      ],
+      "@bnw/tokens": [
+        "packages/tokens/src"
+      ],
+      "@bnw/backend": [
+        "packages/backend/src"
+      ]
+    }
+  },
+  "include": [
+    "apps/*/src/**/*",
+    "packages/*/src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "legacy"
+  ]
+}

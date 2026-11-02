@@ -1,0 +1,14 @@
+{
+  "name": "@bnw/types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BREAKING NEWS WALA — Shared TypeScript Interfaces, Enums & API Contracts",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

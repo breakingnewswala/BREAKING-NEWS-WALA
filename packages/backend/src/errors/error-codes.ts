@@ -1,0 +1,20 @@
+/**
+ * BREAKING NEWS WALA — Standardized API Error Codes
+ * Grounded in docs/13-API.md (Section 1.4: Error Architecture & Standard Error Codes)
+ */
+
+export const ErrorCodes = {
+  BAD_REQUEST: 'ERR_BAD_REQUEST',
+  UNAUTHORIZED: 'ERR_UNAUTHORIZED',
+  FORBIDDEN: 'ERR_FORBIDDEN',
+  NOT_FOUND: 'ERR_NOT_FOUND',
+  METHOD_NOT_ALLOWED: 'ERR_METHOD_NOT_ALLOWED',
+  CONFLICT: 'ERR_CONFLICT',
+  VALIDATION_FAILED: 'ERR_VALIDATION_FAILED',
+  RATE_LIMIT_EXCEEDED: 'ERR_RATE_LIMIT_EXCEEDED',
+  INTERNAL_SERVER_ERROR: 'ERR_INTERNAL_SERVER',
+  SERVICE_UNAVAILABLE: 'ERR_SERVICE_UNAVAILABLE',
+} as const;
+
+export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes];
+

@@ -4,10 +4,24 @@ node_modules/
 
 # Builds and Caches
 build/
+**/build/
 dist/
 coverage/
 .turbo/
 .next/
+
+# Android Builds, Caches and Binaries
+.gradle/
+android/.gradle/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+local.properties
+*.keystore
+*.jks
+google-services.json
 
 # System and logs
 .DS_Store
