@@ -1,0 +1,23 @@
+# Firebase App Hosting Configuration for BREAKING NEWS WALA Monorepo Root
+# Backend: breakingnewswala (asia-southeast1)
+# Primary SSR Target: apps/web
+
+runConfig:
+  cpu: 1
+  memoryMiB: 512
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+
+env:
+  - variable: NODE_ENV
+    value: production
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_TELEMETRY_DISABLED
+    value: "1"
+    availability:
+      - BUILD
+      - RUNTIME
+

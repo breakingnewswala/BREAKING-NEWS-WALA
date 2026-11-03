@@ -1,0 +1,135 @@
+name: Firebase App Distribution (Manual QA)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_app:
+        description: 'Target Application to Distribute'
+        required: true
+        default: 'reader'
+        type: choice
+        options:
+          - reader
+          - reporter
+          - both
+      build_type:
+        description: 'Build Type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+      tester_groups:
+        description: 'Tester Groups in Firebase'
+        required: false
+        default: 'internal-qa'
+        type: string
+      release_notes:
+        description: 'Release Notes for Testers'
+        required: false
+        default: 'BREAKING NEWS WALA v1.0.0-rc1 Internal QA Build'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  distribute-reader:
+    name: Distribute Reader to Firebase
+    if: github.event.inputs.target_app == 'reader' || github.event.inputs.target_app == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        run: chmod +x android/gradlew
+
+      - name: Assemble Reader APK
+        working-directory: android
+        run: |
+          if [ "${{ github.event.inputs.build_type }}" = "release" ]; then
+            ./gradlew :app-reader:assembleRelease --no-daemon
+          else
+            ./gradlew :app-reader:assembleDebug --no-daemon
+          fi
+
+      - name: Locate Reader APK
+        id: locate_apk
+        run: |
+          APK=$(find android/app-reader/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+            echo "::error::Reader APK not found."
+            exit 1
+          fi
+          echo "apk_path=$APK" >> $GITHUB_OUTPUT
+
+      - name: Upload Reader APK to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: "1:852342978897:android:347a0f9c5028d71a59bb70"
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          file: ${{ steps.locate_apk.outputs.apk_path }}
+          groups: ${{ github.event.inputs.tester_groups }}
+          releaseNotes: ${{ github.event.inputs.release_notes }}
+
+  distribute-reporter:
+    name: Distribute Reporter to Firebase
+    if: github.event.inputs.target_app == 'reporter' || github.event.inputs.target_app == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        run: chmod +x android/gradlew
+
+      - name: Assemble Reporter APK
+        working-directory: android
+        run: |
+          if [ "${{ github.event.inputs.build_type }}" = "release" ]; then
+            ./gradlew :app-reporter:assembleRelease --no-daemon
+          else
+            ./gradlew :app-reporter:assembleDebug --no-daemon
+          fi
+
+      - name: Locate Reporter APK
+        id: locate_apk
+        run: |
+          APK=$(find android/app-reporter/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+            echo "::error::Reporter APK not found."
+            exit 1
+          fi
+          echo "apk_path=$APK" >> $GITHUB_OUTPUT
+
+      - name: Upload Reporter APK to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: "1:852342978897:android:d556191e7909654259bb70"
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          file: ${{ steps.locate_apk.outputs.apk_path }}
+          groups: ${{ github.event.inputs.tester_groups }}
+          releaseNotes: ${{ github.event.inputs.release_notes }}
+

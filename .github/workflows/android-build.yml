@@ -1,0 +1,117 @@
+name: Android Build & Packaging
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Android Build Type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-reader:
+    name: Build Android Public Reader
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        run: chmod +x android/gradlew
+
+      - name: Build Reader APK
+        working-directory: android
+        run: |
+          if [ "${{ github.event.inputs.build_type }}" = "release" ]; then
+            ./gradlew :app-reader:assembleRelease --no-daemon
+          else
+            ./gradlew :app-reader:assembleDebug --no-daemon
+          fi
+
+      - name: Verify Reader APK Artifact
+        run: |
+          APK_PATH=$(find android/app-reader/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ] || [ ! -s "$APK_PATH" ]; then
+            echo "::error::Reader APK was not generated or has zero size."
+            exit 1
+          fi
+          echo "Reader APK verified at: $APK_PATH ($(stat -c%s "$APK_PATH") bytes)"
+          sha256sum "$APK_PATH" > android/app-reader-checksum.sha256
+
+      - name: Upload Reader APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bnw-reader-${{ github.event.inputs.build_type || 'debug' }}-apk-${{ github.sha }}
+          path: |
+            android/app-reader/build/outputs/apk/**/*.apk
+            android/app-reader-checksum.sha256
+          retention-days: 14
+
+  build-reporter:
+    name: Build Android Reporter App
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant Execute Permission to Gradle Wrapper
+        run: chmod +x android/gradlew
+
+      - name: Build Reporter APK
+        working-directory: android
+        run: |
+          if [ "${{ github.event.inputs.build_type }}" = "release" ]; then
+            ./gradlew :app-reporter:assembleRelease --no-daemon
+          else
+            ./gradlew :app-reporter:assembleDebug --no-daemon
+          fi
+
+      - name: Verify Reporter APK Artifact
+        run: |
+          APK_PATH=$(find android/app-reporter/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ] || [ ! -s "$APK_PATH" ]; then
+            echo "::error::Reporter APK was not generated or has zero size."
+            exit 1
+          fi
+          echo "Reporter APK verified at: $APK_PATH ($(stat -c%s "$APK_PATH") bytes)"
+          sha256sum "$APK_PATH" > android/app-reporter-checksum.sha256
+
+      - name: Upload Reporter APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bnw-reporter-${{ github.event.inputs.build_type || 'debug' }}-apk-${{ github.sha }}
+          path: |
+            android/app-reporter/build/outputs/apk/**/*.apk
+            android/app-reporter-checksum.sha256
+          retention-days: 14
+
