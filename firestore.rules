@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidTimestamp(val) {
+      return val is timestamp && val <= request.time;
+    }
+
+    function isValidUser(data) {
+      return data.id is string
+        && data.id == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 100
+        && data.role in ['READER', 'REPORTER', 'ADMIN']
+        && (!('email' in data) || (data.email is string && data.email.size() <= 200))
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1000))
+        && (!('district' in data) || (data.district is string && data.district.size() <= 100))
+        && (!('division' in data) || (data.division is string && data.division.size() <= 100))
+        && (!('state' in data) || (data.state is string && data.state.size() <= 100))
+        && (!('createdAt' in data) || isValidTimestamp(data.createdAt))
+        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidArticle(data) {
+      return data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 300
+        && data.category is string
+        && data.category.size() > 0
+        && data.category.size() <= 50
+        && data.district is string
+        && data.district.size() > 0
+        && data.district.size() <= 100
+        && data.authorId is string
+        && data.authorId == request.auth.uid
+        && data.status in ['DRAFT', 'PENDING_VERIFICATION', 'PUBLISHED', 'REJECTED']
+        && (!('excerpt' in data) || (data.excerpt is string && data.excerpt.size() <= 1000))
+        && (!('content' in data) || (data.content is string && data.content.size() <= 50000))
+        && (!('division' in data) || (data.division is string && data.division.size() <= 100))
+        && (!('state' in data) || (data.state is string && data.state.size() <= 100))
+        && (!('authorName' in data) || (data.authorName is string && data.authorName.size() <= 100))
+        && (!('authorRole' in data) || (data.authorRole is string && data.authorRole.size() <= 50))
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000))
+        && (!('isBreaking' in data) || data.isBreaking is bool)
+        && (!('isLive' in data) || data.isLive is bool)
+        && (!('viewCount' in data) || data.viewCount is int)
+        && (!('createdAt' in data) || isValidTimestamp(data.createdAt))
+        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+    }
+
+    function isValidBookmark(data) {
+      return data.userId is string
+        && data.userId == request.auth.uid
+        && data.articleId is string
+        && data.articleId.size() > 0
+        && data.articleTitle is string
+        && data.articleTitle.size() > 0
+        && (!('articleCategory' in data) || (data.articleCategory is string && data.articleCategory.size() <= 50))
+        && (!('articleDistrict' in data) || (data.articleDistrict is string && data.articleDistrict.size() <= 100))
+        && (!('articleImageUrl' in data) || (data.articleImageUrl is string && data.articleImageUrl.size() <= 1000))
+        && (!('savedAt' in data) || isValidTimestamp(data.savedAt));
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if false;
+
+      // User bookmarks subcollection
+      match /bookmarks/{bookmarkId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidBookmark(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Articles collection
+    match /articles/{articleId} {
+      allow read: if resource.data.status == 'PUBLISHED'
+        || (isAuthenticated() && resource.data.authorId == request.auth.uid);
+      allow create: if isAuthenticated()
+        && request.resource.data.authorId == request.auth.uid
+        && isValidArticle(request.resource.data);
+      allow update: if isAuthenticated()
+        && (resource.data.authorId == request.auth.uid)
+        && isValidArticle(request.resource.data);
+      allow delete: if isAuthenticated()
+        && resource.data.authorId == request.auth.uid;
+    }
+  }
+}

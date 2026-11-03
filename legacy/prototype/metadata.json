@@ -1,8 +1,0 @@
-{
-  "name": "BREAKING NEWS WALA",
-  "description": "भारत के जिलों से, आपके दिलों तक - अग्रणी डिजिटल न्यूज़ पब्लिशिंग एवं न्यूज़रूम मैनेजमेंट प्लेटफ़ॉर्म।",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}

@@ -15,13 +15,11 @@
     "clean": "npm run clean --workspaces --if-present"
   },
   "devDependencies": {
+    "turbo": "^2.11.10",
     "typescript": "^5.7.0"
   },
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
-  },
-  "dependencies": {
-    "turbo": "^2.11.10"
   }
 }

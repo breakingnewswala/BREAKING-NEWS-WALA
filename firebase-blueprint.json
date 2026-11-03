@@ -1,0 +1,193 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile in the BREAKING NEWS WALA platform",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique user ID matching auth.uid"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User full name or display name"
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Avatar image URL"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["READER", "REPORTER", "ADMIN"],
+          "description": "Access level in the news platform"
+        },
+        "district": {
+          "type": "string",
+          "description": "Assigned or preferred Madhya Pradesh district"
+        },
+        "division": {
+          "type": "string",
+          "description": "Assigned administrative division"
+        },
+        "state": {
+          "type": "string",
+          "description": "State name (Madhya Pradesh)"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp; clients must submit FieldValue.serverTimestamp()"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp; clients must submit FieldValue.serverTimestamp()"
+        }
+      },
+      "required": ["id", "displayName", "role"]
+    },
+    "Article": {
+      "title": "Article",
+      "description": "Hyperlocal news article or reporter submission",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Article unique document identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "Headline in Hindi / Devanagari"
+        },
+        "excerpt": {
+          "type": "string",
+          "description": "Short summary or lead paragraph"
+        },
+        "content": {
+          "type": "string",
+          "description": "Full article body"
+        },
+        "category": {
+          "type": "string",
+          "description": "News category (e.g. राजनीति, अपराध, विकास, खेल, स्थानीय)"
+        },
+        "district": {
+          "type": "string",
+          "description": "Madhya Pradesh district (e.g. भोपाल, इंदौर, जबलपुर, ग्वालियर)"
+        },
+        "division": {
+          "type": "string",
+          "description": "Administrative division"
+        },
+        "state": {
+          "type": "string",
+          "description": "State name"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the author or stringer reporter"
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Author display name"
+        },
+        "authorRole": {
+          "type": "string",
+          "description": "Role of the author (REPORTER or ADMIN)"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["DRAFT", "PENDING_VERIFICATION", "PUBLISHED", "REJECTED"],
+          "description": "Editorial lifecycle status"
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Headline banner image URL"
+        },
+        "isBreaking": {
+          "type": "boolean",
+          "description": "Whether this is flagged as urgent breaking news"
+        },
+        "isLive": {
+          "type": "boolean",
+          "description": "Whether live updates are ongoing"
+        },
+        "viewCount": {
+          "type": "integer",
+          "description": "Total view impressions count"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp; clients must submit FieldValue.serverTimestamp()"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp; clients must submit FieldValue.serverTimestamp()"
+        }
+      },
+      "required": ["title", "category", "district", "authorId", "status"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "Saved article bookmark by a reader or reporter",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Bookmark ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner user ID"
+        },
+        "articleId": {
+          "type": "string",
+          "description": "Target article ID"
+        },
+        "articleTitle": {
+          "type": "string",
+          "description": "Saved article headline"
+        },
+        "articleCategory": {
+          "type": "string",
+          "description": "Saved article category"
+        },
+        "articleDistrict": {
+          "type": "string",
+          "description": "Saved article district"
+        },
+        "articleImageUrl": {
+          "type": "string",
+          "description": "Saved article image URL"
+        },
+        "savedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when bookmarked; clients must submit FieldValue.serverTimestamp()"
+        }
+      },
+      "required": ["userId", "articleId", "articleTitle"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile collection isolated by user ID"
+    },
+    "/articles/{articleId}": {
+      "schema": { "$ref": "#/entities/Article" },
+      "description": "Hyperlocal news articles collection"
+    },
+    "/users/{userId}/bookmarks/{bookmarkId}": {
+      "schema": { "$ref": "#/entities/Bookmark" },
+      "description": "User bookmarks subcollection"
+    }
+  }
+}
