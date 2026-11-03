@@ -1,27 +1,21 @@
 {
-  "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@bnw/types": [
-        "packages/types/src"
-      ],
-      "@bnw/tokens": [
-        "packages/tokens/src"
-      ],
-      "@bnw/backend": [
-        "packages/backend/src"
-      ]
+      "@/*": ["src/*"]
     }
   },
-  "include": [
-    "apps/*/src/**/*",
-    "packages/*/src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "build",
-    "legacy"
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "build"]
 }

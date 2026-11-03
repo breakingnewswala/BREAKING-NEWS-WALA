@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bnw-yellow: #FDE900;
+    --bnw-red: #ED1727;
+    --bnw-blue: #344FD6;
+    --bnw-dark-red: #C4101E;
+    --bnw-dark-blue: #223594;
+    --bnw-light-red: #FFEBEB;
+    --bnw-light-blue: #EEF2FF;
+  }
+
+  body {
+    font-family: 'Noto Sans Devanagari', 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom scrollbars for district & category tabs */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
