@@ -10,7 +10,6 @@ runConfig:
 
 env:
   - variable: NODE_ENV
-    value: production
+    value: development
     availability:
       - BUILD
-      - RUNTIME
