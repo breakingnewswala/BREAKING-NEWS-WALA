@@ -14,15 +14,31 @@ import {
   Send,
   ShieldCheck,
   Check,
+  UserCheck,
+  Layers,
+  Award,
+  Calendar,
+  MapPin,
+  FileText,
+  AlertCircle,
+  Users,
 } from 'lucide-react';
-import { ArticleDetail, CategoryItem, CreateDraftRequest, DistrictItem, ReporterAiDraft } from '../types';
+import {
+  ArticleDetail,
+  CategoryItem,
+  CreateDraftRequest,
+  DistrictItem,
+  ReporterAiDraft,
+  ReporterProfile,
+} from '../types';
 import { BnwAiService } from '../services/aiService';
 
 interface ReporterDeskScreenProps {
   categories: CategoryItem[];
   districts: DistrictItem[];
   reporterDrafts: ArticleDetail[];
-  onSubmitDraft: (draft: CreateDraftRequest) => void;
+  reporters?: ReporterProfile[];
+  onSubmitDraft: (draft: CreateDraftRequest, reporter?: ReporterProfile) => void;
   onBackClick: () => void;
 }
 
@@ -30,18 +46,47 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   categories,
   districts,
   reporterDrafts,
+  reporters = [],
   onSubmitDraft,
+  onBackClick,
 }) => {
-  const [activeTab, setActiveTab] = useState<'compose' | 'history' | 'feedback'>('compose');
+  const [activeTab, setActiveTab] = useState<'create' | 'my_stories' | 'assignments' | 'profile'>('create');
+
+  // Active Reporter Selection (Persona Switcher)
+  const [selectedReporterId, setSelectedReporterId] = useState<string>(
+    reporters[0]?.id || 'rep-active'
+  );
+
+  const activeReporter: ReporterProfile =
+    reporters.find((r) => r.id === selectedReporterId) ||
+    reporters[0] || {
+      id: 'rep-active',
+      name: 'राजेश पटेल',
+      email: 'rajesh.patel@breakingnewswala.com',
+      phone: '+91 98260 12345',
+      role: 'trusted_reporter',
+      assignedDistricts: ['भोपाल', 'सीहोर'],
+      assignedDivision: 'भोपाल संभाग',
+      totalStoriesFiled: 148,
+      totalStoriesPublished: 142,
+      badgeNumber: 'BNW-REP-0101',
+      joinedDate: '15 जनवरी 2024',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+      status: 'ACTIVE',
+    };
 
   // Form states
+  const [creationMode, setCreationMode] = useState<'raw_script' | 'manual'>('manual');
+  const [rawNotes, setRawNotes] = useState('');
   const [headline, setHeadline] = useState('');
   const [bodyContent, setBodyContent] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('cat-mp');
   const [selectedDistrictId, setSelectedDistrictId] = useState('dist-bhopal');
-  const [imageUrl, setImageUrl] = useState('https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80');
+  const [imageUrl, setImageUrl] = useState(
+    'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80'
+  );
   const [imageCaption, setImageCaption] = useState('');
-  const [imageAttribution, setImageAttribution] = useState('बीएनडब्ल्यू फील्ड रिपोर्टर');
+  const [imageAttribution, setImageAttribution] = useState('बीएनडब्ल्यू फील्ड संवाददाता');
   const [isBreaking, setIsBreaking] = useState(false);
 
   // Self Fact-Checking Protocol checks
@@ -61,22 +106,26 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   // Success modal
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
 
-  // Trigger AI Field Assistance
+  // Story Status Filter
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  // Trigger AI Field Assistance (Local Simulation Engine)
   const handleAiAssist = async () => {
-    if (!bodyContent.trim() && !headline.trim()) {
+    const inputContent = rawNotes.trim() || bodyContent.trim() || headline.trim();
+    if (!inputContent) {
       alert('कृपया पहले कुछ कच्चे नोट्स या विवरण दर्ज करें ताकि AI आपकी सहायता कर सके।');
       return;
     }
     setIsAiLoading(true);
     try {
       const selectedDist = districts.find((d) => d.id === selectedDistrictId)?.nameHi || 'भोपाल';
-      const result = await BnwAiService.assistReporter(
-        headline ? `${headline}\n${bodyContent}` : bodyContent,
-        selectedDist
-      );
+      const result = await BnwAiService.assistReporter(inputContent, selectedDist);
       setAiDraftResult(result);
       if (!headline) {
         setHeadline(result.suggestedHeadline);
+      }
+      if (!bodyContent && result.leadParagraph) {
+        setBodyContent(`${result.leadParagraph}\n\n${inputContent}`);
       }
     } catch {
       alert('AI सहायता लोड करने में समस्या हुई।');
@@ -88,8 +137,9 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   const handleApplyAiSuggestion = (suggestion: ReporterAiDraft) => {
     setHeadline(suggestion.suggestedHeadline);
     if (!bodyContent.includes(suggestion.leadParagraph)) {
-      setBodyContent(`${suggestion.leadParagraph}\n\n${bodyContent}`);
+      setBodyContent(`${suggestion.leadParagraph}\n\n${bodyContent || rawNotes}`);
     }
+    setCreationMode('manual');
     setAiDraftResult(null);
   };
 
@@ -98,8 +148,8 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
       setIsRecordingVoice(false);
       setBodyContent((prev) =>
         prev
-          ? `${prev}\n\n[फील्ड वॉइस नोट डिक्टेशन (${recordingSeconds}s): स्थानीय नागरिकों और प्रशासन से प्राप्त प्रारंभिक साक्ष्य दर्ज किए गए।]`
-          : `[फील्ड वॉइस नोट डिक्टेशन (${recordingSeconds}s): स्थानीय नागरिकों और प्रशासन से प्राप्त प्रारंभिक साक्ष्य दर्ज किए गए।]`
+          ? `${prev}\n\n[फील्ड वॉइस नोट डिक्टेशन (सिम्युलेटर - ${recordingSeconds}s): स्थानीय नागरिकों और प्रशासन से प्राप्त प्रारंभिक साक्ष्य दर्ज किए गए।]`
+          : `[फील्ड वॉइस नोट डिक्टेशन (सिम्युलेटर - ${recordingSeconds}s): स्थानीय नागरिकों और प्रशासन से प्राप्त प्रारंभिक साक्ष्य दर्ज किए गए।]`
       );
       setRecordingSeconds(0);
     } else {
@@ -131,109 +181,227 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
       categoryId: selectedCategoryId,
       districtId: selectedDistrictId,
       featuredImage: imageUrl,
-      imageCaption: imageCaption || `जिला ${districts.find((d) => d.id === selectedDistrictId)?.nameHi || ''} से फील्ड कवरेज`,
-      imageAttribution: imageAttribution,
+      imageCaption:
+        imageCaption ||
+        `जिला ${districts.find((d) => d.id === selectedDistrictId)?.nameHi || ''} से फील्ड कवरेज`,
+      imageAttribution: imageAttribution || activeReporter.name,
       isBreaking: isBreaking,
     };
 
-    onSubmitDraft(draftReq);
+    onSubmitDraft(draftReq, activeReporter);
     setSubmittedSuccess(true);
     setHeadline('');
     setBodyContent('');
+    setRawNotes('');
     setTimeout(() => {
       setSubmittedSuccess(false);
-      setActiveTab('history');
+      setActiveTab('my_stories');
     }, 2000);
   };
 
+  const filteredDrafts = reporterDrafts.filter((d) => {
+    if (statusFilter === 'ALL') return true;
+    return d.status === statusFilter;
+  });
+
   return (
-    <div className="bg-slate-50 min-h-screen pb-24">
-      {/* Reporter Profile & Trust Score Header */}
-      <div className="bg-slate-900 text-white px-4 py-4 border-b border-slate-800">
-        <div className="max-w-3xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-              <h1 className="text-base md:text-lg font-bold">संवाददाता फील्ड डेस्क (Reporter Portal)</h1>
+    <div className="bg-slate-100 min-h-screen pb-24 font-sans">
+      {/* 1. Reporter Profile Header Bar */}
+      <div className="bg-slate-900 text-white px-4 py-5 border-b border-slate-800 shadow-md">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full border-2 border-yellow-400 overflow-hidden shrink-0 shadow-sm">
+              <img
+                src={activeReporter.avatar}
+                alt={activeReporter.name}
+                className="w-full h-full object-cover"
+              />
             </div>
-            <p className="text-xs text-slate-300 mt-0.5">
-              प्रमाणित संवाददाता: <strong>राजेश पटेल</strong> • गृह बीट: <strong>भोपाल एवं मध्य प्रदेश</strong>
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base md:text-lg font-black tracking-tight font-serif">
+                  संवाददाता डिजिटल कार्यक्षेत्र (Reporter Desk)
+                </h1>
+                <span className="px-2 py-0.5 bg-emerald-700 text-white text-[10px] font-bold rounded-full">
+                  प्रमाणित बीट
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                संवाददाता: <strong>{activeReporter.name}</strong> • प्रेस बैज:{' '}
+                <strong className="font-mono text-yellow-300">{activeReporter.badgeNumber}</strong> • बीट:{' '}
+                <strong>{activeReporter.assignedDistricts.join(', ')}</strong>
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="px-3 py-1 bg-emerald-900/80 border border-emerald-600 rounded-lg text-emerald-200 text-xs font-bold flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Persona Switcher Dropdown */}
+            {reporters.length > 0 && (
+              <div className="flex items-center gap-1.5 bg-slate-800 p-1 rounded-lg border border-slate-700 text-xs">
+                <Users className="w-3.5 h-3.5 text-slate-400 ml-1" />
+                <select
+                  value={selectedReporterId}
+                  onChange={(e) => setSelectedReporterId(e.target.value)}
+                  className="bg-transparent text-slate-200 text-xs font-semibold focus:outline-hidden pr-2 cursor-pointer"
+                  title="सक्रिय संवाददाता प्रोफ़ाइल बदलें"
+                >
+                  {reporters.map((rep) => (
+                    <option key={rep.id} value={rep.id} className="bg-slate-900 text-white">
+                      {rep.name} ({rep.badgeNumber} - {rep.assignedDistricts[0]})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="px-3 py-1.5 bg-emerald-900/70 border border-emerald-600 rounded-lg text-emerald-200 text-xs font-bold flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>★ विश्वास स्कोर: 98%</span>
+              <span>विश्वास स्कोर: 98% (A+)</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="bg-white border-b border-slate-200 px-3">
-        <div className="max-w-3xl mx-auto flex gap-4 text-xs font-bold">
+      {/* 2. Navigation Tabs */}
+      <div className="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-2xs">
+        <div className="max-w-6xl mx-auto px-4 flex items-center gap-2 text-xs font-bold">
           <button
-            onClick={() => setActiveTab('compose')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition-colors ${
-              activeTab === 'compose'
+            onClick={() => setActiveTab('create')}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+              activeTab === 'create'
                 ? 'border-red-600 text-red-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
             <PenTool className="w-4 h-4" />
-            नया समाचार दर्ज करें
+            <span>समाचार दर्ज करें</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('history')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition-colors ${
-              activeTab === 'history'
+            onClick={() => setActiveTab('my_stories')}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+              activeTab === 'my_stories'
                 ? 'border-red-600 text-red-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
             <History className="w-4 h-4" />
-            सबमिशन इतिहास ({reporterDrafts.length})
+            <span>मेरी खबरें ({reporterDrafts.length})</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('feedback')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition-colors ${
-              activeTab === 'feedback'
+            onClick={() => setActiveTab('assignments')}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+              activeTab === 'assignments'
                 ? 'border-red-600 text-red-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <MessageSquare className="w-4 h-4" />
-            संपादकीय फीडबैक
+            <Calendar className="w-4 h-4" />
+            <span>संपादकीय असाइनमेंट्स (3)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+              activeTab === 'profile'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <UserCheck className="w-4 h-4" />
+            <span>प्रेस पहचान पत्र (Press ID)</span>
           </button>
         </div>
       </div>
 
-      {/* Main Container */}
-      <div className="max-w-3xl mx-auto px-4 py-4">
+      {/* 3. Main Workspace Container */}
+      <div className="max-w-4xl mx-auto px-4 py-6">
         {submittedSuccess && (
-          <div className="mb-4 bg-emerald-100 border border-emerald-400 text-emerald-900 p-3.5 rounded-xl text-xs font-bold flex items-center gap-2 animate-bounce">
+          <div className="mb-4 bg-emerald-100 border border-emerald-400 text-emerald-900 p-4 rounded-xl text-xs font-bold flex items-center gap-2 animate-bounce">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>समाचार ड्राफ्ट सफलतापूर्वक दर्ज हुआ! इसे मुख्य संपादक डेस्क की समीक्षा में भेज दिया गया है।</span>
+            <span>
+              समाचार ड्राफ्ट सफलतापूर्वक दर्ज हुआ! इसे मुख्य संपादक डेस्क की समीक्षा में भेज दिया गया है।
+            </span>
           </div>
         )}
 
-        {/* Tab 1: Compose Story */}
-        {activeTab === 'compose' && (
-          <form onSubmit={handleSubmit} className="bg-white p-4 md:p-6 rounded-xl border border-slate-200 shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+        {/* TAB 1: COMPOSE STORY */}
+        {activeTab === 'create' && (
+          <form
+            onSubmit={handleSubmit}
+            className="bg-white p-5 md:p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4"
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
                 <PenTool className="w-4 h-4 text-red-600" />
-                ग्राउंड रिपोर्ट / ब्रेकिंग न्यूज़ दर्ज करें
-              </h2>
+                <h2 className="text-sm md:text-base font-bold text-slate-900">
+                  ग्राउंड रिपोर्ट अथवा ब्रेकिंग न्यूज़ फाइल करें
+                </h2>
+              </div>
               <span className="text-[11px] font-semibold text-slate-500">
                 10-बिंदु संपादकीय संहिता अनिवार्य
               </span>
             </div>
 
-            {/* District & Category Row */}
+            {/* Creation Mode Toggle (Raw Notes vs Structured) */}
+            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setCreationMode('manual')}
+                className={`flex-1 py-1.5 rounded-lg transition-colors ${
+                  creationMode === 'manual'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                📝 मानक रिपोर्टर एडिटर
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreationMode('raw_script')}
+                className={`flex-1 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                  creationMode === 'raw_script'
+                    ? 'bg-white text-indigo-700 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                <span>कच्ची स्क्रिप्ट / AI फील्ड सहायक (सिम्युलेटर)</span>
+              </button>
+            </div>
+
+            {/* Raw Script Input Mode */}
+            {creationMode === 'raw_script' && (
+              <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-indigo-950 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                    कच्ची स्क्रिप्ट या त्वरित ऑडियो नोट्स दर्ज करें:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAiAssist}
+                    disabled={isAiLoading}
+                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold shadow-xs transition-colors"
+                  >
+                    {isAiLoading ? 'AI तैयार कर रहा...' : 'AI से खबर तैयार कराएं'}
+                  </button>
+                </div>
+                <textarea
+                  value={rawNotes}
+                  onChange={(e) => setRawNotes(e.target.value)}
+                  rows={4}
+                  placeholder="उदा. सीहोर मंडी में आज सोयाबीन की रिकॉर्ड आवक हुई, किसानों को 5100 का भाव मिला। एसडीएम ने उपार्जन केंद्रों का दौरा किया..."
+                  className="w-full p-2.5 bg-white border border-indigo-200 rounded-lg text-slate-900"
+                />
+                <span className="text-[10px] text-indigo-600 block italic">
+                  * यह सुविधा स्थानीय हेयूरिस्टिक इंजन द्वारा संचालित है।
+                </span>
+              </div>
+            )}
+
+            {/* District & Category Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -242,7 +410,7 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 <select
                   value={selectedDistrictId}
                   onChange={(e) => setSelectedDistrictId(e.target.value)}
-                  className="w-full text-xs font-medium border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-red-500 bg-white"
+                  className="w-full text-xs font-medium border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-red-500 bg-white"
                 >
                   {districts.map((d) => (
                     <option key={d.id} value={d.id}>
@@ -259,7 +427,7 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 <select
                   value={selectedCategoryId}
                   onChange={(e) => setSelectedCategoryId(e.target.value)}
-                  className="w-full text-xs font-medium border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-red-500 bg-white"
+                  className="w-full text-xs font-medium border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-red-500 bg-white"
                 >
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -286,18 +454,18 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 onChange={(e) => setHeadline(e.target.value)}
                 placeholder="उदा. सीहोर कृषि उपज मंडी में सोयाबीन के भाव में उछाल, किसानों के चेहरे खिले..."
                 className="w-full text-sm font-semibold border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-red-500"
+                required
               />
             </div>
 
-            {/* Body Content Input + Field Mic + AI Assistant */}
+            {/* Content Textarea + Voice Dictation + AI Assist */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-bold text-slate-700">
-                  समाचार विवरण व फील्ड नोट्स *
+                  समाचार का मुख्य विवरण व ग्राउंड रिपोर्ट *
                 </label>
 
                 <div className="flex items-center gap-2">
-                  {/* Voice Note Simulation */}
                   <button
                     type="button"
                     onClick={handleVoiceNoteToggle}
@@ -306,12 +474,20 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                         ? 'bg-red-600 text-white animate-pulse'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
+                    title="ऑडियो डिक्टेशन सिम्युलेटर"
                   >
-                    {isRecordingVoice ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-red-600" />}
-                    <span>{isRecordingVoice ? `रिकॉर्डिंग (${recordingSeconds}s)... रोकें` : 'फील्ड वॉइस नोट'}</span>
+                    {isRecordingVoice ? (
+                      <MicOff className="w-3.5 h-3.5" />
+                    ) : (
+                      <Mic className="w-3.5 h-3.5 text-red-600" />
+                    )}
+                    <span>
+                      {isRecordingVoice
+                        ? `रिकॉर्डिंग (${recordingSeconds}s)... रोकें`
+                        : 'फील्ड वॉइस नोट (सिम्युलेटर)'}
+                    </span>
                   </button>
 
-                  {/* AI Assistant Button */}
                   <button
                     type="button"
                     onClick={handleAiAssist}
@@ -319,7 +495,7 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                     className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded text-[11px] font-bold transition-colors"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>{isAiLoading ? 'AI तैयार कर रहा...' : 'AI फील्ड सहायक'}</span>
+                    <span>{isAiLoading ? 'AI तैयार कर रहा...' : 'AI सुधार'}</span>
                   </button>
                 </div>
               </div>
@@ -327,19 +503,20 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
               <textarea
                 value={bodyContent}
                 onChange={(e) => setBodyContent(e.target.value)}
-                rows={5}
+                rows={6}
                 placeholder="घटना स्थल का पूरा ब्यौरा लिखें: क्या हुआ, कब हुआ, संबंधित अधिकारी (DM/SP/SDM) का क्या कहना है, प्रत्यक्षदर्शियों का पक्ष..."
-                className="w-full text-xs font-normal border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-red-500 leading-relaxed"
+                className="w-full text-xs font-normal border border-slate-300 rounded-lg p-3 focus:ring-2 focus:ring-red-500 leading-relaxed"
+                required
               />
             </div>
 
-            {/* AI Suggestion Box if available */}
+            {/* AI Assistant Output Box */}
             {aiDraftResult && (
-              <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2 text-xs">
+              <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-xl space-y-2 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-indigo-950 flex items-center gap-1">
                     <Sparkles className="w-4 h-4 text-indigo-600" />
-                    AI फील्ड सुझाव:
+                    AI फील्ड संपादन सुझाव (हेयूरिस्टिक):
                   </span>
                   <button
                     type="button"
@@ -355,22 +532,14 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 <p>
                   <strong>लीड पैराग्राफ:</strong> {aiDraftResult.leadParagraph}
                 </p>
-                <div className="text-[11px] text-indigo-900 bg-white/80 p-2 rounded border border-indigo-100">
-                  <span className="font-bold block">10-बिंदु गाइडेंस:</span>
-                  <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
-                    {aiDraftResult.factCheckGuidance.map((g, i) => (
-                      <li key={i}>{g}</li>
-                    ))}
-                  </ul>
-                </div>
               </div>
             )}
 
-            {/* Featured Image URL & Attribution */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
-              <label className="font-bold text-slate-800 flex items-center gap-1">
-                <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                ग्राउंड फोटो / मीडिया URL
+            {/* Ground Image URL & Attribution */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+              <label className="font-bold text-slate-800 flex items-center gap-1.5">
+                <ImageIcon className="w-4 h-4 text-blue-600" />
+                ग्राउंड फोटो / मीडिया URL एवं स्रोत साभार
               </label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <input
@@ -378,20 +547,20 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
                   placeholder="https://... फोटो का वेब लिंक"
-                  className="w-full border border-slate-300 rounded p-1.5 text-xs bg-white"
+                  className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
                 />
                 <input
                   type="text"
                   value={imageAttribution}
                   onChange={(e) => setImageAttribution(e.target.value)}
                   placeholder="फोटो स्रोत / क्रेडिट (उदा. बीएनडब्ल्यू ब्यूरो)"
-                  className="w-full border border-slate-300 rounded p-1.5 text-xs bg-white"
+                  className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
                 />
               </div>
             </div>
 
-            {/* Breaking News Toggle */}
-            <div className="flex items-center gap-2 p-2.5 bg-red-50/60 border border-red-200 rounded-lg">
+            {/* Breaking News Checkbox */}
+            <div className="flex items-center gap-2.5 p-3 bg-red-50/70 border border-red-200 rounded-xl">
               <input
                 type="checkbox"
                 id="isBreakingCheckbox"
@@ -404,13 +573,13 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
               </label>
             </div>
 
-            {/* 10-Point Fact Check Self-Declaration */}
-            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg space-y-1.5 text-xs">
-              <span className="font-bold text-amber-900 flex items-center gap-1">
+            {/* Mandatory 10-Point Self Declaration */}
+            <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2 text-xs">
+              <span className="font-bold text-amber-900 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-amber-700" />
                 संवाददाता 10-बिंदु स्व-सत्यापन घोषणा (Mandatory):
               </span>
-              <div className="space-y-1 text-slate-700">
+              <div className="space-y-1.5 text-slate-700">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -436,7 +605,7 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                     onChange={(e) => setCheckMediaAuthentic(e.target.checked)}
                     className="w-3.5 h-3.5 text-amber-600"
                   />
-                  <span>3. फोटो व वीडियो आज के घटना स्थल के वास्तविक हैं, कोई पुराना फुटेज नहीं।</span>
+                  <span>3. फोटो व वीडियो आज के घटना स्थल के वास्तविक हैं, कोई भ्रामक फुटेज नहीं।</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -454,7 +623,7 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
             <button
               type="submit"
               disabled={!checkSource || !checkOfficial || !checkMediaAuthentic || !checkHarmonious}
-              className="w-full py-3 bg-[#ED1727] hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center justify-center gap-2"
+              className="w-full py-3 bg-[#ED1727] hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2"
             >
               <Send className="w-4 h-4" />
               <span>संपादकीय समीक्षा हेतु प्रेषित करें (Submit for Desk Review)</span>
@@ -462,20 +631,44 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
           </form>
         )}
 
-        {/* Tab 2: Submission History */}
-        {activeTab === 'history' && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-bold text-slate-800">
-              आपके द्वारा भेजी गई खबरें व वर्तमान स्थिति:
-            </h2>
+        {/* TAB 2: MY STORIES & DRAFT TRACKING */}
+        {activeTab === 'my_stories' && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <h2 className="text-sm font-bold text-slate-800">
+                आपके द्वारा सबमिट की गई खबरें व वर्तमान स्थिति:
+              </h2>
 
-            {reporterDrafts.length === 0 ? (
-              <div className="text-center py-10 bg-white rounded-xl border border-slate-200">
+              <div className="flex items-center gap-1.5 text-xs">
+                {['ALL', 'PENDING_REVIEW', 'REVISION_REQUESTED', 'PUBLISHED'].map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setStatusFilter(st)}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${
+                      statusFilter === st
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    {st === 'ALL'
+                      ? 'सभी'
+                      : st === 'PENDING_REVIEW'
+                      ? 'कतार में'
+                      : st === 'REVISION_REQUESTED'
+                      ? 'संशोधन'
+                      : 'प्रकाशित'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {filteredDrafts.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
                 <Clock className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                <p className="text-xs font-bold text-slate-700">अभी कोई सबमिशन उपलब्ध नहीं है।</p>
+                <p className="text-xs font-bold text-slate-700">इस फ़िल्टर में कोई खबर उपलब्ध नहीं है।</p>
               </div>
             ) : (
-              reporterDrafts.map((draft) => {
+              filteredDrafts.map((draft) => {
                 const getStatusBadge = () => {
                   switch (draft.status) {
                     case 'PUBLISHED':
@@ -494,10 +687,10 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 return (
                   <div
                     key={draft.id}
-                    className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-2"
+                    className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-2.5"
                   >
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-500">
+                      <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
                         {draft.districtName} • {draft.categoryName}
                       </span>
                       <span className={`px-2 py-0.5 rounded border text-[11px] font-bold ${badge.bg}`}>
@@ -513,7 +706,17 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                       {draft.content}
                     </p>
 
-                    <div className="text-[11px] text-slate-400 pt-1 border-t border-slate-100 flex items-center justify-between">
+                    {draft.status === 'REVISION_REQUESTED' && (
+                      <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-950 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <strong>संपादकीय निर्देश:</strong>{' '}
+                          {draft.summary || 'कृपया संबंधित प्रशासनिक अधिकारी का पक्ष शामिल करें।'}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="text-[11px] text-slate-400 pt-2 border-t border-slate-100 flex items-center justify-between">
                       <span>दर्ज समय: {draft.createdAt}</span>
                       {draft.isBreaking && (
                         <span className="text-red-600 font-bold">🚨 ब्रेकिंग टैग</span>
@@ -526,24 +729,111 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
           </div>
         )}
 
-        {/* Tab 3: Editorial Feedback */}
-        {activeTab === 'feedback' && (
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-              <MessageSquare className="w-4 h-4 text-blue-600" />
-              न्यूज़रूम संपादकीय दिशानिर्देश व फीडबैक
+        {/* TAB 3: ASSIGNMENTS */}
+        {activeTab === 'assignments' && (
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-red-600" />
+              केंद्रीय डेस्क द्वारा आवंटित प्राथमिकता कवरेज
             </h3>
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs space-y-1.5 text-blue-950">
-              <p className="font-bold">चीफ एडिटर नोट (दैनिक ब्रीफिंग):</p>
-              <p>
-                सभी 55 जिला संवाददाताओं को निर्देश: कृषि उपज मंडियों में समर्थन मूल्य खरीद व उपार्जन केंद्रों से संबंधित किसानों की समस्याओं को सर्वोच्च प्राथमिकता से उठाएं। खबर के साथ स्थानीय एसडीएम या तहसीलदार का अधिकृत पक्ष संलग्न करना अनिवार्य है।
+
+            <div className="space-y-3">
+              <div className="p-4 rounded-xl border border-red-200 bg-red-50/40 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="bg-red-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">
+                    अति आवश्यक (HIGH PRIORITY)
+                  </span>
+                  <span className="text-slate-500 font-semibold">समय सीमा: आज शाम 05:00 बजे तक</span>
+                </div>
+                <h4 className="font-bold text-sm text-slate-900">
+                  सीहोर व रायसेन उपार्जन केंद्रों पर किसानों के पंजीयन व स्लॉट बुकिंग की ग्राउंड रिपोर्ट
+                </h4>
+                <p className="text-slate-700">
+                  सोसायटियों पर बायोमेट्रिक सर्वर की स्थिति और किसानों की समस्याओं पर 300 शब्दों की खबर व 2 ग्राउंड फोटोज़ भेजें।
+                </p>
+                <button
+                  onClick={() => {
+                    setActiveTab('create');
+                    setHeadline(
+                      'सीहोर उपार्जन केंद्रों पर किसान पंजीयन में सर्वर धीमा, कतारों में खड़े अन्नदाता...'
+                    );
+                  }}
+                  className="px-3 py-1.5 bg-red-600 text-white font-bold rounded-lg text-xs hover:bg-red-700"
+                >
+                  इस असाइनमेंट पर खबर दर्ज करें
+                </button>
+              </div>
+
+              <div className="p-4 rounded-xl border border-slate-200 bg-white space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">
+                    विशेष बीट
+                  </span>
+                  <span className="text-slate-500 font-semibold">समय सीमा: कल दोपहर 12:00 बजे</span>
+                </div>
+                <h4 className="font-bold text-sm text-slate-900">
+                  भोपाल नगर निगम: स्वच्छता सर्वेक्षण 2026 नवाचार व वार्ड स्तर पर गीले-सूखे कचरे का पृथक्करण
+                </h4>
+                <p className="text-slate-600">
+                  अपर आयुक्त स्वास्थ्य का अधिकृत पक्ष और स्थानीय नागरिकों की प्रतिक्रिया शामिल करें।
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: DIGITAL PRESS ID */}
+        {activeTab === 'profile' && (
+          <div className="max-w-md mx-auto space-y-4">
+            <div className="text-center pb-2">
+              <h3 className="text-base font-black text-slate-900">
+                डिजिटल प्रेस पहचान पत्र (डेमो परिचय पत्र)
+              </h3>
+              <p className="text-xs text-slate-500">
+                BREAKING NEWS WALA द्वारा अधिकृत फील्ड संवाददाता पहचान पत्र (डेमो मोड)
               </p>
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1 text-slate-700">
-              <span className="font-bold block text-slate-900">फैक्ट चेक गुणवत्ता स्कोर सुधार:</span>
-              <p>• किसी भी आकस्मिक दुर्घटना की खबर में केवल अधिकृत पुलिस कंट्रोल रूम अथवा अस्पताल प्रबंधन के आंकड़ों का ही उल्लेख करें।</p>
-              <p>• भ्रामक सोशल मीडिया क्लिप्स को बिना जिला जनसंपर्क अधिकारी (PRO) से सत्यापित किए कतई सबमिट न करें।</p>
+            <div className="bg-gradient-to-br from-red-700 via-slate-900 to-slate-950 text-white rounded-2xl p-5 shadow-xl border-2 border-yellow-400 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/20 pb-3">
+                <img
+                  src="/brand/logo.png"
+                  alt="Logo"
+                  className="h-7 w-auto object-contain bg-white p-1 rounded"
+                />
+                <span className="text-xs font-bold text-yellow-300 font-mono">
+                  ID: {activeReporter.badgeNumber}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <img
+                  src={activeReporter.avatar}
+                  alt={activeReporter.name}
+                  className="w-18 h-18 rounded-xl border-2 border-white object-cover shadow-sm"
+                />
+                <div className="space-y-1">
+                  <h4 className="text-base font-black">{activeReporter.name}</h4>
+                  <p className="text-xs text-yellow-300 font-bold">
+                    {activeReporter.role === 'trusted_reporter'
+                      ? 'वरिष्ठ जिला संवाददाता'
+                      : 'जिला संवाददाता'}
+                  </p>
+                  <p className="text-[11px] text-slate-300">
+                    {activeReporter.assignedDivision || 'मध्य प्रदेश'} •{' '}
+                    {activeReporter.assignedDistricts.join(', ')}
+                  </p>
+                  <p className="text-[10px] text-slate-400 font-mono">{activeReporter.phone}</p>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-300 border-t border-white/20 pt-2.5 flex justify-between items-center">
+                <span>जारी दिनांक: {activeReporter.joinedDate}</span>
+                <span className="text-emerald-400 font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  वैधता: सक्रिय (Active)
+                </span>
+              </div>
             </div>
           </div>
         )}

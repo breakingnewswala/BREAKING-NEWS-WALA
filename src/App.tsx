@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { AppRole, ArticleDetail, ArticleItem, CreateDraftRequest } from './types';
+import {
+  AppRole,
+  ArticleDetail,
+  ArticleItem,
+  CreateDraftRequest,
+  ReporterProfile,
+  BreakingTickerItem,
+  AdBannerItem,
+  ApiPoolKeyItem,
+  SystemAuditLogItem,
+} from './types';
 import {
   CATEGORIES,
   DISTRICTS,
@@ -7,15 +17,22 @@ import {
   EPAPER_EDITIONS,
   INITIAL_ARTICLES,
   INITIAL_PENDING_STORIES,
+  MOCK_REPORTERS,
+  MOCK_ADS,
+  MOCK_API_POOL,
+  MOCK_AUDIT_LOGS,
+  MOCK_TICKERS,
 } from './data/mockNewsData';
 import { BnwMasthead } from './components/BnwMasthead';
 import { BottomNav, NavTab } from './components/BottomNav';
 import { NavDrawer } from './components/NavDrawer';
+import { Footer } from './components/Footer';
 import { HomeScreen } from './screens/HomeScreen';
 import { ArticleDetailScreen } from './screens/ArticleDetailScreen';
 import { EpaperScreen } from './screens/EpaperScreen';
 import { ReporterDeskScreen } from './screens/ReporterDeskScreen';
 import { NewsroomDeskScreen } from './screens/NewsroomDeskScreen';
+import { AdminControlScreen } from './screens/AdminControlScreen';
 import { SearchScreen } from './screens/SearchScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
 import { Radio, X } from 'lucide-react';
@@ -27,7 +44,7 @@ export const App: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // App Role Persona
-  const [currentRole, setCurrentRole] = useState<AppRole>('READER');
+  const [currentRole, setCurrentRole] = useState<AppRole>('ADMIN');
 
   // Filter signals from Drawer Menu to Home
   const [initialCategoryFilter, setInitialCategoryFilter] = useState<string | null>(null);
@@ -38,6 +55,13 @@ export const App: React.FC = () => {
   const [pendingStories, setPendingStories] = useState<ArticleDetail[]>(INITIAL_PENDING_STORIES);
   const [reporterDrafts, setReporterDrafts] = useState<ArticleDetail[]>(INITIAL_PENDING_STORIES);
 
+  // Operational Surface States
+  const [reporters, setReporters] = useState<ReporterProfile[]>(MOCK_REPORTERS);
+  const [ads, setAds] = useState<AdBannerItem[]>(MOCK_ADS);
+  const [tickers, setTickers] = useState<BreakingTickerItem[]>(MOCK_TICKERS);
+  const [apiPool, setApiPool] = useState<ApiPoolKeyItem[]>(MOCK_API_POOL);
+  const [auditLogs, setAuditLogs] = useState<SystemAuditLogItem[]>(MOCK_AUDIT_LOGS);
+
   // User engagement
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>(['art-1', 'art-3']);
   const [userCoins, setUserCoins] = useState<number>(45);
@@ -47,6 +71,34 @@ export const App: React.FC = () => {
     title: 'मौसम विभाग: ग्वालियर-चंबल एवं विंध्य अंचल में अगले 24 घंटे गरज-चमक के साथ यलो अलर्ट जारी।',
     district: 'पूरा मध्य प्रदेश',
   });
+
+  // URL Hash Synchronizer for direct surface deep-linking
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      const pathname = window.location.pathname.replace('/', '').toLowerCase();
+      const target = hash || pathname;
+
+      if (target === 'reporter' || target === 'newsroom' || target === 'admin' || target === 'epaper' || target === 'search' || target === 'profile') {
+        setSelectedArticleId(null);
+        setActiveTab(target as NavTab);
+      } else if (target === 'home' || target === '') {
+        setSelectedArticleId(null);
+        setActiveTab('home');
+      }
+    };
+
+    handleHashChange();
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const navigateToTab = (tab: NavTab) => {
+    setSelectedArticleId(null);
+    setActiveTab(tab);
+    window.location.hash = tab === 'home' ? '' : tab;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Coin earning helper
   const handleEarnCoins = (amount: number) => {
@@ -79,13 +131,17 @@ export const App: React.FC = () => {
   // Article Click
   const handleArticleClick = (articleId: string) => {
     setSelectedArticleId(articleId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Submit Reporter Draft
-  const handleSubmitReporterDraft = (draftReq: CreateDraftRequest) => {
+  const handleSubmitReporterDraft = (draftReq: CreateDraftRequest, reporter?: ReporterProfile) => {
     const newId = `draft-${Date.now()}`;
     const dist = DISTRICTS.find((d) => d.id === draftReq.districtId);
     const cat = CATEGORIES.find((c) => c.id === draftReq.categoryId);
+    const authorId = reporter?.id || 'rep-active';
+    const authorName = reporter?.name || 'राजेश पटेल';
+    const authorRole = reporter?.role === 'trusted_reporter' ? 'वरिष्ठ संवाददाता' : 'फील्ड संवाददाता';
 
     const newDraft: ArticleDetail = {
       id: newId,
@@ -94,16 +150,18 @@ export const App: React.FC = () => {
       summary: draftReq.summary || draftReq.content.slice(0, 150),
       content: draftReq.content,
       status: 'PENDING_REVIEW',
-      featuredImage: draftReq.featuredImage || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80',
+      featuredImage:
+        draftReq.featuredImage ||
+        'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80',
       imageCaption: draftReq.imageCaption,
-      imageAttribution: draftReq.imageAttribution || 'बीएनडब्ल्यू फील्ड संवाददाता',
+      imageAttribution: draftReq.imageAttribution || (reporter ? `${reporter.name} (${reporter.badgeNumber})` : 'बीएनडब्ल्यू फील्ड संवाददाता'),
       categoryId: draftReq.categoryId,
       categoryName: cat?.nameHi || 'मध्य प्रदेश',
       districtId: draftReq.districtId,
       districtName: dist?.nameHi || 'भोपाल',
-      authorId: 'rep-active',
-      authorName: 'राजेश पटेल',
-      authorRole: 'फील्ड संवाददाता',
+      authorId,
+      authorName,
+      authorRole,
       isBreaking: draftReq.isBreaking,
       viewCount: 0,
       shareCount: 0,
@@ -113,15 +171,33 @@ export const App: React.FC = () => {
 
     setPendingStories((prev) => [newDraft, ...prev]);
     setReporterDrafts((prev) => [newDraft, ...prev]);
+
+    // Add Audit Log
+    const newLog: SystemAuditLogItem = {
+      id: `log-${Date.now()}`,
+      actorName: authorName,
+      actorRole: 'REPORTER',
+      actionType: 'ARTICLE_PUBLISHED',
+      description: `नई खबर दर्ज की गई (${reporter?.badgeNumber || 'REP'}): "${draftReq.title.slice(0, 50)}..."`,
+      ipAddress: '49.36.128.91',
+      timestamp: new Date().toLocaleString('hi-IN'),
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
   };
 
-  // Newsroom Approve and Publish
-  const handleApproveAndPublish = (articleId: string) => {
+  // Newsroom / Admin Approve and Publish (with desk sub-editing!)
+  const handleApproveAndPublish = (
+    articleId: string,
+    updatedTitle?: string,
+    updatedContent?: string
+  ) => {
     const target = pendingStories.find((a) => a.id === articleId);
     if (!target) return;
 
     const publishedArticle: ArticleDetail = {
       ...target,
+      title: updatedTitle || target.title,
+      content: updatedContent || target.content,
       status: 'PUBLISHED',
       publishedAt: 'अभी-अभी लाइव',
       factChecked: true,
@@ -137,13 +213,25 @@ export const App: React.FC = () => {
     // If marked breaking, set alert
     if (target.isBreaking) {
       setActiveAlert({
-        title: target.title,
+        title: updatedTitle || target.title,
         district: target.districtName || 'मध्य प्रदेश',
       });
     }
+
+    // Add Audit Log
+    const newLog: SystemAuditLogItem = {
+      id: `log-${Date.now()}`,
+      actorName: 'मुख्य संपादक डेस्क',
+      actorRole: 'ADMIN',
+      actionType: 'ARTICLE_PUBLISHED',
+      description: `खबर स्वीकृत व लाइव प्रकाशित: "${(updatedTitle || target.title).slice(0, 50)}..."`,
+      ipAddress: '103.24.112.5',
+      timestamp: new Date().toLocaleString('hi-IN'),
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
   };
 
-  // Newsroom Request Revision
+  // Request Revision
   const handleRequestRevision = (articleId: string, comments: string) => {
     setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
     setReporterDrafts((prev) =>
@@ -153,19 +241,93 @@ export const App: React.FC = () => {
           : d
       )
     );
+
+    const newLog: SystemAuditLogItem = {
+      id: `log-${Date.now()}`,
+      actorName: 'मुख्य संपादक डेस्क',
+      actorRole: 'ADMIN',
+      actionType: 'REVISION_REQUESTED',
+      description: `संशोधन अनुरोध भेजा गया (${articleId}): ${comments}`,
+      ipAddress: '103.24.112.5',
+      timestamp: new Date().toLocaleString('hi-IN'),
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
   };
 
-  // Newsroom Reject
+  // Reject Article
   const handleRejectArticle = (articleId: string) => {
     setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
     setReporterDrafts((prev) =>
       prev.map((d) => (d.id === articleId ? { ...d, status: 'REJECTED' } : d))
     );
+
+    const newLog: SystemAuditLogItem = {
+      id: `log-${Date.now()}`,
+      actorName: 'मुख्य संपादक डेस्क',
+      actorRole: 'ADMIN',
+      actionType: 'ARTICLE_REJECTED',
+      description: `खबर अस्वीकृत की गई: ${articleId}`,
+      ipAddress: '103.24.112.5',
+      timestamp: new Date().toLocaleString('hi-IN'),
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
   };
 
   // Broadcast Statewide Alert
   const handleBroadcastAlert = (title: string, district: string) => {
     setActiveAlert({ title, district });
+    const newLog: SystemAuditLogItem = {
+      id: `log-${Date.now()}`,
+      actorName: 'एडमिन कंट्रोल',
+      actorRole: 'ADMIN',
+      actionType: 'ALERT_BROADCAST',
+      description: `राज्यव्यापी अलर्ट [${district}]: ${title}`,
+      ipAddress: '103.24.112.5',
+      timestamp: new Date().toLocaleString('hi-IN'),
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
+  };
+
+  // Ticker Handlers
+  const handleAddTicker = (ticker: BreakingTickerItem) => {
+    setTickers((prev) => [ticker, ...prev]);
+  };
+
+  const handleToggleTicker = (tickerId: string) => {
+    setTickers((prev) =>
+      prev.map((t) => (t.id === tickerId ? { ...t, isActive: !t.isActive } : t))
+    );
+  };
+
+  const handleDeleteTicker = (tickerId: string) => {
+    setTickers((prev) => prev.filter((t) => t.id !== tickerId));
+  };
+
+  // Reporter Role Upgrade / Revision Handler
+  const handleUpdateReporterRole = (
+    reporterId: string,
+    role: 'reporter' | 'trusted_reporter'
+  ) => {
+    setReporters((prev) =>
+      prev.map((r) => (r.id === reporterId ? { ...r, role } : r))
+    );
+    const newLog: SystemAuditLogItem = {
+      id: `log-${Date.now()}`,
+      actorName: 'एडमिन कंट्रोल',
+      actorRole: 'ADMIN',
+      actionType: 'ROLE_CHANGED',
+      description: `संवाददाता (${reporterId}) की भूमिका परिवर्तित: ${role}`,
+      ipAddress: '103.24.112.5',
+      timestamp: new Date().toLocaleString('hi-IN'),
+    };
+    setAuditLogs((prev) => [newLog, ...prev]);
+  };
+
+  // Ad Banner Toggle
+  const handleToggleAdActive = (adId: string) => {
+    setAds((prev) =>
+      prev.map((a) => (a.id === adId ? { ...a, isActive: !a.isActive } : a))
+    );
   };
 
   // Resolve currently active article for detail view
@@ -180,31 +342,19 @@ export const App: React.FC = () => {
       <BnwMasthead
         onOpenMenu={() => setIsMenuOpen(true)}
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          setSelectedArticleId(null);
-          setActiveTab(tab);
-        }}
-        onSearchClick={() => {
-          setSelectedArticleId(null);
-          setActiveTab('search');
-        }}
-        onProfileClick={() => {
-          setSelectedArticleId(null);
-          setActiveTab('profile');
-        }}
+        onTabChange={navigateToTab}
+        onSearchClick={() => navigateToTab('search')}
+        onProfileClick={() => navigateToTab('profile')}
         currentRole={currentRole}
         pendingQueueCount={pendingStories.length}
       />
 
-      {/* 2. Comprehensive Navigation Menu Drawer (Opens on touching Menu button next to logo) */}
+      {/* 2. Comprehensive Navigation Menu Drawer */}
       <NavDrawer
         isOpen={isMenuOpen}
         onClose={() => setIsMenuOpen(false)}
         activeTab={activeTab}
-        onTabSelect={(tab) => {
-          setSelectedArticleId(null);
-          setActiveTab(tab);
-        }}
+        onTabSelect={navigateToTab}
         currentRole={currentRole}
         onRoleChange={(role) => setCurrentRole(role)}
         userCoins={userCoins}
@@ -215,37 +365,37 @@ export const App: React.FC = () => {
         epaperEditions={EPAPER_EDITIONS}
         onSelectCategory={(catId) => {
           setInitialCategoryFilter(catId);
-          setSelectedArticleId(null);
-          setActiveTab('home');
+          navigateToTab('home');
         }}
         onSelectDistrict={(distId) => {
           setInitialDistrictFilter(distId);
-          setSelectedArticleId(null);
-          setActiveTab('home');
+          navigateToTab('home');
         }}
       />
 
       {/* 3. Statewide Emergency Breaking Notice Banner if active */}
       {activeAlert && (
-        <div className="bg-red-600 text-white px-3 py-1.5 flex items-center justify-between text-xs font-bold shadow-xs">
-          <div className="flex items-center gap-1.5 truncate pr-2">
-            <Radio className="w-4 h-4 text-white animate-spin shrink-0" />
-            <span className="bg-white text-red-600 px-1.5 rounded text-[10px] shrink-0 font-black">
-              आपात अलर्ट [{activeAlert.district}]
-            </span>
-            <span className="truncate">{activeAlert.title}</span>
+        <div className="bg-[#ED1727] text-white px-3 sm:px-4 py-2 flex items-center justify-between text-xs font-bold shadow-xs">
+          <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 truncate pr-2">
+              <Radio className="w-4 h-4 text-white animate-spin shrink-0" />
+              <span className="bg-white text-red-600 px-2 py-0.5 rounded text-[10px] shrink-0 font-black">
+                आपात अलर्ट [{activeAlert.district}]
+              </span>
+              <span className="truncate">{activeAlert.title}</span>
+            </div>
+            <button
+              onClick={() => setActiveAlert(null)}
+              className="text-white hover:text-red-200 shrink-0 p-1"
+              title="हटाएं"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            onClick={() => setActiveAlert(null)}
-            className="text-white hover:text-red-200 shrink-0 p-0.5"
-            title="हटाएं"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
         </div>
       )}
 
-      {/* 4. Main Body Content Switcher */}
+      {/* 4. Main Body Content Switcher (4 Unified Surfaces + Utilities) */}
       <main className="flex-1">
         {selectedArticleId && currentDetailArticle ? (
           <ArticleDetailScreen
@@ -260,6 +410,7 @@ export const App: React.FC = () => {
           />
         ) : (
           <>
+            {/* Surface 1: Public News Website */}
             {activeTab === 'home' && (
               <HomeScreen
                 articles={articles}
@@ -271,55 +422,68 @@ export const App: React.FC = () => {
                 onBookmarkToggle={handleBookmarkToggle}
                 onShareArticle={handleShareArticle}
                 onEarnCoins={handleEarnCoins}
+                onNavigateEpaper={() => navigateToTab('epaper')}
               />
             )}
 
+            {/* Epaper */}
             {activeTab === 'epaper' && (
               <EpaperScreen
                 editions={EPAPER_EDITIONS}
-                onBackClick={() => setActiveTab('home')}
+                onBackClick={() => navigateToTab('home')}
               />
             )}
 
+            {/* Surface 2: Reporter Web Application */}
+            {activeTab === 'reporter' && (
+              <ReporterDeskScreen
+                categories={CATEGORIES}
+                districts={DISTRICTS}
+                reporterDrafts={reporterDrafts}
+                reporters={reporters}
+                onSubmitDraft={handleSubmitReporterDraft}
+                onBackClick={() => navigateToTab('home')}
+              />
+            )}
+
+            {/* Surface 3: Central Newsroom Desk */}
+            {activeTab === 'newsroom' && (
+              <NewsroomDeskScreen
+                pendingArticles={pendingStories}
+                onApproveAndPublish={handleApproveAndPublish}
+                onRequestRevision={handleRequestRevision}
+                onRejectArticle={handleRejectArticle}
+                onBroadcastBreakingAlert={handleBroadcastAlert}
+              />
+            )}
+
+            {/* Surface 4: Admin Control Panel */}
+            {activeTab === 'admin' && (
+              <AdminControlScreen
+                articles={articles}
+                pendingArticles={pendingStories}
+                reporters={reporters}
+                tickers={tickers}
+                ads={ads}
+                apiPool={apiPool}
+                auditLogs={auditLogs}
+                districts={DISTRICTS}
+                categories={CATEGORIES}
+                onApproveArticle={handleApproveAndPublish}
+                onRequestRevision={handleRequestRevision}
+                onRejectArticle={handleRejectArticle}
+                onAddTicker={handleAddTicker}
+                onToggleTicker={handleToggleTicker}
+                onDeleteTicker={handleDeleteTicker}
+                onUpdateReporterRole={handleUpdateReporterRole}
+                onToggleAdActive={handleToggleAdActive}
+                onBroadcastAlert={handleBroadcastAlert}
+              />
+            )}
+
+            {/* Backwards Compatibility: Desk Tab */}
             {activeTab === 'desk' && (
               <>
-                {/* Role-Aware Desk Switcher */}
-                <div className="bg-slate-900 border-b border-slate-800 px-3 py-2">
-                  <div className="max-w-4xl mx-auto flex items-center justify-between text-xs text-white">
-                    <span className="font-bold">
-                      {currentRole === 'ADMIN'
-                        ? 'मुख्य संपादक एवं न्यूज़रूम डेस्क'
-                        : currentRole === 'REPORTER'
-                        ? 'मान्यता प्राप्त संवाददाता डेस्क'
-                        : 'प्रेस कार्यक्षेत्र (पाठक पूर्वावलोकन)'}
-                    </span>
-
-                    {/* Quick Mode Toggle for Testing */}
-                    <div className="flex items-center gap-1 bg-slate-800 p-0.5 rounded-lg border border-slate-700">
-                      <button
-                        onClick={() => setCurrentRole('REPORTER')}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                          currentRole === 'REPORTER'
-                            ? 'bg-[#ED1727] text-white'
-                            : 'text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        रिपोर्टर
-                      </button>
-                      <button
-                        onClick={() => setCurrentRole('ADMIN')}
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                          currentRole === 'ADMIN'
-                            ? 'bg-[#344FD6] text-white'
-                            : 'text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        एडमिन
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
                 {currentRole === 'ADMIN' ? (
                   <NewsroomDeskScreen
                     pendingArticles={pendingStories}
@@ -333,13 +497,15 @@ export const App: React.FC = () => {
                     categories={CATEGORIES}
                     districts={DISTRICTS}
                     reporterDrafts={reporterDrafts}
+                    reporters={reporters}
                     onSubmitDraft={handleSubmitReporterDraft}
-                    onBackClick={() => setActiveTab('home')}
+                    onBackClick={() => navigateToTab('home')}
                   />
                 )}
               </>
             )}
 
+            {/* Search */}
             {activeTab === 'search' && (
               <SearchScreen
                 articles={articles}
@@ -352,6 +518,7 @@ export const App: React.FC = () => {
               />
             )}
 
+            {/* Profile */}
             {activeTab === 'profile' && (
               <ProfileScreen
                 currentRole={currentRole}
@@ -366,13 +533,32 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* 5. Bottom Tab Navigation (Mobile & Tablet only, completely hidden on Desktop Web) */}
+      {/* 5. Comprehensive Editorial Footer */}
+      {(activeTab === 'home' ||
+        activeTab === 'epaper' ||
+        activeTab === 'search' ||
+        activeTab === 'profile' ||
+        selectedArticleId) && (
+        <Footer
+          categories={CATEGORIES}
+          districts={DISTRICTS}
+          divisions={DIVISIONS}
+          onNavigateTab={navigateToTab}
+          onSelectCategory={(catId) => {
+            setInitialCategoryFilter(catId);
+            navigateToTab('home');
+          }}
+          onSelectDistrict={(distId) => {
+            setInitialDistrictFilter(distId);
+            navigateToTab('home');
+          }}
+        />
+      )}
+
+      {/* 6. Bottom Tab Navigation (Mobile & Tablet only) */}
       <BottomNav
         activeTab={activeTab}
-        onTabChange={(tab) => {
-          setSelectedArticleId(null);
-          setActiveTab(tab);
-        }}
+        onTabChange={navigateToTab}
         currentRole={currentRole}
         pendingQueueCount={pendingStories.length}
       />

@@ -10,6 +10,7 @@ export default defineConfig({
     tailwindcss()
   ],
   resolve: {
+    extensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
     alias: {
       '@': path.resolve(__dirname, './src'),
     },

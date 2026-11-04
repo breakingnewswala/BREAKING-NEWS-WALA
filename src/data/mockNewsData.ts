@@ -1,4 +1,16 @@
-import { ArticleDetail, CategoryItem, DistrictItem, DivisionItem, EpaperEdition } from '../types';
+import {
+  ArticleDetail,
+  CategoryItem,
+  DistrictItem,
+  DivisionItem,
+  EpaperEdition,
+  MandiRateItem,
+  ReporterProfile,
+  AdBannerItem,
+  ApiPoolKeyItem,
+  SystemAuditLogItem,
+  BreakingTickerItem,
+} from '../types';
 
 export const DIVISIONS: DivisionItem[] = [
   { id: 'div-bhopal', nameHi: 'भोपाल संभाग', nameEn: 'Bhopal Division', headquarters: 'भोपाल' },
@@ -510,5 +522,311 @@ export const EPAPER_EDITIONS: EpaperEdition[] = [
         imageUrl: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=900&auto=format&fit=crop&q=80'
       }
     ]
+  }
+];
+
+
+export const MOCK_MANDI_RATES: MandiRateItem[] = [
+  {
+    id: 'mandi-1',
+    commodityName: 'सोयाबीन (पीला)',
+    mandiName: 'सीहोर कृषि उपज मंडी',
+    districtName: 'सीहोर',
+    modalPrice: 4850,
+    minPrice: 4600,
+    maxPrice: 5120,
+    unit: '₹ / क्विंटल',
+    updatedAt: 'आज दोपहर 01:30'
+  },
+  {
+    id: 'mandi-2',
+    commodityName: 'गेहूं (शरबती)',
+    mandiName: 'विदिशा मंडी',
+    districtName: 'विदिशा',
+    modalPrice: 3450,
+    minPrice: 3100,
+    maxPrice: 3850,
+    unit: '₹ / क्विंटल',
+    updatedAt: 'आज दोपहर 01:15'
+  },
+  {
+    id: 'mandi-3',
+    commodityName: 'चना (विशाल)',
+    mandiName: 'नरसिंहपुर मंडी',
+    districtName: 'नरसिंहपुर',
+    modalPrice: 6200,
+    minPrice: 5900,
+    maxPrice: 6450,
+    unit: '₹ / क्विंटल',
+    updatedAt: 'आज दोपहर 12:45'
+  },
+  {
+    id: 'mandi-4',
+    commodityName: 'सरसों (काली)',
+    mandiName: 'मुरैना कृषि मंडी',
+    districtName: 'मुरैना',
+    modalPrice: 5650,
+    minPrice: 5400,
+    maxPrice: 5880,
+    unit: '₹ / क्विंटल',
+    updatedAt: 'आज दोपहर 02:00'
+  },
+  {
+    id: 'mandi-5',
+    commodityName: 'लहसुन (ऊटी)',
+    mandiName: 'मंदसौर मंडी',
+    districtName: 'मंदसौर',
+    modalPrice: 16500,
+    minPrice: 12000,
+    maxPrice: 21000,
+    unit: '₹ / क्विंटल',
+    updatedAt: 'आज दोपहर 12:30'
+  },
+  {
+    id: 'mandi-6',
+    commodityName: 'टमाटर (देसी)',
+    mandiName: 'राजगढ़ मंडी',
+    districtName: 'राजगढ़',
+    modalPrice: 1800,
+    minPrice: 1400,
+    maxPrice: 2200,
+    unit: '₹ / क्विंटल',
+    updatedAt: 'आज दोपहर 01:00'
+  }
+];
+
+export const MOCK_REPORTERS: ReporterProfile[] = [
+  {
+    id: 'rep-active',
+    name: 'राजेश पटेल',
+    email: 'rajesh.patel@breakingnewswala.com',
+    phone: '+91 98260 12345',
+    role: 'trusted_reporter',
+    assignedDistricts: ['भोपाल', 'सीहोर'],
+    assignedDivision: 'भोपाल संभाग',
+    totalStoriesFiled: 148,
+    totalStoriesPublished: 142,
+    badgeNumber: 'BNW-REP-0101',
+    joinedDate: '15 जनवरी 2024',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+    status: 'ACTIVE'
+  },
+  {
+    id: 'rep-102',
+    name: 'संजय वर्मा',
+    email: 'sanjay.verma@breakingnewswala.com',
+    phone: '+91 98270 23456',
+    role: 'trusted_reporter',
+    assignedDistricts: ['इंदौर', 'धार'],
+    assignedDivision: 'इंदौर संभाग',
+    totalStoriesFiled: 215,
+    totalStoriesPublished: 208,
+    badgeNumber: 'BNW-REP-0102',
+    joinedDate: '10 मार्च 2024',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
+    status: 'ACTIVE'
+  },
+  {
+    id: 'rep-103',
+    name: 'आकाश शर्मा',
+    email: 'aakash.sharma@breakingnewswala.com',
+    phone: '+91 94250 34567',
+    role: 'reporter',
+    assignedDistricts: ['ग्वालियर', 'दतिया'],
+    assignedDivision: 'ग्वालियर संभाग',
+    totalStoriesFiled: 89,
+    totalStoriesPublished: 78,
+    badgeNumber: 'BNW-REP-0103',
+    joinedDate: '01 जून 2024',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
+    status: 'ACTIVE'
+  },
+  {
+    id: 'rep-104',
+    name: 'अमित सोनी',
+    email: 'amit.soni@breakingnewswala.com',
+    phone: '+91 94251 45678',
+    role: 'reporter',
+    assignedDistricts: ['जबलपुर', 'कटनी'],
+    assignedDivision: 'जबलपुर संभाग',
+    totalStoriesFiled: 64,
+    totalStoriesPublished: 57,
+    badgeNumber: 'BNW-REP-0104',
+    joinedDate: '20 अगस्त 2024',
+    avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&auto=format&fit=crop&q=80',
+    status: 'ACTIVE'
+  },
+  {
+    id: 'rep-105',
+    name: 'विवेक त्रिपाठी',
+    email: 'vivek.tripathi@breakingnewswala.com',
+    phone: '+91 98263 56789',
+    role: 'trusted_reporter',
+    assignedDistricts: ['रीवा', 'सतना'],
+    assignedDivision: 'रीवा संभाग',
+    totalStoriesFiled: 112,
+    totalStoriesPublished: 109,
+    badgeNumber: 'BNW-REP-0105',
+    joinedDate: '05 मई 2024',
+    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&auto=format&fit=crop&q=80',
+    status: 'ACTIVE'
+  },
+  {
+    id: 'rep-niwari-01',
+    name: 'दीपक कुशवाहा',
+    email: 'deepak.niwari@breakingnewswala.com',
+    phone: '+91 98275 67890',
+    role: 'reporter',
+    assignedDistricts: ['निवाड़ी', 'टीकमगढ़'],
+    assignedDivision: 'सागर संभाग',
+    totalStoriesFiled: 42,
+    totalStoriesPublished: 39,
+    badgeNumber: 'BNW-REP-0106',
+    joinedDate: '12 अक्टूबर 2024',
+    avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&auto=format&fit=crop&q=80',
+    status: 'ACTIVE'
+  }
+];
+
+export const MOCK_ADS: AdBannerItem[] = [
+  {
+    id: 'ad-top-1',
+    placement: 'top_leaderboard',
+    title: 'मध्य प्रदेश पर्यटन विकास निगम - पचमढ़ी व कान्हा राष्ट्रीय उद्यान सफारी',
+    imageUrl: 'https://images.unsplash.com/photo-1516426122078-c23e76319801?w=1200&auto=format&fit=crop&q=80',
+    targetUrl: 'https://mpstdc.com',
+    advertiserName: 'एमपी पर्यटन',
+    isActive: true
+  },
+  {
+    id: 'ad-infeed-1',
+    placement: 'in_feed',
+    title: 'मप्र खादी एवं ग्रामोद्योग: चंदेरी व महेश्वरी साड़ियों पर भारी छूट',
+    imageUrl: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=800&auto=format&fit=crop&q=80',
+    targetUrl: 'https://khadi.mp.gov.in',
+    advertiserName: 'खादी बोर्ड',
+    isActive: true
+  },
+  {
+    id: 'ad-sidebar-1',
+    placement: 'sidebar',
+    title: 'सांची दुग्ध संघ - शुद्ध घी और दुग्ध उत्पाद',
+    imageUrl: 'https://images.unsplash.com/photo-1527153857715-3908f2ae5e81?w=600&auto=format&fit=crop&q=80',
+    targetUrl: 'https://sanchidairy.com',
+    advertiserName: 'सांची संघ',
+    isActive: true
+  }
+];
+
+export const MOCK_API_POOL: ApiPoolKeyItem[] = [
+  {
+    id: 'pool-gemini-primary',
+    provider: 'gemini',
+    name: 'Gemini 1.5 Flash (Primary Production)',
+    model: 'gemini-1.5-flash',
+    keyMasked: 'AIzaSy...7e4x',
+    status: 'active',
+    dailyQuotaLimit: 1000000,
+    dailyQuotaUsed: 284500,
+    avgLatencyMs: 312
+  },
+  {
+    id: 'pool-gemini-pro',
+    provider: 'gemini',
+    name: 'Gemini 1.5 Pro (Deep Fact-Check Auditor)',
+    model: 'gemini-1.5-pro',
+    keyMasked: 'AIzaSy...9d2m',
+    status: 'active',
+    dailyQuotaLimit: 500000,
+    dailyQuotaUsed: 89400,
+    avgLatencyMs: 780
+  },
+  {
+    id: 'pool-groq-backup',
+    provider: 'groq',
+    name: 'Groq Llama 3.3 70B (Emergency Low-Latency Failover)',
+    model: 'llama-3.3-70b-versatile',
+    keyMasked: 'gsk_...k8w1',
+    status: 'active',
+    dailyQuotaLimit: 2000000,
+    dailyQuotaUsed: 12000,
+    avgLatencyMs: 145
+  },
+  {
+    id: 'pool-deepseek-fallback',
+    provider: 'deepseek',
+    name: 'DeepSeek V3 (Cost-Optimized Batch Ingest)',
+    model: 'deepseek-chat',
+    keyMasked: 'sk-...4m9p',
+    status: 'active',
+    dailyQuotaLimit: 1500000,
+    dailyQuotaUsed: 45000,
+    avgLatencyMs: 420
+  }
+];
+
+export const MOCK_AUDIT_LOGS: SystemAuditLogItem[] = [
+  {
+    id: 'log-1',
+    actorName: 'मुख्य संपादक डेस्क',
+    actorRole: 'ADMIN',
+    actionType: 'ARTICLE_PUBLISHED',
+    description: 'खबर "समर्थन मूल्य पर ई-उपार्जन पंजीयन शुरू" 10-बिंदु फैक्ट चेक (स्कोर 98) के बाद लाइव प्रकाशित की गई।',
+    ipAddress: '103.24.112.5',
+    timestamp: '2026-11-03 09:30:12 IST'
+  },
+  {
+    id: 'log-2',
+    actorName: 'अमित कुमार शर्मा',
+    actorRole: 'ADMIN',
+    actionType: 'ALERT_BROADCAST',
+    description: 'राज्यव्यापी यलो अलर्ट (मौसम विभाग) 55 जिलों में ब्रॉडकास्ट किया गया।',
+    ipAddress: '103.24.112.5',
+    timestamp: '2026-11-03 10:15:44 IST'
+  },
+  {
+    id: 'log-3',
+    actorName: 'राजेश पटेल',
+    actorRole: 'REPORTER',
+    actionType: 'USER_VERIFIED',
+    description: 'संवाददाता प्रोफाइल भोपाल-सीहोर बीट हेतु नवीनीकृत की गई।',
+    ipAddress: '49.36.128.91',
+    timestamp: '2026-11-02 18:40:02 IST'
+  },
+  {
+    id: 'log-4',
+    actorName: 'चीफ डेस्क',
+    actorRole: 'ADMIN',
+    actionType: 'REVISION_REQUESTED',
+    description: 'ड्राफ्ट #102 "केन-बेतवा लिंक सर्वे" पर प्रशासनिक अधिकारी के बयान हेतु संशोधन अनुरोध भेजा गया।',
+    ipAddress: '103.24.112.5',
+    timestamp: '2026-11-02 16:22:18 IST'
+  }
+];
+
+export const MOCK_TICKERS: BreakingTickerItem[] = [
+  {
+    id: 'tick-1',
+    textHindi: 'मौसम विभाग: ग्वालियर-चंबल एवं विंध्य अंचल में अगले 24 घंटे गरज-चमक के साथ यलो अलर्ट जारी।',
+    districtName: 'पूरा मध्य प्रदेश',
+    priority: 'critical',
+    isActive: true,
+    createdAt: 'आज सुबह 08:00'
+  },
+  {
+    id: 'tick-2',
+    textHindi: 'मध्य प्रदेश में रबी उपार्जन हेतु ई-उपार्जन पोर्टल पर किसान पंजीयन की प्रक्रिया तेज।',
+    districtName: 'भोपाल',
+    priority: 'normal',
+    isActive: true,
+    createdAt: 'आज सुबह 09:30'
+  },
+  {
+    id: 'tick-3',
+    textHindi: 'इंदौर मेट्रो के सुपर कॉरिडोर से गांधी नगर रूट पर सफल स्पीड ट्रायल, जल्द नियमित संचालन।',
+    districtName: 'इंदौर',
+    priority: 'normal',
+    isActive: true,
+    createdAt: 'आज दोपहर 12:45'
   }
 ];

@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Radio,
   Award,
+  Lock,
 } from 'lucide-react';
 import { AppRole, CategoryItem, DistrictItem, DivisionItem, EpaperEdition } from '../types';
 import { NavTab } from './BottomNav';
@@ -119,7 +120,7 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
                 <p className="text-xs font-bold leading-tight">अमित कुमार शर्मा</p>
                 <p className="text-[11px] text-slate-400">
                   {currentRole === 'ADMIN'
-                    ? '🔴 मुख्य संपादक'
+                    ? '🔴 मुख्य संपादक / एडमिन'
                     : currentRole === 'REPORTER'
                     ? '🔵 फील्ड संवाददाता'
                     : '🟢 पाठक मोड'}
@@ -139,12 +140,13 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs">
-          {/* 1. Core Primary Navigation */}
+          {/* 1. Core Primary Navigation (All 4 Surfaces) */}
           <div className="p-3 space-y-1">
             <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-2 mb-1">
-              मुख्य पृष्ठ व सेवाएं
+              मुख्य पृष्ठ व कार्यक्षेत्र
             </p>
 
+            {/* Surface 1: Public Home */}
             <button
               onClick={() => navigateTo('home')}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
@@ -160,6 +162,7 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
               <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
+            {/* E-Paper */}
             <button
               onClick={() => navigateTo('epaper')}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
@@ -177,27 +180,61 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
               </span>
             </button>
 
+            {/* Surface 2: Reporter Desk */}
             <button
-              onClick={() => navigateTo('desk')}
+              onClick={() => navigateTo('reporter')}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
-                activeTab === 'desk'
+                activeTab === 'reporter'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <PenTool className="w-4 h-4 text-blue-600" />
+                संवाददाता फील्ड डेस्क (Reporter)
+              </span>
+              <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold">
+                प्रेस पोर्टल
+              </span>
+            </button>
+
+            {/* Surface 3: Newsroom Desk */}
+            <button
+              onClick={() => navigateTo('newsroom')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                activeTab === 'newsroom'
                   ? 'bg-red-50 text-[#ED1727]'
                   : 'text-slate-700 hover:bg-slate-50'
               }`}
             >
               <span className="flex items-center gap-2.5">
-                {currentRole === 'ADMIN' ? (
-                  <Building2 className="w-4 h-4 text-red-600" />
-                ) : (
-                  <PenTool className="w-4 h-4 text-emerald-600" />
-                )}
-                {currentRole === 'ADMIN' ? 'सेंट्रल न्यूज़रूम डेस्क' : 'संवाददाता फील्ड डेस्क'}
+                <Building2 className="w-4 h-4 text-red-600" />
+                केंद्रीय संपादकीय डेस्क (Newsroom)
               </span>
               <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">
-                प्रेस कार्यक्षेत्र
+                समीक्षा व अनुमोदन
               </span>
             </button>
 
+            {/* Surface 4: Admin Control Panel */}
+            <button
+              onClick={() => navigateTo('admin')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                activeTab === 'admin'
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-amber-500" />
+                एडमिनिस्ट्रेटिव कंट्रोल रूम (Admin)
+              </span>
+              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                मास्टर कंट्रोल
+              </span>
+            </button>
+
+            {/* Search */}
             <button
               onClick={() => navigateTo('search')}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
@@ -208,11 +245,12 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
             >
               <span className="flex items-center gap-2.5">
                 <Search className="w-4 h-4 text-slate-600" />
-                समाचार खोजें (खोज एवं फ़िल्टर)
+                समाचार खोजें (Search Archive)
               </span>
               <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
+            {/* Profile */}
             <button
               onClick={() => navigateTo('profile')}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${

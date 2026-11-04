@@ -8,7 +8,7 @@ export type ArticleStatus =
   | 'ARCHIVED'
   | 'RETRACTED';
 
-export type AppRole = 'READER' | 'REPORTER' | 'ADMIN';
+export type AppRole = 'READER' | 'REPORTER' | 'ADMIN' | 'EDITOR';
 
 export interface CategoryItem {
   id: string;
@@ -55,6 +55,8 @@ export interface ArticleItem {
   publishedAt?: string;
   createdAt: string;
   tags?: string[];
+  readingTimeMinutes?: number;
+  videoUrl?: string;
 }
 
 export interface ArticleDetail extends ArticleItem {
@@ -64,6 +66,8 @@ export interface ArticleDetail extends ArticleItem {
   content: string;
   factChecked?: boolean;
   factCheckScore?: number;
+  editorialNotes?: string;
+  rejectionReason?: string;
 }
 
 export interface CreateDraftRequest {
@@ -77,6 +81,7 @@ export interface CreateDraftRequest {
   imageCaption?: string;
   imageAttribution?: string;
   isBreaking: boolean;
+  videoUrl?: string;
 }
 
 export interface EditorialFeedbackItem {
@@ -125,4 +130,88 @@ export interface ReporterAiDraft {
   suggestedCategory: string;
   keyFacts: string[];
   factCheckGuidance: string[];
+}
+
+export interface ReporterProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: 'reporter' | 'trusted_reporter';
+  assignedDistricts: string[];
+  assignedDivision?: string;
+  totalStoriesFiled: number;
+  totalStoriesPublished: number;
+  badgeNumber: string;
+  joinedDate: string;
+  avatar: string;
+  status: 'ACTIVE' | 'PENDING' | 'SUSPENDED';
+}
+
+export interface GraphicTemplate {
+  id: string;
+  title: string;
+  aspectRatio: '1:1' | '9:16' | '16:9';
+  themeColor: string;
+  backgroundStyle: 'gradient-red' | 'dark-charcoal' | 'breaking-yellow';
+}
+
+export interface BreakingTickerItem {
+  id: string;
+  textHindi: string;
+  districtName?: string;
+  priority: 'normal' | 'critical';
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ApiPoolKeyItem {
+  id: string;
+  provider: 'gemini' | 'claude' | 'groq' | 'deepseek';
+  name: string;
+  model: string;
+  keyMasked: string;
+  status: 'active' | 'degraded' | 'rate_limited' | 'disabled';
+  dailyQuotaLimit: number;
+  dailyQuotaUsed: number;
+  avgLatencyMs: number;
+}
+
+export interface SystemAuditLogItem {
+  id: string;
+  actorName: string;
+  actorRole: string;
+  actionType:
+    | 'ARTICLE_PUBLISHED'
+    | 'ARTICLE_REJECTED'
+    | 'REVISION_REQUESTED'
+    | 'ROLE_CHANGED'
+    | 'TICKER_UPDATED'
+    | 'ALERT_BROADCAST'
+    | 'USER_VERIFIED';
+  description: string;
+  ipAddress: string;
+  timestamp: string;
+}
+
+export interface AdBannerItem {
+  id: string;
+  placement: 'top_leaderboard' | 'in_feed' | 'sidebar' | 'sticky_bottom';
+  title: string;
+  imageUrl: string;
+  targetUrl: string;
+  advertiserName: string;
+  isActive: boolean;
+}
+
+export interface MandiRateItem {
+  id: string;
+  commodityName: string;
+  mandiName: string;
+  districtName: string;
+  modalPrice: number;
+  minPrice: number;
+  maxPrice: number;
+  unit: string;
+  updatedAt: string;
 }

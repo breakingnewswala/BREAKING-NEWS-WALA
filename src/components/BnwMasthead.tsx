@@ -1,5 +1,16 @@
 import React from 'react';
-import { Menu, Search, User, Radio, Home, Newspaper, PenSquare } from 'lucide-react';
+import {
+  Menu,
+  Search,
+  User,
+  Radio,
+  Home,
+  Newspaper,
+  PenSquare,
+  ShieldCheck,
+  Building2,
+  Lock,
+} from 'lucide-react';
 import { AppRole } from '../types';
 import { NavTab } from './BottomNav';
 
@@ -26,6 +37,8 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
     switch (currentRole) {
       case 'ADMIN':
         return { label: 'एडमिन', color: 'bg-red-600 text-white' };
+      case 'EDITOR':
+        return { label: 'संपादक', color: 'bg-indigo-600 text-white' };
       case 'REPORTER':
         return { label: 'रिपोर्टर', color: 'bg-blue-600 text-white' };
       default:
@@ -37,10 +50,10 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-xs">
-      {/* Top Main Bar */}
-      <div className="max-w-6xl mx-auto px-3 py-2 flex items-center justify-between gap-3">
+      {/* Top Main Navigation Bar */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-3">
         {/* Left Section: Menu Button + Brand Logo + Live Badge */}
-        <div className="flex items-center gap-2 md:gap-3 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Prominent Menu Bar Button next to Logo */}
           <button
             onClick={onOpenMenu}
@@ -85,8 +98,9 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
           </div>
         </div>
 
-        {/* Center Desktop Web Navigation Links (Visible on desktop/Chrome) */}
-        <nav className="hidden md:flex items-center gap-1 text-xs font-bold">
+        {/* Center Desktop Web Navigation Links (All 4 Primary Surfaces + Core Tools) */}
+        <nav className="hidden lg:flex items-center gap-1 text-xs font-bold">
+          {/* Surface 1: Public Portal */}
           <button
             onClick={() => onTabChange('home')}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
@@ -99,6 +113,7 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             <span>होम</span>
           </button>
 
+          {/* Epaper */}
           <button
             onClick={() => onTabChange('epaper')}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
@@ -111,25 +126,51 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             <span>ई-पेपर</span>
           </button>
 
+          {/* Surface 2: Reporter Portal */}
           <button
-            onClick={() => onTabChange('desk')}
+            onClick={() => onTabChange('reporter')}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-              activeTab === 'desk'
-                ? 'bg-red-50 text-[#ED1727]'
+              activeTab === 'reporter'
+                ? 'bg-blue-50 text-blue-700 font-bold'
                 : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            <PenSquare className="w-3.5 h-3.5 text-emerald-600" />
-            <span>
-              {currentRole === 'ADMIN' ? 'न्यूज़रूम डेस्क' : 'प्रेस डेस्क'}
-            </span>
-            {currentRole === 'ADMIN' && pendingQueueCount > 0 && (
+            <PenSquare className="w-3.5 h-3.5 text-blue-600" />
+            <span>रिपोर्टर डेस्क</span>
+          </button>
+
+          {/* Surface 3: Central Newsroom Desk */}
+          <button
+            onClick={() => onTabChange('newsroom')}
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+              activeTab === 'newsroom'
+                ? 'bg-red-50 text-[#ED1727] font-bold'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5 text-red-600" />
+            <span>न्यूज़रूम डेस्क</span>
+            {pendingQueueCount > 0 && (
               <span className="ml-1 px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full">
                 {pendingQueueCount}
               </span>
             )}
           </button>
 
+          {/* Surface 4: Admin Control Panel */}
+          <button
+            onClick={() => onTabChange('admin')}
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+              activeTab === 'admin'
+                ? 'bg-slate-900 text-white font-bold'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <Lock className="w-3.5 h-3.5 text-amber-500" />
+            <span>एडमिन कंट्रोल</span>
+          </button>
+
+          {/* Search */}
           <button
             onClick={() => onTabChange('search')}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
@@ -141,24 +182,12 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             <Search className="w-3.5 h-3.5" />
             <span>खोजें</span>
           </button>
-
-          <button
-            onClick={() => onTabChange('profile')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-              activeTab === 'profile'
-                ? 'bg-red-50 text-[#ED1727]'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <User className="w-3.5 h-3.5" />
-            <span>प्रोफ़ाइल</span>
-          </button>
         </nav>
 
         {/* Right Header Controls */}
-        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Active Role Indicator */}
-          <span className={`text-[10px] md:text-[11px] font-semibold px-2 py-0.5 rounded-full ${roleBadge.color}`}>
+          <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full ${roleBadge.color}`}>
             {roleBadge.label}
           </span>
 
@@ -166,7 +195,7 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
           <button
             onClick={onSearchClick}
             aria-label="खोजें"
-            className="md:hidden p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors"
+            className="lg:hidden p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors"
           >
             <Search className="w-4 h-4" />
           </button>
@@ -175,9 +204,9 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
           <button
             onClick={onProfileClick}
             aria-label="प्रोफ़ाइल"
-            className="p-1.5 md:p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors"
+            className="p-1.5 sm:p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors"
           >
-            <User className="w-4 h-4 md:w-5 md:h-5" />
+            <User className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
       </div>
