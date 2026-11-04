@@ -1,4 +1,6 @@
-name: Firebase App Distribution (Manual QA)
+# NOTE: Preserved for Phase 3 Android modularization.
+# Inactive while repository focus is root Vite web application.
+name: Firebase App Distribution (Historical / Inactive)
 
 on:
   workflow_dispatch:

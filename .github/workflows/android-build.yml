@@ -1,4 +1,6 @@
-name: Android Build & Packaging
+# NOTE: Preserved for Phase 3 Android modularization.
+# Automatic triggers disabled while repository focus is root Vite web application.
+name: Android Build & Packaging (Historical / Inactive)
 
 on:
   workflow_dispatch:
@@ -11,9 +13,9 @@ on:
         options:
           - debug
           - release
-  push:
-    tags:
-      - 'v*'
+  # push:
+  #   tags:
+  #     - 'v*'
 
 permissions:
   contents: read

@@ -1,6 +1,5 @@
-# Firebase App Hosting Configuration for BREAKING NEWS WALA Monorepo Root
+# Firebase App Hosting Configuration for BREAKING NEWS WALA (React + Vite)
 # Backend: breakingnewswala (asia-southeast1)
-# Primary SSR Target: apps/web
 
 runConfig:
   cpu: 1
@@ -15,9 +14,3 @@ env:
     availability:
       - BUILD
       - RUNTIME
-  - variable: NEXT_TELEMETRY_DISABLED
-    value: "1"
-    availability:
-      - BUILD
-      - RUNTIME
-
