@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   Building2,
   Lock,
+  Flame,
+  Bookmark,
 } from 'lucide-react';
 import { AppRole } from '../types';
 import { NavTab } from './BottomNav';
@@ -100,9 +102,9 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
           </div>
         </div>
 
-        {/* Center Desktop Web Navigation Links (All 4 Primary Surfaces + Core Tools) */}
+        {/* Center Desktop Web Navigation Links (Standard Public Navigation + Role-Gated Desks) */}
         <nav className="hidden lg:flex items-center gap-1 text-xs font-bold">
-          {/* Surface 1: Public Portal */}
+          {/* 1. Home */}
           <button
             onClick={() => onTabChange('home')}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
@@ -115,20 +117,57 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             <span>होम</span>
           </button>
 
-          {/* Epaper */}
+          {/* 2. Latest News */}
           <button
-            onClick={() => onTabChange('epaper')}
+            onClick={() => onTabChange('home')}
+            className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors text-slate-700 hover:bg-slate-100"
+          >
+            <Flame className="w-3.5 h-3.5 text-amber-500" />
+            <span>ताज़ा खबरें</span>
+          </button>
+
+          {/* 3. Saved News */}
+          <button
+            onClick={() => onTabChange('profile')}
             className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-              activeTab === 'epaper'
+              activeTab === 'profile'
                 ? 'bg-red-50 text-[#ED1727]'
                 : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            <Newspaper className="w-3.5 h-3.5 text-[#344FD6]" />
-            <span>ई-पेपर</span>
+            <Bookmark className="w-3.5 h-3.5 text-blue-600" />
+            <span>सेव्ड समाचार</span>
           </button>
 
-          {/* Surface 2: Reporter Portal (Restricted to Reporters, Editors, Admins) */}
+          {/* 4. Search */}
+          <button
+            onClick={() => onTabChange('search')}
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+              activeTab === 'search'
+                ? 'bg-red-50 text-[#ED1727]'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>खोजें</span>
+          </button>
+
+          {/* E-Paper: Temporarily hidden from normal users; available for Master Admin & Admin */}
+          {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
+            <button
+              onClick={() => onTabChange('epaper')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                activeTab === 'epaper'
+                  ? 'bg-red-50 text-[#ED1727]'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Newspaper className="w-3.5 h-3.5 text-[#344FD6]" />
+              <span>ई-पेपर (Admin)</span>
+            </button>
+          )}
+
+          {/* Reporter Portal (Restricted to Reporters, Editors, Admins) */}
           {['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole) && (
             <button
               onClick={() => onTabChange('reporter')}
@@ -143,7 +182,7 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             </button>
           )}
 
-          {/* Surface 3: Central Newsroom Desk (Restricted to Editors and Admins) */}
+          {/* Central Newsroom Desk (Restricted to Editors and Admins) */}
           {['MASTER_ADMIN', 'ADMIN', 'EDITOR'].includes(currentRole) && (
             <button
               onClick={() => onTabChange('newsroom')}
@@ -163,7 +202,7 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             </button>
           )}
 
-          {/* Surface 4: Admin Control Panel (Restricted to Master Admin and Admin) */}
+          {/* Master Admin / Admin Control Panel */}
           {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
             <button
               onClick={() => onTabChange('admin')}
@@ -177,19 +216,6 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
               <span>{currentRole === 'MASTER_ADMIN' ? 'मास्टर एडमिन डैशबोर्ड' : 'एडमिन कंट्रोल'}</span>
             </button>
           )}
-
-          {/* Search */}
-          <button
-            onClick={() => onTabChange('search')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-              activeTab === 'search'
-                ? 'bg-red-50 text-[#ED1727]'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Search className="w-3.5 h-3.5" />
-            <span>खोजें</span>
-          </button>
         </nav>
 
         {/* Right Header Controls */}

@@ -400,6 +400,10 @@ export const apiClient = {
       await request('/auth/logout', { method: 'POST' });
       clearStoredTokens();
     },
+
+    clearStoredTokens(): void {
+      clearStoredTokens();
+    },
   },
 
   // 3. Public News Domain (Section 7, STEP D)

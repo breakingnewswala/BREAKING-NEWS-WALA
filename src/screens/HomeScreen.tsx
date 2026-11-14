@@ -147,7 +147,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
-              सभी श्रेणियां
+              सभी खबरें
             </button>
             {categories.map((cat) => {
               const isSelected = selectedCategoryId === cat.id;

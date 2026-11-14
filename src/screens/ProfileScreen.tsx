@@ -64,13 +64,33 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
       setCurrentUser(user);
       if (user) {
         apiClient.audience.getReadingHistory(20).then(setReadingHistory).catch(() => {});
         apiClient.audience.getUserPreferences().then((p) => {
           if (p.breakingAlertsEnabled !== undefined) setBreakingAlerts(p.breakingAlertsEnabled);
         }).catch(() => {});
+        try {
+          const idToken = await user.getIdToken();
+          const authRes = await apiClient.auth.loginWithFirebase(idToken);
+          if (authRes && authRes.roles) {
+            const upperRoles = authRes.roles.map((r) => String(r).toUpperCase());
+            if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
+              onRoleChange('MASTER_ADMIN');
+            } else if (upperRoles.includes('ADMIN')) {
+              onRoleChange('ADMIN');
+            } else if (upperRoles.includes('CHIEF_EDITOR') || upperRoles.includes('EDITOR')) {
+              onRoleChange('EDITOR');
+            } else if (upperRoles.includes('REPORTER')) {
+              onRoleChange('REPORTER');
+            } else {
+              onRoleChange('READER');
+            }
+          }
+        } catch (err) {
+          console.warn('[ProfileScreen] Session sync notice:', err);
+        }
       }
     });
     return () => unsubscribe();
@@ -230,7 +250,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-300 truncate">
-                {currentUser?.email || 'breakingnewswala.com@gmail.com'} • गृह ज़िला: {selectedHomeDistrict}
+                {currentUser?.email ? `${currentUser.email} • ` : ''}गृह ज़िला: {selectedHomeDistrict}
               </p>
             </div>
           </div>

@@ -14,7 +14,6 @@ export const CANONICAL_PROJECT_ID = firebaseAppletConfig.projectId || 'breaking-
 
 export const MASTER_ADMIN_EMAILS = Object.freeze([
   'breakingnewswala.com@gmail.com',
-  'breakingnewswala@gmail.com',
   'riturajtomarorchha@gmail.com',
 ]);
 
@@ -63,7 +62,14 @@ export class FirebaseAuthService {
     try {
       const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
       const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-      return { header, payload, signature: parts[2] };
+      return {
+        header,
+        payload,
+        signature: parts[2],
+        rawHeader: parts[0],
+        rawPayload: parts[1],
+        signedData: `${parts[0]}.${parts[1]}`,
+      };
     } catch {
       return null;
     }
@@ -143,7 +149,7 @@ export class FirebaseAuthService {
       }
 
       const verifier = crypto.createVerify('RSA-SHA256');
-      verifier.update(`${decoded.header}.${decoded.payload}`);
+      verifier.update(decoded.signedData);
       const isValid = verifier.verify(cert, decoded.signature, 'base64url');
 
       if (!isValid) {

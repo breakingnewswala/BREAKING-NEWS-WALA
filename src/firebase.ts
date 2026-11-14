@@ -29,6 +29,7 @@ const customDbId = (firebaseConfig as { firestoreDatabaseId?: string }).firestor
 export const db = customDbId ? getFirestore(app, customDbId) : getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+export { onAuthStateChanged, type FirebaseUser };
 
 // Error Handling Specification matching skill requirements
 export enum OperationType {

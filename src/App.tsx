@@ -43,6 +43,7 @@ const VideoStudioScreen = React.lazy(() => import('./screens/VideoStudioScreen')
 const AiNewsroomScreen = React.lazy(() => import('./screens/AiNewsroomScreen').then((m) => ({ default: m.AiNewsroomScreen })));
 import { Radio, X } from 'lucide-react';
 import { apiClient, AuthUser } from './services/apiClient';
+import { auth, onAuthStateChanged, FirebaseUser } from './firebase';
 
 export const App: React.FC = () => {
   // Navigation & View States
@@ -81,16 +82,33 @@ export const App: React.FC = () => {
     district: 'पूरा मध्य प्रदेश',
   });
 
-  // Authenticated Session Synchronizer & Server-Authoritative Role Resolution
+  // Authenticated Session Synchronizer with Firebase Auth Observer & Authoritative Backend Verification
   useEffect(() => {
     let isMounted = true;
-    async function checkAuthSession() {
+
+    // Listen to Firebase Authentication state changes in real time
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      if (!isMounted) return;
+
+      if (!firebaseUser) {
+        // Unauthenticated visitor / logged out -> strictly PUBLIC READER MODE
+        apiClient.auth.clearStoredTokens?.();
+        setAuthUser(null);
+        setCurrentRole('READER');
+        setIsAuthChecking(false);
+        return;
+      }
+
+      setIsAuthChecking(true);
       try {
-        const user = await apiClient.auth.getCurrentUser();
+        // Authenticated with Firebase: obtain fresh ID token and exchange with backend
+        const idToken = await firebaseUser.getIdToken();
+        const authUserRecord = await apiClient.auth.loginWithFirebase(idToken);
         if (!isMounted) return;
-        if (user && user.roles && user.roles.length > 0) {
-          setAuthUser(user);
-          const upperRoles = user.roles.map((r) => String(r).toUpperCase());
+
+        if (authUserRecord && authUserRecord.roles && authUserRecord.roles.length > 0) {
+          setAuthUser(authUserRecord);
+          const upperRoles = authUserRecord.roles.map((r) => String(r).toUpperCase());
           if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
             setCurrentRole('MASTER_ADMIN');
           } else if (upperRoles.includes('ADMIN')) {
@@ -106,18 +124,44 @@ export const App: React.FC = () => {
           setAuthUser(null);
           setCurrentRole('READER');
         }
-      } catch {
+      } catch (err) {
+        console.warn('[BNW Auth] Backend session exchange notice:', err);
+        // Fallback: Check if stored verified session exists
+        try {
+          const user = await apiClient.auth.getCurrentUser();
+          if (isMounted && user && user.roles && user.roles.length > 0) {
+            setAuthUser(user);
+            const upperRoles = user.roles.map((r) => String(r).toUpperCase());
+            if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
+              setCurrentRole('MASTER_ADMIN');
+            } else if (upperRoles.includes('ADMIN')) {
+              setCurrentRole('ADMIN');
+            } else if (upperRoles.includes('CHIEF_EDITOR') || upperRoles.includes('EDITOR')) {
+              setCurrentRole('EDITOR');
+            } else if (upperRoles.includes('REPORTER')) {
+              setCurrentRole('REPORTER');
+            } else {
+              setCurrentRole('READER');
+            }
+            return;
+          }
+        } catch {
+          // ignore fallback error
+        }
         if (isMounted) {
           setAuthUser(null);
           setCurrentRole('READER');
         }
       } finally {
-        if (isMounted) setIsAuthChecking(false);
+        if (isMounted) {
+          setIsAuthChecking(false);
+        }
       }
-    }
-    checkAuthSession();
+    });
+
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, []);
 
@@ -651,6 +695,17 @@ export const App: React.FC = () => {
         }}
         onSelectDistrict={(distId) => {
           setInitialDistrictFilter(distId);
+          navigateToTab('home');
+        }}
+        onLogout={async () => {
+          try {
+            await apiClient.auth.logout();
+            await auth.signOut();
+          } catch (e) {
+            console.error('Logout error:', e);
+          }
+          setCurrentRole('READER');
+          setAuthUser(null);
           navigateToTab('home');
         }}
       />

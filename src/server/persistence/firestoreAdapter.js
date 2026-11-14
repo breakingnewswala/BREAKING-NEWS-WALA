@@ -1070,6 +1070,20 @@ export class FirestoreAdapter {
     return { ...newUser };
   }
 
+  async updateUser(userId, data) {
+    if (!userId) return null;
+    const userMap = this._collections.get('users');
+    const existing = userMap.get(userId);
+    if (!existing) return null;
+    const updated = {
+      ...existing,
+      ...data,
+      updatedAt: this.serverTimestamp(),
+    };
+    userMap.set(userId, updated);
+    return { ...updated };
+  }
+
   // -------------------------------------------------------------
   // SESSION & TOKEN REVOCATION
   // -------------------------------------------------------------

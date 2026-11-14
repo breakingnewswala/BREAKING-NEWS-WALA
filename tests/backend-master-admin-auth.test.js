@@ -20,6 +20,7 @@ import {
   MASTER_ADMIN_EMAILS,
   isMasterAdminEmail,
   MASTER_ADMIN_ROLES,
+  FirebaseAuthService,
   defaultFirebaseAuthService,
 } from '../src/server/auth/firebaseAuthService.js';
 
@@ -258,7 +259,28 @@ test('Master Execution 040: Master Admin & Public Access Verification', async (t
   let masterToken1 = '';
   let masterToken2 = '';
 
-  await t.test('12. breakingnewswala@gmail.com / breakingnewswala.com@gmail.com logs in with Google -> Master Admin access', async () => {
+  await t.test('12. Email Allowlist Gate: breakingnewswala@gmail.com is NOT Master Admin; breakingnewswala.com@gmail.com IS Master Admin', async () => {
+    // 1. Static allowlist checks
+    assert.strictEqual(isMasterAdminEmail('breakingnewswala@gmail.com'), false);
+    assert.strictEqual(isMasterAdminEmail('breakingnewswala.com@gmail.com'), true);
+    assert.strictEqual(isMasterAdminEmail('riturajtomarorchha@gmail.com'), true);
+
+    // 2. Old incorrect email without .com must NOT receive MASTER_ADMIN
+    const oldEmailToken = createMockFirebaseIdToken({
+      sub: 'uid-old-incorrect-email',
+      email: 'breakingnewswala@gmail.com',
+      email_verified: true,
+      aud: 'breaking-news-wala',
+      iss: 'https://securetoken.google.com/breaking-news-wala',
+      iat: Math.floor(Date.now() / 1000) - 10,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    const oldRes = await mockServer.request('POST', '/api/v1/auth/firebase-login', { idToken: oldEmailToken });
+    assert.strictEqual(oldRes.statusCode, 200);
+    assert.strictEqual(oldRes.data.data.user.roles.includes('MASTER_ADMIN'), false);
+    assert.strictEqual(oldRes.data.data.user.role, 'READER');
+
+    // 3. Authorized Canonical Email 1: breakingnewswala.com@gmail.com
     const idToken = createMockFirebaseIdToken({
       sub: 'uid-master-admin-01',
       email: 'breakingnewswala.com@gmail.com',
@@ -574,5 +596,37 @@ test('Master Execution 040: Master Admin & Public Access Verification', async (t
     });
     assert.strictEqual(approveRes.statusCode, 200);
     assert.strictEqual(approveRes.data.data.status, 'PUBLISHED');
+  });
+
+  // -------------------------------------------------------------
+  // GROUP 6: FIX VERIFICATION (31 - 32)
+  // -------------------------------------------------------------
+
+  await t.test('31. Persistence Adapter updateUser updates existing user document properly', async () => {
+    const created = await adapter.createUser({
+      id: 'usr-test-update-041',
+      email: 'update.test@example.com',
+      roles: ['READER'],
+      role: 'READER',
+    });
+    assert.strictEqual(created.id, 'usr-test-update-041');
+
+    const updated = await adapter.updateUser('usr-test-update-041', {
+      roles: ['MASTER_ADMIN', 'ADMIN', 'READER'],
+      role: 'MASTER_ADMIN',
+    });
+    assert.strictEqual(updated.id, 'usr-test-update-041');
+    assert.ok(updated.roles.includes('MASTER_ADMIN'));
+
+    const fetched = await adapter.findUserById('usr-test-update-041');
+    assert.strictEqual(fetched.role, 'MASTER_ADMIN');
+    assert.ok(fetched.roles.includes('MASTER_ADMIN'));
+  });
+
+  await t.test('32. decodeJwt preserves signedData format for cryptographic RSA signature verification', () => {
+    const dummyJwt = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.signature';
+    const decoded = FirebaseAuthService.decodeJwt(dummyJwt);
+    assert.strictEqual(decoded.signedData, 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0');
+    assert.notStrictEqual(decoded.signedData, '[object Object].[object Object]');
   });
 });

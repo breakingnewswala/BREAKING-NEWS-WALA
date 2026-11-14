@@ -108,9 +108,12 @@ export const CATEGORIES: CategoryItem[] = [
   { id: 'cat-politics', slug: 'politics', nameEn: 'Politics', nameHi: 'राजनीति', sortOrder: 3 },
   { id: 'cat-crime', slug: 'crime', nameEn: 'Crime & Law', nameHi: 'क्राइम एवं कानून', sortOrder: 4 },
   { id: 'cat-agri', slug: 'agriculture', nameEn: 'Agriculture & Mandi', nameHi: 'कृषि एवं मंडी भाव', sortOrder: 5 },
-  { id: 'cat-weather', slug: 'weather', nameEn: 'Weather', nameHi: 'मौसम व पर्यावरण', sortOrder: 6 },
+  { id: 'cat-weather', slug: 'weather', nameEn: 'Weather', nameHi: 'मौसम एवं पर्यावरण', sortOrder: 6 },
   { id: 'cat-business', slug: 'business', nameEn: 'Business & Jobs', nameHi: 'व्यापार एवं रोजगार', sortOrder: 7 },
-  { id: 'cat-viral', slug: 'viral', nameEn: 'Viral & Social', nameHi: 'वायरल खबरें', sortOrder: 8 }
+  { id: 'cat-viral', slug: 'viral', nameEn: 'Viral & Social', nameHi: 'वायरल खबरें', sortOrder: 8 },
+  { id: 'cat-nat', slug: 'national', nameEn: 'National', nameHi: 'देश', sortOrder: 9 },
+  { id: 'cat-world', slug: 'international', nameEn: 'International', nameHi: 'विदेश', sortOrder: 10 },
+  { id: 'cat-sports', slug: 'sports', nameEn: 'Sports', nameHi: 'खेल', sortOrder: 11 }
 ];
 
 export const INITIAL_ARTICLES: ArticleDetail[] = [

@@ -1920,6 +1920,21 @@ export class LocalJsonAdapter {
     return newUser;
   }
 
+  async updateUser(userId, data) {
+    if (!userId) return null;
+    const users = this.data.users || [];
+    const index = users.findIndex((u) => u.id === userId);
+    if (index === -1) return null;
+    users[index] = {
+      ...users[index],
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    this.data.users = users;
+    await this.storage.queueWrite(this.data);
+    return { ...users[index] };
+  }
+
   // --- Session & Refresh Token Management ---
   async createSession(sessionData) {
     this.data.sessions = this.data.sessions || [];
@@ -4556,6 +4571,7 @@ export class ProductionGuardAdapter {
   async findUserById() { return this.failClosedError(); }
   async findUserByIdentifier() { return this.failClosedError(); }
   async createUser() { return this.failClosedError(); }
+  async updateUser() { return this.failClosedError(); }
   async createSession() { return this.failClosedError(); }
   async findSessionByTokenHash() { return this.failClosedError(); }
   async revokeSession() { return this.failClosedError(); }

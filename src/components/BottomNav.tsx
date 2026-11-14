@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Newspaper, PenSquare, Search, User, ShieldCheck, Radio } from 'lucide-react';
+import { Home, Newspaper, PenSquare, Search, User, ShieldCheck, Radio, Flame } from 'lucide-react';
 import { AppRole } from '../types';
 
 export type NavTab =
@@ -81,21 +81,35 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           )}
         </button>
 
-        {/* 2. E-paper */}
-        <button
-          onClick={() => onTabChange('epaper')}
-          className={`flex flex-col items-center justify-center relative transition-colors ${
-            activeTab === 'epaper' ? 'text-[#ED1727]' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Newspaper className="w-5 h-5" />
-          <span className={`text-[11px] mt-0.5 ${activeTab === 'epaper' ? 'font-bold' : 'font-medium'}`}>
-            ई-पेपर
-          </span>
-          {activeTab === 'epaper' && (
-            <div className="absolute top-0 w-8 h-[2px] bg-[#ED1727] rounded-full" />
-          )}
-        </button>
+        {/* 2. E-paper (for privileged) OR ताज़ा (for normal readers) */}
+        {isPrivileged ? (
+          <button
+            onClick={() => onTabChange('epaper')}
+            className={`flex flex-col items-center justify-center relative transition-colors ${
+              activeTab === 'epaper' ? 'text-[#ED1727]' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Newspaper className="w-5 h-5" />
+            <span className={`text-[11px] mt-0.5 ${activeTab === 'epaper' ? 'font-bold' : 'font-medium'}`}>
+              ई-पेपर
+            </span>
+            {activeTab === 'epaper' && (
+              <div className="absolute top-0 w-8 h-[2px] bg-[#ED1727] rounded-full" />
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={() => onTabChange('home')}
+            className={`flex flex-col items-center justify-center relative transition-colors ${
+              activeTab === 'home' ? 'text-slate-500 hover:text-slate-800' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Flame className="w-5 h-5 text-amber-500" />
+            <span className="text-[11px] mt-0.5 font-medium">
+              ताज़ा
+            </span>
+          </button>
+        )}
 
         {/* 3. Operational Surface or Live Updates */}
         <button
