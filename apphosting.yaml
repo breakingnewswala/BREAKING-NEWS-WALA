@@ -9,10 +9,13 @@ runConfig:
   concurrency: 80
 
 env:
+  - variable: NPM_CONFIG_INCLUDE
+    value: dev
+    availability:
+      - BUILD
   - variable: NODE_ENV
     value: production
     availability:
-      - BUILD
       - RUNTIME
   - variable: PERSISTENCE_MODE
     value: firestore
