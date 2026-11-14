@@ -449,11 +449,16 @@ export const apiClient = {
     },
 
     async fetchBreakingTickers(): Promise<BreakingTickerItem[]> {
-      const res = await request<BreakingTickerItem[]>('/admin/tickers');
+      const res = await request<BreakingTickerItem[]>('/tickers');
       if (res.success && Array.isArray(res.data)) {
         return res.data.filter((t) => t.isActive);
       }
       return [];
+    },
+
+    async fetchAds(): Promise<AdBannerItem[]> {
+      const res = await request<AdBannerItem[]>('/ads');
+      return res.success && Array.isArray(res.data) ? res.data : [];
     },
   },
 

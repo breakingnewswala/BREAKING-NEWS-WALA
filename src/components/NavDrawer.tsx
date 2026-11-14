@@ -122,8 +122,12 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
               <div>
                 <p className="text-xs font-bold leading-tight">अमित कुमार शर्मा</p>
                 <p className="text-[11px] text-slate-400">
-                  {currentRole === 'ADMIN'
+                  {currentRole === 'MASTER_ADMIN'
+                    ? '⭐ मास्टर एडमिनिस्ट्रेटर'
+                    : currentRole === 'ADMIN'
                     ? '🔴 मुख्य संपादक / एडमिन'
+                    : currentRole === 'EDITOR'
+                    ? '🟣 डेस्क संपादक'
                     : currentRole === 'REPORTER'
                     ? '🔵 फील्ड संवाददाता'
                     : '🟢 पाठक मोड'}
@@ -183,113 +187,125 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
               </span>
             </button>
 
-            {/* Surface 2: Reporter Desk */}
-            <button
-              onClick={() => navigateTo('reporter')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
-                activeTab === 'reporter'
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <PenTool className="w-4 h-4 text-blue-600" />
-                संवाददाता फील्ड डेस्क (Reporter)
-              </span>
-              <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold">
-                प्रेस पोर्टल
-              </span>
-            </button>
+            {/* Surface 2: Reporter Desk (Authorized Reporters/Staff) */}
+            {['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole) && (
+              <button
+                onClick={() => navigateTo('reporter')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                  activeTab === 'reporter'
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <PenTool className="w-4 h-4 text-blue-600" />
+                  संवाददाता फील्ड डेस्क (Reporter)
+                </span>
+                <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold">
+                  प्रेस पोर्टल
+                </span>
+              </button>
+            )}
 
-            {/* Surface 3: Newsroom Desk */}
-            <button
-              onClick={() => navigateTo('newsroom')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
-                activeTab === 'newsroom'
-                  ? 'bg-red-50 text-[#ED1727]'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Building2 className="w-4 h-4 text-red-600" />
-                केंद्रीय संपादकीय डेस्क (Newsroom)
-              </span>
-              <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">
-                समीक्षा व अनुमोदन
-              </span>
-            </button>
+            {/* Surface 3: Newsroom Desk (Authorized Editors/Admins) */}
+            {['MASTER_ADMIN', 'ADMIN', 'EDITOR'].includes(currentRole) && (
+              <button
+                onClick={() => navigateTo('newsroom')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                  activeTab === 'newsroom'
+                    ? 'bg-red-50 text-[#ED1727]'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Building2 className="w-4 h-4 text-red-600" />
+                  केंद्रीय संपादकीय डेस्क (Newsroom)
+                </span>
+                <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">
+                  समीक्षा व अनुमोदन
+                </span>
+              </button>
+            )}
 
-            {/* Surface 4: Admin Control Panel */}
-            <button
-              onClick={() => navigateTo('admin')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
-                activeTab === 'admin'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Lock className="w-4 h-4 text-amber-500" />
-                एडमिनिस्ट्रेटिव कंट्रोल रूम (Admin)
-              </span>
-              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
-                मास्टर कंट्रोल
-              </span>
-            </button>
+            {/* Surface 4: Admin Control Panel (Master Admin & Admin) */}
+            {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
+              <button
+                onClick={() => navigateTo('admin')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                  activeTab === 'admin'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Lock className="w-4 h-4 text-amber-500" />
+                  {currentRole === 'MASTER_ADMIN' ? 'मास्टर एडमिन डैशबोर्ड (Master Admin)' : 'एडमिनिस्ट्रेटिव कंट्रोल रूम (Admin)'}
+                </span>
+                <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                  मास्टर कंट्रोल
+                </span>
+              </button>
+            )}
 
-            {/* Surface 5: Graphics & Design Studio */}
-            <button
-              onClick={() => navigateTo('graphics')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
-                activeTab === 'graphics'
-                  ? 'bg-red-50 text-[#ED1727]'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Palette className="w-4 h-4 text-orange-500" />
-                ग्राफ़िक्स व डिज़ाइन स्टूडियो (Design)
-              </span>
-              <span className="text-[10px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded font-bold">
-                PRO STUDIO
-              </span>
-            </button>
+            {/* Surface 5: Graphics & Design Studio (Staff Only) */}
+            {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
+              <button
+                onClick={() => navigateTo('graphics')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                  activeTab === 'graphics'
+                    ? 'bg-red-50 text-[#ED1727]'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Palette className="w-4 h-4 text-orange-500" />
+                  ग्राफ़िक्स व डिज़ाइन स्टूडियो (Design)
+                </span>
+                <span className="text-[10px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded font-bold">
+                  PRO STUDIO
+                </span>
+              </button>
+            )}
 
-            {/* Surface 6: Video Production Studio */}
-            <button
-              onClick={() => navigateTo('videos')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
-                activeTab === 'videos'
-                  ? 'bg-red-50 text-[#ED1727]'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Video className="w-4 h-4 text-[#ED1727]" />
-                वीडियो स्टूडियो (Video Studio Pro)
-              </span>
-              <span className="text-[10px] bg-red-100 text-red-800 px-1.5 py-0.5 rounded font-bold">
-                HD MP4
-              </span>
-            </button>
+            {/* Surface 6: Video Production Studio (Staff Only) */}
+            {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
+              <button
+                onClick={() => navigateTo('videos')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                  activeTab === 'videos'
+                    ? 'bg-red-50 text-[#ED1727]'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Video className="w-4 h-4 text-[#ED1727]" />
+                  वीडियो स्टूडियो (Video Studio Pro)
+                </span>
+                <span className="text-[10px] bg-red-100 text-red-800 px-1.5 py-0.5 rounded font-bold">
+                  HD MP4
+                </span>
+              </button>
+            )}
 
-            {/* Surface 7: AI Newsroom & Automation */}
-            <button
-              onClick={() => navigateTo('ai-newsroom')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
-                activeTab === 'ai-newsroom'
-                  ? 'bg-red-50 text-[#ED1727]'
-                  : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Bot className="w-4 h-4 text-amber-500" />
-                AI न्यूज़ रूम (AI Newsroom)
-              </span>
-              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
-                GEMINI AI
-              </span>
-            </button>
+            {/* Surface 7: AI Newsroom & Automation (Staff Only) */}
+            {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
+              <button
+                onClick={() => navigateTo('ai-newsroom')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                  activeTab === 'ai-newsroom'
+                    ? 'bg-red-50 text-[#ED1727]'
+                    : 'text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Bot className="w-4 h-4 text-amber-500" />
+                  AI न्यूज़ रूम (AI Newsroom)
+                </span>
+                <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                  GEMINI AI
+                </span>
+              </button>
+            )}
 
             {/* Search */}
             <button
@@ -326,44 +342,21 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
             </button>
           </div>
 
-          {/* 2. Persona Role Switcher */}
-          <div className="p-3 space-y-2 bg-slate-50">
-            <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider px-2">
-              सक्रिय भूमिका बदलें (Role Persona)
-            </p>
-            <div className="grid grid-cols-3 gap-1.5">
+          {/* Master Admin Privileged Control Switcher */}
+          {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
+            <div className="p-3 bg-amber-500/10 border-t border-amber-500/30">
+              <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider mb-1.5">
+                ⭐ प्रशासनिक कार्यक्षेत्र (Master Admin Access)
+              </p>
               <button
-                onClick={() => onRoleChange('READER')}
-                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold text-center border transition-colors ${
-                  currentRole === 'READER'
-                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
+                onClick={() => navigateTo('admin')}
+                className="w-full py-2 px-3 bg-slate-900 text-amber-300 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
               >
-                पाठक
-              </button>
-              <button
-                onClick={() => onRoleChange('REPORTER')}
-                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold text-center border transition-colors ${
-                  currentRole === 'REPORTER'
-                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                रिपोर्टर
-              </button>
-              <button
-                onClick={() => onRoleChange('ADMIN')}
-                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold text-center border transition-colors ${
-                  currentRole === 'ADMIN'
-                    ? 'bg-red-600 text-white border-red-700 shadow-xs'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                एडमिन
+                <Lock className="w-3.5 h-3.5 text-amber-400" />
+                मास्टर एडमिन डैशबोर्ड में प्रवेश करें
               </button>
             </div>
-          </div>
+          )}
 
           {/* 3. News Categories */}
           <div className="p-3 space-y-1">

@@ -28,30 +28,39 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   currentRole,
   pendingQueueCount = 0,
 }) => {
+  const isPrivileged = ['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole);
+
   const getDeskTarget = (): NavTab => {
     switch (currentRole) {
+      case 'MASTER_ADMIN':
       case 'ADMIN':
+        return 'admin';
+      case 'EDITOR':
         return 'newsroom';
       case 'REPORTER':
         return 'reporter';
       default:
-        return 'desk';
+        return 'home';
     }
   };
 
   const getDeskLabel = () => {
     switch (currentRole) {
+      case 'MASTER_ADMIN':
       case 'ADMIN':
+        return 'एडमिन';
+      case 'EDITOR':
         return 'न्यूज़रूम';
       case 'REPORTER':
         return 'रिपोर्टर';
       default:
-        return 'प्रेस डेस्क';
+        return 'लाइव';
     }
   };
 
-  const isDeskActive =
-    activeTab === 'desk' || activeTab === 'reporter' || activeTab === 'newsroom' || activeTab === 'admin';
+  const isDeskActive = isPrivileged && (
+    activeTab === 'desk' || activeTab === 'reporter' || activeTab === 'newsroom' || activeTab === 'admin'
+  );
 
   return (
     <nav className="block md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-lg">
@@ -88,7 +97,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           )}
         </button>
 
-        {/* 3. Desk (Dynamic: Newsroom / Reporter / Press) */}
+        {/* 3. Operational Surface or Live Updates */}
         <button
           onClick={() => onTabChange(getDeskTarget())}
           className={`flex flex-col items-center justify-center relative transition-colors ${
@@ -96,8 +105,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           }`}
         >
           <div className="relative">
-            <PenSquare className="w-5 h-5" />
-            {currentRole === 'ADMIN' && pendingQueueCount > 0 && (
+            {isPrivileged ? (
+              ['MASTER_ADMIN', 'ADMIN'].includes(currentRole) ? (
+                <ShieldCheck className="w-5 h-5 text-amber-500" />
+              ) : (
+                <PenSquare className="w-5 h-5" />
+              )
+            ) : (
+              <Radio className="w-5 h-5 text-red-600 animate-pulse" />
+            )}
+            {isPrivileged && ['ADMIN', 'MASTER_ADMIN'].includes(currentRole) && pendingQueueCount > 0 && (
               <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full min-w-4 text-center">
                 {pendingQueueCount}
               </span>

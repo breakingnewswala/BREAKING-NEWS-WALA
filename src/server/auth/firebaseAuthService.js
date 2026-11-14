@@ -11,7 +11,31 @@ import crypto from 'node:crypto';
 import firebaseAppletConfig from '../../../firebase-applet-config.json' with { type: 'json' };
 
 export const CANONICAL_PROJECT_ID = firebaseAppletConfig.projectId || 'breaking-news-wala';
+
+export const MASTER_ADMIN_EMAILS = Object.freeze([
+  'breakingnewswala.com@gmail.com',
+  'breakingnewswala@gmail.com',
+  'riturajtomarorchha@gmail.com',
+]);
+
+export function isMasterAdminEmail(email) {
+  if (!email || typeof email !== 'string') return false;
+  const normalized = email.trim().toLowerCase();
+  return MASTER_ADMIN_EMAILS.includes(normalized);
+}
+
+export const MASTER_ADMIN_ROLES = Object.freeze([
+  'MASTER_ADMIN',
+  'SUPER_ADMIN',
+  'ADMIN',
+  'CHIEF_EDITOR',
+  'EDITOR',
+  'REPORTER',
+  'READER',
+]);
+
 export const CANONICAL_ROLES = [
+  'MASTER_ADMIN',
   'SUPER_ADMIN',
   'ADMIN',
   'CHIEF_EDITOR',
@@ -175,14 +199,18 @@ export class FirebaseAuthService {
    * Authoritative Server-Side RBAC Resolution:
    * Firebase Auth guarantees identity (UID). Authoritative permissions and roles
    * MUST be resolved from Firestore user document to prevent client spoofing.
+   * If token carries verified Master Admin email, grants MASTER_ADMIN override.
    */
-  async resolveAuthoritativeUser(uid, persistenceAdapter) {
+  async resolveAuthoritativeUser(uid, persistenceAdapter, tokenEmail = null, emailVerified = false) {
     if (!uid || typeof uid !== 'string') return null;
 
     let userDoc = null;
     if (persistenceAdapter && typeof persistenceAdapter.findUserById === 'function') {
       userDoc = await persistenceAdapter.findUserById(uid);
     }
+
+    const effectiveEmail = (tokenEmail || userDoc?.email || '').toLowerCase().trim();
+    const isMaster = Boolean(emailVerified && isMasterAdminEmail(effectiveEmail));
 
     if (!userDoc) {
       return null;
@@ -196,15 +224,25 @@ export class FirebaseAuthService {
       throw err;
     }
 
-    // Authoritative role resolution
-    const authoritativeRoles = Array.isArray(userDoc.roles) && userDoc.roles.length > 0
+    // Authoritative role resolution: Master Admin accounts receive MASTER_ADMIN override ONLY when verified
+    let authoritativeRoles = Array.isArray(userDoc.roles) && userDoc.roles.length > 0
       ? userDoc.roles
       : [userDoc.role || 'READER'];
+
+    if (isMaster) {
+      authoritativeRoles = [...MASTER_ADMIN_ROLES];
+    } else if (isMasterAdminEmail(effectiveEmail) && !emailVerified) {
+      // Security invariant: unverified email claims MUST NOT possess Master Admin roles
+      authoritativeRoles = authoritativeRoles.filter((r) => r !== 'MASTER_ADMIN' && r !== 'SUPER_ADMIN');
+      if (authoritativeRoles.length === 0) {
+        authoritativeRoles = ['READER'];
+      }
+    }
 
     return {
       id: userDoc.id || uid,
       uid,
-      email: userDoc.email || null,
+      email: userDoc.email || effectiveEmail || null,
       displayName: userDoc.fullName || userDoc.displayName || 'BNW User',
       roles: authoritativeRoles,
       status: userDoc.status || 'active',
@@ -220,7 +258,7 @@ export class FirebaseAuthService {
    */
   static hasRole(user, allowedRoles) {
     if (!user || !user.roles) return false;
-    if (user.roles.includes('SUPER_ADMIN')) return true; // Super Admin has universal access
+    if (user.roles.includes('MASTER_ADMIN') || user.roles.includes('SUPER_ADMIN')) return true; // Master/Super Admin has universal access
     return allowedRoles.some((role) => user.roles.includes(role));
   }
 }

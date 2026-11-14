@@ -35,14 +35,16 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
 }) => {
   const getRoleBadge = () => {
     switch (currentRole) {
+      case 'MASTER_ADMIN':
+        return { label: 'मास्टर एडमिन', color: 'bg-amber-600 text-white font-bold' };
       case 'ADMIN':
-        return { label: 'एडमिन', color: 'bg-red-600 text-white' };
+        return { label: 'एडमिन', color: 'bg-red-600 text-white font-bold' };
       case 'EDITOR':
-        return { label: 'संपादक', color: 'bg-indigo-600 text-white' };
+        return { label: 'संपादक', color: 'bg-indigo-600 text-white font-bold' };
       case 'REPORTER':
-        return { label: 'रिपोर्टर', color: 'bg-blue-600 text-white' };
+        return { label: 'रिपोर्टर', color: 'bg-blue-600 text-white font-bold' };
       default:
-        return { label: 'पाठक', color: 'bg-emerald-600 text-white' };
+        return null;
     }
   };
 
@@ -126,49 +128,55 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             <span>ई-पेपर</span>
           </button>
 
-          {/* Surface 2: Reporter Portal */}
-          <button
-            onClick={() => onTabChange('reporter')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-              activeTab === 'reporter'
-                ? 'bg-blue-50 text-blue-700 font-bold'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <PenSquare className="w-3.5 h-3.5 text-blue-600" />
-            <span>रिपोर्टर डेस्क</span>
-          </button>
+          {/* Surface 2: Reporter Portal (Restricted to Reporters, Editors, Admins) */}
+          {['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole) && (
+            <button
+              onClick={() => onTabChange('reporter')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                activeTab === 'reporter'
+                  ? 'bg-blue-50 text-blue-700 font-bold'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <PenSquare className="w-3.5 h-3.5 text-blue-600" />
+              <span>रिपोर्टर डेस्क</span>
+            </button>
+          )}
 
-          {/* Surface 3: Central Newsroom Desk */}
-          <button
-            onClick={() => onTabChange('newsroom')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-              activeTab === 'newsroom'
-                ? 'bg-red-50 text-[#ED1727] font-bold'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Building2 className="w-3.5 h-3.5 text-red-600" />
-            <span>न्यूज़रूम डेस्क</span>
-            {pendingQueueCount > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full">
-                {pendingQueueCount}
-              </span>
-            )}
-          </button>
+          {/* Surface 3: Central Newsroom Desk (Restricted to Editors and Admins) */}
+          {['MASTER_ADMIN', 'ADMIN', 'EDITOR'].includes(currentRole) && (
+            <button
+              onClick={() => onTabChange('newsroom')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                activeTab === 'newsroom'
+                  ? 'bg-red-50 text-[#ED1727] font-bold'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5 text-red-600" />
+              <span>न्यूज़रूम डेस्क</span>
+              {pendingQueueCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full">
+                  {pendingQueueCount}
+                </span>
+              )}
+            </button>
+          )}
 
-          {/* Surface 4: Admin Control Panel */}
-          <button
-            onClick={() => onTabChange('admin')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-              activeTab === 'admin'
-                ? 'bg-slate-900 text-white font-bold'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Lock className="w-3.5 h-3.5 text-amber-500" />
-            <span>एडमिन कंट्रोल</span>
-          </button>
+          {/* Surface 4: Admin Control Panel (Restricted to Master Admin and Admin) */}
+          {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
+            <button
+              onClick={() => onTabChange('admin')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+                activeTab === 'admin'
+                  ? 'bg-slate-900 text-white font-bold ring-2 ring-amber-400'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-500" />
+              <span>{currentRole === 'MASTER_ADMIN' ? 'मास्टर एडमिन डैशबोर्ड' : 'एडमिन कंट्रोल'}</span>
+            </button>
+          )}
 
           {/* Search */}
           <button
@@ -187,9 +195,11 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
         {/* Right Header Controls */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Active Role Indicator */}
-          <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full ${roleBadge.color}`}>
-            {roleBadge.label}
-          </span>
+          {roleBadge && (
+            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full ${roleBadge.color}`}>
+              {roleBadge.label}
+            </span>
+          )}
 
           {/* Quick Search Icon Button (Mobile/Tablet) */}
           <button

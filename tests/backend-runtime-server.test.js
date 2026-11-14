@@ -18,6 +18,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -180,8 +181,10 @@ test('Master Execution 031: Live server.js Runtime Verification', async (t) => {
   });
 
   // 7. Static Asset serving with caching headers
-  await t.test('7. GET /assets/index-DM9UgY3w.css serves CSS with correct MIME and immutable cache', async () => {
-    const res = await httpRequest('GET', '/assets/index-DM9UgY3w.css');
+  await t.test('7. GET /assets/index-*.css serves CSS with correct MIME and immutable cache', async () => {
+    const assetsDir = path.join(ROOT_DIR, 'dist/assets');
+    const cssFile = fs.readdirSync(assetsDir).find((f) => f.endsWith('.css')) || 'index-BYykhYDG.css';
+    const res = await httpRequest('GET', `/assets/${cssFile}`);
     assert.strictEqual(res.statusCode, 200);
     assert.ok(res.headers['content-type'].includes('text/css'));
     assert.ok(res.headers['cache-control'].includes('immutable'));

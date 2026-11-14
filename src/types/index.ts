@@ -13,7 +13,7 @@ export type ArticleStatus =
 
 export type ArticlePriority = 'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL' | 'BREAKING';
 
-export type AppRole = 'READER' | 'REPORTER' | 'ADMIN' | 'EDITOR';
+export type AppRole = 'READER' | 'REPORTER' | 'ADMIN' | 'EDITOR' | 'MASTER_ADMIN';
 
 export interface CategoryItem {
   id: string;

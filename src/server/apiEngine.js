@@ -14,7 +14,13 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { PasswordService } from './auth/passwordService.js';
 import { SessionService } from './auth/sessionService.js';
-import { FirebaseAuthService, defaultFirebaseAuthService } from './auth/firebaseAuthService.js';
+import {
+  FirebaseAuthService,
+  defaultFirebaseAuthService,
+  MASTER_ADMIN_EMAILS,
+  isMasterAdminEmail,
+  MASTER_ADMIN_ROLES,
+} from './auth/firebaseAuthService.js';
 import {
   getPersistenceAdapter,
   LocalJsonAdapter,
@@ -290,17 +296,36 @@ export async function resolveRequestUser(req, adapterInstance = adapter) {
     try {
       const verified = await defaultFirebaseAuthService.verifyIdToken(token);
       if (verified && verified.uid) {
+        const normalizedEmail = (verified.email || '').toLowerCase().trim();
+        const isMaster = Boolean(verified.emailVerified && isMasterAdminEmail(normalizedEmail));
+
         // Authoritative resolution from persistence adapter (Firestore / Prisma)
-        const authoritative = await defaultFirebaseAuthService.resolveAuthoritativeUser(verified.uid, adapterInstance);
+        const authoritative = await defaultFirebaseAuthService.resolveAuthoritativeUser(
+          verified.uid,
+          adapterInstance,
+          normalizedEmail,
+          verified.emailVerified
+        );
         if (authoritative) {
+          const effectiveRoles = isMaster ? [...MASTER_ADMIN_ROLES] : (authoritative.roles || ['READER']);
           return {
             id: authoritative.id,
             identifier: authoritative.email || authoritative.uid,
             fullName: authoritative.displayName || authoritative.fullName,
-            roles: authoritative.roles || ['READER'],
+            roles: effectiveRoles,
             firebaseUid: verified.uid,
             status: authoritative.status,
             district: authoritative.district,
+          };
+        }
+        if (isMaster) {
+          return {
+            id: verified.uid,
+            identifier: normalizedEmail,
+            fullName: verified.displayName || 'मास्टर एडमिनिस्ट्रेटर',
+            roles: [...MASTER_ADMIN_ROLES],
+            firebaseUid: verified.uid,
+            status: 'active',
           };
         }
         return {
@@ -317,6 +342,30 @@ export async function resolveRequestUser(req, adapterInstance = adapter) {
 
   return null;
 }
+
+export const isMasterAdminUser = (u) => {
+  if (!u) return false;
+  const roles = Array.isArray(u.roles) ? u.roles.map((r) => String(r).toUpperCase()) : [String(u.role || '').toUpperCase()];
+  return roles.includes('MASTER_ADMIN') || roles.includes('SUPER_ADMIN');
+};
+
+export const isAdminUser = (u) => {
+  if (!u) return false;
+  const roles = Array.isArray(u.roles) ? u.roles.map((r) => String(r).toUpperCase()) : [String(u.role || '').toUpperCase()];
+  return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN'].includes(r));
+};
+
+export const isEditorUser = (u) => {
+  if (!u) return false;
+  const roles = Array.isArray(u.roles) ? u.roles.map((r) => String(r).toUpperCase()) : [String(u.role || '').toUpperCase()];
+  return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CHIEF_EDITOR', 'MANAGING_EDITOR', 'EDITOR'].includes(r));
+};
+
+export const isReporterUser = (u) => {
+  if (!u) return false;
+  const roles = Array.isArray(u.roles) ? u.roles.map((r) => String(r).toUpperCase()) : [String(u.role || '').toUpperCase()];
+  return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CHIEF_EDITOR', 'MANAGING_EDITOR', 'EDITOR', 'REPORTER', 'TRUSTED_REPORTER'].includes(r));
+};
 
 // -------------------------------------------------------------
 // MACHINE-READABLE HEALTH CHECK HANDLER (Section 13)
@@ -555,21 +604,57 @@ export async function handleApiRequest(req, res) {
     try {
       const verifiedFirebaseUser = await defaultFirebaseAuthService.verifyIdToken(idToken);
       const uid = verifiedFirebaseUser.uid;
+      const normalizedEmail = (verifiedFirebaseUser.email || '').toLowerCase().trim();
+      const isMasterAdmin = Boolean(verifiedFirebaseUser.emailVerified && isMasterAdminEmail(normalizedEmail));
 
       // Authoritative server-side RBAC resolution
-      let authoritativeUser = await defaultFirebaseAuthService.resolveAuthoritativeUser(uid, adapter);
+      let authoritativeUser = await defaultFirebaseAuthService.resolveAuthoritativeUser(
+        uid,
+        adapter,
+        normalizedEmail,
+        verifiedFirebaseUser.emailVerified
+      );
 
-      // If user profile not found in adapter, provision default reader profile
-      if (!authoritativeUser) {
-        authoritativeUser = await adapter.createUser({
-          id: uid,
-          email: verifiedFirebaseUser.email,
-          fullName: verifiedFirebaseUser.displayName || verifiedFirebaseUser.email || 'पाठक',
-          role: 'READER',
-          roles: ['READER'],
-          status: 'active',
-          photoUrl: verifiedFirebaseUser.photoUrl,
-        });
+      if (isMasterAdmin) {
+        // Enforce Master Admin role
+        const masterRoles = [...MASTER_ADMIN_ROLES];
+        if (!authoritativeUser) {
+          authoritativeUser = await adapter.createUser({
+            id: uid,
+            email: normalizedEmail,
+            fullName: verifiedFirebaseUser.displayName || normalizedEmail || 'मास्टर एडमिनिस्ट्रेटर',
+            role: 'MASTER_ADMIN',
+            roles: masterRoles,
+            status: 'active',
+            photoUrl: verifiedFirebaseUser.photoUrl,
+          });
+        } else {
+          authoritativeUser.role = 'MASTER_ADMIN';
+          authoritativeUser.roles = masterRoles;
+          if (adapter.updateUser) {
+            await adapter.updateUser(uid, { role: 'MASTER_ADMIN', roles: masterRoles });
+          }
+        }
+      } else {
+        // If user profile not found in adapter, provision default reader profile
+        if (!authoritativeUser) {
+          authoritativeUser = await adapter.createUser({
+            id: uid,
+            email: verifiedFirebaseUser.email,
+            fullName: verifiedFirebaseUser.displayName || verifiedFirebaseUser.email || 'पाठक',
+            role: 'READER',
+            roles: ['READER'],
+            status: 'active',
+            photoUrl: verifiedFirebaseUser.photoUrl,
+          });
+        } else {
+          // If not verified as Master Admin, strip any unauthorized administrative roles
+          if (authoritativeUser.roles && authoritativeUser.roles.includes('MASTER_ADMIN')) {
+            authoritativeUser.roles = authoritativeUser.roles.filter((r) => r !== 'MASTER_ADMIN' && r !== 'SUPER_ADMIN');
+            if (authoritativeUser.roles.length === 0) authoritativeUser.roles = ['READER'];
+            authoritativeUser.role = authoritativeUser.roles[0];
+          }
+        }
       }
 
       const roles = authoritativeUser.roles || ['READER'];
@@ -599,6 +684,7 @@ export async function handleApiRequest(req, res) {
             fullName: authoritativeUser.displayName || authoritativeUser.fullName,
             email: authoritativeUser.email,
             roles,
+            role: authoritativeUser.role || roles[0],
             status: authoritativeUser.status,
           },
           tokens: {
@@ -643,12 +729,17 @@ export async function handleApiRequest(req, res) {
       return sendError(res, 401, 'ERR_ACCOUNT_DISABLED', 'उपयोगकर्ता खाता निष्क्रिय अथवा प्रतिबंधित है।');
     }
 
+    const normalizedEmail = (found.email || user.identifier || '').toLowerCase().trim();
+    const isMaster = isMasterAdminEmail(normalizedEmail) || (Array.isArray(user.roles) && user.roles.includes('MASTER_ADMIN'));
+    const effectiveRoles = isMaster ? [...MASTER_ADMIN_ROLES] : (found.roles || user.roles || ['READER']);
+
     return sendSuccess(res, {
       id: found.id,
       identifier: found.identifier,
       fullName: found.fullName,
       email: found.email,
-      roles: found.roles,
+      roles: effectiveRoles,
+      role: effectiveRoles[0],
       badgeNumber: found.badgeNumber || 'BNW-000',
       mustChangePassword: Boolean(found.mustChangePassword),
     });
@@ -945,6 +1036,12 @@ export async function handleApiRequest(req, res) {
 
   // 5a. Editorial Stats
   if (pathname === '/api/v1/articles/editorial/stats' && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'संपादकीय सांख्यिकी हेतु प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEditorUser(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय सांख्यिकी केवल संपादकीय टीम के लिए उपलब्ध है।');
+    }
     const stats = await adapter.getEditorialStats();
     if (stats?.error) {
       return sendError(res, stats.statusCode || 503, stats.code, stats.message);
@@ -965,6 +1062,12 @@ export async function handleApiRequest(req, res) {
 
   // 5c. Create Draft (REP-03)
   if (pathname === '/api/v1/articles/drafts' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'ड्राफ्ट निर्माण हेतु प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isReporterUser(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'ड्राफ्ट निर्माण केवल संवाददाता अथवा संपादकीय टीम द्वारा किया जा सकता है।');
+    }
     const body = await parseRequestBody(req);
     if (!body.title || !body.content) {
       return sendError(res, 400, 'ERR_VALIDATION', 'शीर्षक और समाचार सामग्री अनिवार्य हैं।');
@@ -1006,6 +1109,12 @@ export async function handleApiRequest(req, res) {
   // 5e. Submit Draft into Editorial Review Queue (WF-01)
   const submitMatch = pathname.match(/^\/api\/v1\/articles\/([^/]+)\/submit$/);
   if (submitMatch && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'समीक्षा हेतु जमा करने हेतु प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isReporterUser(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'समीक्षा हेतु जमा केवल संवाददाता अथवा संपादकीय टीम द्वारा किया जा सकता है।');
+    }
     const articleId = submitMatch[1];
     const submitted = await adapter.submitArticle(articleId);
     if (submitted?.error) {
@@ -1022,6 +1131,12 @@ export async function handleApiRequest(req, res) {
   // 5e-2. Direct Publish for Elevated Roles (REPORTER_AUTHORIZATION)
   const directPublishMatch = pathname.match(/^\/api\/v1\/articles\/([^/]+)\/direct-publish$/);
   if (directPublishMatch && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'सीधे प्रकाशन हेतु प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEditorUser(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'सीधे प्रकाशन हेतु संपादक अथवा एडमिन अधिकार आवश्यक हैं।');
+    }
     const articleId = directPublishMatch[1];
     const published = await adapter.reviewArticle(articleId, 'approve', { directPublish: true }, user);
     if (published?.error) {
@@ -1072,6 +1187,12 @@ export async function handleApiRequest(req, res) {
   // 5f. Editorial Review Action (WF-EDT-01, WF-EDT-02, WF-EDT-03)
   const reviewMatch = pathname.match(/^\/api\/v1\/articles\/([^/]+)\/review$/);
   if ((reviewMatch || pathname === '/api/v1/newsroom/review') && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'समाचार समीक्षा हेतु प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEditorUser(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'समाचार समीक्षा हेतु संपादक अथवा एडमिन अधिकार आवश्यक हैं।');
+    }
     const body = await parseRequestBody(req);
     const articleId = reviewMatch ? reviewMatch[1] : body.articleId;
     if (!articleId) {
@@ -1287,7 +1408,54 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, mediaAsset);
   }
 
-  // 7. Admin Control Panel Domain (/api/v1/admin/*)
+  // -------------------------------------------------------------
+  // PUBLIC FEEDS (Tickers & Ads for Reader Surface)
+  // -------------------------------------------------------------
+
+  // Public Breaking Tickers Feed
+  if (pathname === '/api/v1/tickers' && req.method === 'GET') {
+    const tickers = await adapter.getTickers();
+    if (tickers?.error) {
+      return sendError(res, tickers.statusCode || 503, tickers.code, tickers.message);
+    }
+    const active = Array.isArray(tickers) ? tickers.filter((t) => t.isActive !== false) : [];
+    return sendSuccess(res, active);
+  }
+
+  // Public Advertisements Feed
+  if (pathname === '/api/v1/ads' && req.method === 'GET') {
+    const ads = await adapter.getAds();
+    if (ads?.error) {
+      return sendError(res, ads.statusCode || 503, ads.code, ads.message);
+    }
+    const active = Array.isArray(ads) ? ads.filter((a) => a.isActive !== false) : [];
+    return sendSuccess(res, active);
+  }
+
+  // -------------------------------------------------------------
+  // 7. ADMIN CONTROL PANEL DOMAIN (/api/v1/admin/*)
+  // Server-Side RBAC Guard: Unauthenticated requests -> 401 ERR_UNAUTHORIZED.
+  // Non-admin / non-master-admin callers -> 403 ERR_FORBIDDEN (except audit-logs for staff).
+  // -------------------------------------------------------------
+  if (pathname.startsWith('/api/v1/admin/')) {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+
+    if (pathname === '/api/v1/admin/audit-logs' && req.method === 'GET') {
+      const roles = Array.isArray(user.roles) ? user.roles : [user.role || ''];
+      const isStaff = roles.some((r) =>
+        ['REPORTER', 'EDITOR', 'CHIEF_EDITOR', 'ADMIN', 'SUPER_ADMIN', 'MASTER_ADMIN'].includes(String(r).toUpperCase())
+      );
+      if (!isStaff) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'ऑडिट लॉग केवल अधिकृत संपादकीय टीम एवं प्रशासकों के लिए उपलब्ध हैं।');
+      }
+    } else {
+      if (!isAdminUser(user)) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'इस क्रिया हेतु मास्टर एडमिन अथवा एडमिन अधिकार आवश्यक हैं।');
+      }
+    }
+  }
 
   // 7a. Admin Dashboard Metrics
   if (pathname === '/api/v1/admin/dashboard' && req.method === 'GET') {
@@ -2969,7 +3137,7 @@ export async function handleApiRequest(req, res) {
   const isAdminOnlyRole = (u) => {
     if (!u) return false;
     const roles = Array.isArray(u.roles) ? u.roles.map((r) => r.toUpperCase()) : [String(u.role || '').toUpperCase()];
-    return roles.some((r) => ['ADMIN', 'SUPER_ADMIN'].includes(r));
+    return roles.some((r) => ['MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(r));
   };
 
   // -------------------------------------------------------------
@@ -3674,25 +3842,25 @@ export async function handleApiRequest(req, res) {
   const isBusinessOrAdminRole = (u) => {
     if (!u) return false;
     const roles = Array.isArray(u.roles) ? u.roles.map((r) => r.toUpperCase()) : [String(u.role || '').toUpperCase()];
-    return roles.some((r) => ['ADMIN', 'SUPER_ADMIN', 'BUSINESS_ADMIN', 'FINANCE_MANAGER', 'AD_MANAGER'].includes(r));
+    return roles.some((r) => ['MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'BUSINESS_ADMIN', 'FINANCE_MANAGER', 'AD_MANAGER'].includes(r));
   };
 
   const isFinanceOrAdminRole = (u) => {
     if (!u) return false;
     const roles = Array.isArray(u.roles) ? u.roles.map((r) => r.toUpperCase()) : [String(u.role || '').toUpperCase()];
-    return roles.some((r) => ['ADMIN', 'SUPER_ADMIN', 'BUSINESS_ADMIN', 'FINANCE_MANAGER'].includes(r));
+    return roles.some((r) => ['MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'BUSINESS_ADMIN', 'FINANCE_MANAGER'].includes(r));
   };
 
   const isAdOrAdminRole = (u) => {
     if (!u) return false;
     const roles = Array.isArray(u.roles) ? u.roles.map((r) => r.toUpperCase()) : [String(u.role || '').toUpperCase()];
-    return roles.some((r) => ['ADMIN', 'SUPER_ADMIN', 'BUSINESS_ADMIN', 'AD_MANAGER'].includes(r));
+    return roles.some((r) => ['MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'BUSINESS_ADMIN', 'AD_MANAGER'].includes(r));
   };
 
   const isEditorialOrAdminRole = (u) => {
     if (!u) return false;
     const roles = Array.isArray(u.roles) ? u.roles.map((r) => r.toUpperCase()) : [String(u.role || '').toUpperCase()];
-    return roles.some((r) => ['ADMIN', 'SUPER_ADMIN', 'CHIEF_EDITOR', 'MANAGING_EDITOR', 'EDITOR'].includes(r));
+    return roles.some((r) => ['MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'CHIEF_EDITOR', 'MANAGING_EDITOR', 'EDITOR'].includes(r));
   };
 
   const monPlanIdMatch = pathname.match(/^\/api\/v1\/monetization\/plans\/([a-zA-Z0-9_-]+)$/);

@@ -9,6 +9,7 @@ import {
   HelpCircle,
   ExternalLink,
   CheckCircle2,
+  Lock,
   Phone,
   Mail,
   Award,
@@ -23,6 +24,7 @@ import {
   Check,
 } from 'lucide-react';
 import { AppRole, ArticleDetail, ReadingHistoryRecord, UserPreferences } from '../types';
+import { NavTab } from '../components/BottomNav';
 import { auth, signInWithGoogle, logOut } from '../firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import { apiClient } from '../services/apiClient';
@@ -34,6 +36,7 @@ interface ProfileScreenProps {
   bookmarkedArticles: ArticleDetail[];
   onArticleClick: (articleId: string) => void;
   onRemoveBookmark: (articleId: string) => void;
+  onNavigateTab?: (tab: NavTab) => void;
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({
@@ -43,6 +46,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   bookmarkedArticles,
   onArticleClick,
   onRemoveBookmark,
+  onNavigateTab,
 }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(auth.currentUser);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
@@ -141,7 +145,21 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
       if (user) {
         try {
           const idToken = await user.getIdToken();
-          await apiClient.auth.loginWithFirebase(idToken);
+          const authRes = await apiClient.auth.loginWithFirebase(idToken);
+          if (authRes && authRes.roles) {
+            const upperRoles = authRes.roles.map((r) => String(r).toUpperCase());
+            if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
+              onRoleChange('MASTER_ADMIN');
+            } else if (upperRoles.includes('ADMIN')) {
+              onRoleChange('ADMIN');
+            } else if (upperRoles.includes('CHIEF_EDITOR') || upperRoles.includes('EDITOR')) {
+              onRoleChange('EDITOR');
+            } else if (upperRoles.includes('REPORTER')) {
+              onRoleChange('REPORTER');
+            } else {
+              onRoleChange('READER');
+            }
+          }
         } catch (apiErr) {
           console.warn('Backend session exchange notice:', apiErr);
         }
@@ -158,6 +176,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       await logOut();
       await apiClient.auth.logout();
+      onRoleChange('READER');
     } catch (error) {
       console.error('Sign Out Failed:', error);
     }
@@ -263,47 +282,71 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
           </div>
         </div>
 
-        {/* 2. Multi-Role Switcher Card */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-          <div className="border-b border-slate-100 pb-2">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-              <Layers className="w-4 h-4 text-blue-600" />
-              कार्यक्षेत्र व रोल स्विचर (Active Persona):
-            </h3>
-            <p className="text-xs text-slate-500">
-              एप्लिकेशन में विभिन्न भूमिकाओं (Role-Based Access) का परीक्षण करने हेतु चयन करें:
+        {/* 2. Role Status & Master Admin Access */}
+        {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) ? (
+          <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white p-4 rounded-xl shadow-md space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="w-5 h-5 text-yellow-200" />
+                <div>
+                  <h3 className="text-sm font-black">⭐ अधिकृत मास्टर एडमिनिस्ट्रेटर (Master Admin)</h3>
+                  <p className="text-xs text-amber-100 font-medium">संपूर्ण प्रशासनिक एवं संपादकीय नियंत्रण सक्रिय</p>
+                </div>
+              </div>
+              <span className="text-[10px] bg-slate-900 text-amber-300 font-black px-2 py-0.5 rounded-full">सत्यापित</span>
+            </div>
+            <p className="text-xs text-amber-50">
+              आप अधिकृत गूगल खाते ({currentUser?.email || 'प्रशासक'}) से सफलतापूर्वक प्रमाणीकृत हैं।
+            </p>
+            {onNavigateTab && (
+              <button
+                onClick={() => onNavigateTab('admin')}
+                className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-amber-300 font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              >
+                <Lock className="w-4 h-4 text-amber-400" />
+                <span>मास्टर एडमिन डैशबोर्ड खोलें (Enter Dashboard)</span>
+              </button>
+            )}
+          </div>
+        ) : ['EDITOR', 'REPORTER'].includes(currentRole) ? (
+          <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-2xs space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                अधिकृत संपादकीय खाता
+              </h3>
+              <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full">
+                {currentRole === 'EDITOR' ? 'संपादक' : 'संवाददाता'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-600">
+              {currentRole === 'EDITOR'
+                ? 'आपके पास केंद्रीय संपादकीय डेस्क (Newsroom) की समीक्षा एवं अनुमोदन अधिकार हैं।'
+                : 'आपके पास संवाददाता फील्ड डेस्क (Reporter Portal) में ड्राफ्ट तैयार करने के अधिकार हैं।'}
+            </p>
+            {onNavigateTab && (
+              <button
+                onClick={() => onNavigateTab(currentRole === 'EDITOR' ? 'newsroom' : 'reporter')}
+                className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                {currentRole === 'EDITOR' ? 'न्यूज़रूम डेस्क खोलें' : 'रिपोर्टर डेस्क खोलें'}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <User className="w-4 h-4 text-emerald-600" />
+                खाता स्थिति: पाठक मोड (Reader Mode)
+              </h3>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">सक्रिय</span>
+            </div>
+            <p className="text-xs text-slate-600">
+              समाचार पढ़ना, टिप्पणियां, ई-पेपर, ज़िला फ़िल्टर और पाठक समीक्षा सिक्के आपके खाते में सक्रिय हैं।
             </p>
           </div>
-
-          <div className="space-y-2">
-            {roleDefinitions.map((item) => {
-              const isSelected = currentRole === item.role;
-              return (
-                <div
-                  key={item.role}
-                  onClick={() => onRoleChange(item.role)}
-                  className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                    isSelected
-                      ? `${item.color} shadow-xs ring-1 ring-slate-400`
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-slate-900">
-                      {item.title}
-                    </span>
-                    {isSelected && (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-600 mt-1">
-                    {item.desc}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        )}
 
         {/* 3. Bookmarks Collection */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">

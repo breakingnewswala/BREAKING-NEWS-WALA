@@ -42,7 +42,7 @@ const GraphicsStudioScreen = React.lazy(() => import('./screens/GraphicsStudioSc
 const VideoStudioScreen = React.lazy(() => import('./screens/VideoStudioScreen').then((m) => ({ default: m.VideoStudioScreen })));
 const AiNewsroomScreen = React.lazy(() => import('./screens/AiNewsroomScreen').then((m) => ({ default: m.AiNewsroomScreen })));
 import { Radio, X } from 'lucide-react';
-import { apiClient } from './services/apiClient';
+import { apiClient, AuthUser } from './services/apiClient';
 
 export const App: React.FC = () => {
   // Navigation & View States
@@ -50,8 +50,10 @@ export const App: React.FC = () => {
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // App Role Persona
-  const [currentRole, setCurrentRole] = useState<AppRole>('ADMIN');
+  // App Role Persona: Default MUST strictly be 'READER' for all visitors
+  const [currentRole, setCurrentRole] = useState<AppRole>('READER');
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
 
   // Filter signals from Drawer Menu to Home
   const [initialCategoryFilter, setInitialCategoryFilter] = useState<string | null>(null);
@@ -79,16 +81,83 @@ export const App: React.FC = () => {
     district: 'पूरा मध्य प्रदेश',
   });
 
-  // URL Hash Synchronizer for direct surface deep-linking
+  // Authenticated Session Synchronizer & Server-Authoritative Role Resolution
+  useEffect(() => {
+    let isMounted = true;
+    async function checkAuthSession() {
+      try {
+        const user = await apiClient.auth.getCurrentUser();
+        if (!isMounted) return;
+        if (user && user.roles && user.roles.length > 0) {
+          setAuthUser(user);
+          const upperRoles = user.roles.map((r) => String(r).toUpperCase());
+          if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
+            setCurrentRole('MASTER_ADMIN');
+          } else if (upperRoles.includes('ADMIN')) {
+            setCurrentRole('ADMIN');
+          } else if (upperRoles.includes('CHIEF_EDITOR') || upperRoles.includes('EDITOR')) {
+            setCurrentRole('EDITOR');
+          } else if (upperRoles.includes('REPORTER')) {
+            setCurrentRole('REPORTER');
+          } else {
+            setCurrentRole('READER');
+          }
+        } else {
+          setAuthUser(null);
+          setCurrentRole('READER');
+        }
+      } catch {
+        if (isMounted) {
+          setAuthUser(null);
+          setCurrentRole('READER');
+        }
+      } finally {
+        if (isMounted) setIsAuthChecking(false);
+      }
+    }
+    checkAuthSession();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // URL Hash Synchronizer with Strict Server-Side Role Route Guards
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase();
       const pathname = window.location.pathname.replace('/', '').toLowerCase();
       const target = hash || pathname;
 
-      if (target === 'reporter' || target === 'newsroom' || target === 'admin' || target === 'epaper' || target === 'search' || target === 'profile') {
+      if (target === 'epaper' || target === 'search' || target === 'profile') {
         setSelectedArticleId(null);
         setActiveTab(target as NavTab);
+      } else if (target === 'reporter') {
+        if (['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole)) {
+          setSelectedArticleId(null);
+          setActiveTab('reporter');
+        } else {
+          window.location.hash = '';
+          setSelectedArticleId(null);
+          setActiveTab('home');
+        }
+      } else if (target === 'newsroom') {
+        if (['MASTER_ADMIN', 'ADMIN', 'EDITOR'].includes(currentRole)) {
+          setSelectedArticleId(null);
+          setActiveTab('newsroom');
+        } else {
+          window.location.hash = '';
+          setSelectedArticleId(null);
+          setActiveTab('home');
+        }
+      } else if (['admin', 'graphics', 'videos', 'ai-newsroom'].includes(target)) {
+        if (['MASTER_ADMIN', 'ADMIN'].includes(currentRole)) {
+          setSelectedArticleId(null);
+          setActiveTab(target as NavTab);
+        } else {
+          window.location.hash = '';
+          setSelectedArticleId(null);
+          setActiveTab('home');
+        }
       } else if (target === 'home' || target === '') {
         setSelectedArticleId(null);
         setActiveTab('home');
@@ -98,29 +167,23 @@ export const App: React.FC = () => {
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [currentRole]);
 
-  // Shared Backend Server Data Synchronizer (Section 7, STEP E)
+  // Shared Backend Server Data Synchronizer
   useEffect(() => {
     let isMounted = true;
     async function syncSharedBackend() {
       try {
-        const [pubArticlesRes, queueRes, tickersRes, adsRes, reportersRes, logsRes] = await Promise.all([
+        // 1. Public Feeds for all visitors
+        const [pubArticlesRes, tickersRes, adsRes] = await Promise.all([
           apiClient.publicNews.fetchArticles({ status: 'PUBLISHED' }),
-          apiClient.newsroom.fetchIncomingQueue(),
-          apiClient.admin.fetchTickers(),
-          apiClient.admin.fetchAds(),
-          apiClient.admin.fetchReporters(),
-          apiClient.admin.fetchAuditLogs(),
+          apiClient.publicNews.fetchBreakingTickers(),
+          apiClient.publicNews.fetchAds(),
         ]);
 
         if (!isMounted) return;
-        if (pubArticlesRes.items && pubArticlesRes.items.length > 0) {
+        if (pubArticlesRes?.items && pubArticlesRes.items.length > 0) {
           setArticles(pubArticlesRes.items);
-        }
-        if (queueRes && queueRes.length > 0) {
-          setPendingStories(queueRes);
-          setReporterDrafts(queueRes);
         }
         if (tickersRes && tickersRes.length > 0) {
           setTickers(tickersRes);
@@ -128,11 +191,26 @@ export const App: React.FC = () => {
         if (adsRes && adsRes.length > 0) {
           setAds(adsRes);
         }
-        if (reportersRes && reportersRes.length > 0) {
-          setReporters(reportersRes);
-        }
-        if (logsRes && logsRes.length > 0) {
-          setAuditLogs(logsRes);
+
+        // 2. Privileged Feeds only for authenticated Staff / Admins
+        if (['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole)) {
+          const [queueRes, reportersRes, logsRes] = await Promise.allSettled([
+            apiClient.newsroom.fetchIncomingQueue(),
+            apiClient.admin.fetchReporters(),
+            apiClient.admin.fetchAuditLogs(),
+          ]);
+
+          if (!isMounted) return;
+          if (queueRes.status === 'fulfilled' && queueRes.value?.length > 0) {
+            setPendingStories(queueRes.value);
+            setReporterDrafts(queueRes.value);
+          }
+          if (reportersRes.status === 'fulfilled' && reportersRes.value?.length > 0) {
+            setReporters(reportersRes.value);
+          }
+          if (logsRes.status === 'fulfilled' && logsRes.value?.length > 0) {
+            setAuditLogs(logsRes.value);
+          }
         }
       } catch (err) {
         console.warn('[BNW Shared Backend Sync] Using initial offline state:', err);
@@ -142,7 +220,7 @@ export const App: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [currentRole]);
 
   const navigateToTab = (tab: NavTab) => {
     setSelectedArticleId(null);
@@ -764,6 +842,7 @@ export const App: React.FC = () => {
                 bookmarkedArticles={bookmarkedArticlesList}
                 onArticleClick={handleArticleClick}
                 onRemoveBookmark={(id) => handleBookmarkToggle(id)}
+                onNavigateTab={navigateToTab}
               />
             )}
 

@@ -387,6 +387,17 @@ This section constitutes the canonical, historical Keep a Changelog record for t
 ## [Unreleased]
 
 ### Added
+- **[Public User Experience & Master Admin RBAC Security] Public User Experience, Google-Based Master Admin Authentication & Role-Based Dashboard Access (BNW-MASTER-040):**
+  - Implemented default public reader experience on `breakingnewswala.com` (Reader mode by default, completely removing internal desk tabs, navigation shortcuts, and client-side role switches from public view).
+  - Restricted Master Admin privileges strictly to two authorized Google accounts (`breakingnewswala.com@gmail.com` with alias `breakingnewswala@gmail.com`, and `riturajtomarorchha@gmail.com`) via verified Firebase Google ID tokens (`email_verified === true`).
+  - Enforced centralized server-side RBAC guards on `/api/v1/admin/*`, returning structured JSON HTTP 401 `ERR_UNAUTHORIZED` for unauthenticated requests and HTTP 403 `ERR_FORBIDDEN` for unauthorized users.
+  - Added public endpoints `GET /api/v1/tickers` and `GET /api/v1/ads`, isolating public readers from administrative endpoints.
+  - Implemented client-side URL hash route guards in `src/App.tsx` blocking unauthorized direct hash navigation (`#admin`, `#newsroom`, `#reporter`, `#graphics`, `#videos`, `#ai-newsroom`) and resetting to `home`.
+  - Added authoritative session restoration on startup (`GET /api/v1/auth/me`), ensuring client privileges reflect server truth.
+  - Authored comprehensive automated test suite `tests/backend-master-admin-auth.test.js` covering 31 test scenarios across public access, ordinary Google users, authorized Master Admins, anti-spoofing defenses, and operational workflows (100% pass rate).
+  - Updated `tests/backend-runtime-server.test.js` with dynamic CSS bundle hash discovery.
+  - Verified 100% pass rate across all 90 backend and security tests, clean TypeScript typecheck (`npx tsc --noEmit` -> 0 errors), and successful production Vite build.
+
 - **[App Hosting Build & Deploy Readiness Confirmation] Firebase App Hosting Build & Deploy Readiness Confirmation (BNW-MASTER-034):**
   - Executed end-to-end technical simulation and readiness confirmation of Google Cloud Buildpacks, Cloud Run container boot sequences, and App Hosting continuous deployment triggers:
     1. **Health Probe Remediation (`server.js`)**:
