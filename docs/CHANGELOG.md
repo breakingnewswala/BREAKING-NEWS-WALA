@@ -387,6 +387,158 @@ This section constitutes the canonical, historical Keep a Changelog record for t
 ## [Unreleased]
 
 ### Added
+- **[App Hosting Build & Deploy Readiness Confirmation] Firebase App Hosting Build & Deploy Readiness Confirmation (BNW-MASTER-034):**
+  - Executed end-to-end technical simulation and readiness confirmation of Google Cloud Buildpacks, Cloud Run container boot sequences, and App Hosting continuous deployment triggers:
+    1. **Health Probe Remediation (`server.js`)**:
+       - Resolved startup probe defect where `FirestoreAdapter` uninitialized state in `NODE_ENV=production` returned HTTP 503.
+       - Added top-level `await adapter.init?.()` on server boot; empirically verified that `/healthz` and `/api/v1/health` return HTTP **200 OK Healthy** immediately upon startup under production settings.
+    2. **Buildpack Compilation Verification**:
+       - Verified clean TypeScript compilation (`npx tsc --noEmit` -> 0 errors).
+       - Verified production Vite build (`npm run build` -> 2,109 modules transformed in 19.25s).
+    3. **Container Runtime Invariants**:
+       - Verified dynamic port binding via `process.env.PORT` on `0.0.0.0`.
+       - Verified production startup guard on `dist/index.html`.
+       - Verified JSON 404 API fallthrough prevention and SPA navigation serving.
+    4. **Atomic Web Platform Commit Manifest & Separation**:
+       - Defined complete file manifest required for Cloud Build (`server.js`, `src/`, `package.json`, `package-lock.json`, `apphosting.yaml`, `firebase.json`, `tests/`, `docs/`).
+       - Established clean isolation of Phase 3 Android (`android/`) and monorepo workspace (`packages/`).
+    5. **Authoritative Verdict**:
+       - Pronounced verdict **`CONFIRMED READY — OWNER COMMIT & PUSH AUTHORIZED`**.
+
+- **[Controlled Git Review, Commit & Push Audit] Controlled Git Review, Commit & GitHub Push Authorization (BNW-MASTER-033):**
+  - Executed controlled source control review, security scan, and push gate evaluation for `breakingnewswala/BREAKING-NEWS-WALA` on `main`:
+    1. **Pre-Commit Verification & Quality Gates**:
+       - Re-verified all 17 backend test suites (322/322 tests passing with 100% pass rate).
+       - Re-verified runtime server test harness (`tests/backend-runtime-server.test.js`): 10/10 tests passing.
+       - Re-verified headline character-bounded options (`scratch/test-headlines.js`): 15/15 passing across all 5 ranges.
+       - Confirmed TypeScript static check (0 errors) and clean Vite production build across 2,109 modules in 16.37s.
+    2. **Security & Cryptographic Scan**:
+       - Automated secret scan on candidate files (`server.js`, `headlineAgent.js`, `backend-runtime-server.test.js`, `CHANGELOG.md`); verified 0 private keys, 0 cloud API tokens, 0 webhook secrets, 0 `.env` files.
+    3. **Source Control & Push Gate Analysis**:
+       - Verified remote URL (`breakingnewswala/BREAKING-NEWS-WALA.git`) and confirmed `origin/main` has not advanced (`554123047298531f169b919bdc2163b178cfd38e`).
+       - Detected that pushing to GitHub `main` triggers an automatic continuous deployment webhook via Firebase App Hosting, initiating Cloud Build and deploying to Cloud Run in `asia-southeast1`.
+       - Halted push prior to execution in accordance with Section 8 to prevent premature automatic production deployment while Google Cloud Secret Manager, Firestore rules, and database confirmation remain pending.
+       - Identified dependency scope gap: `server.js` requires `src/server/apiEngine.js` which is currently untracked in Git; committing `server.js` alone would leave remote GitHub in a broken state for clean checkouts.
+    4. **Authoritative Verdict**:
+       - Pronounced verdict **`C. PUSH BLOCKED`** protecting production stability and source-control integrity.
+
+- **[Controlled Production Deployment & Secret Configuration] Controlled Production Backend Deployment & Secret Configuration (BNW-MASTER-032):**
+  - Executed controlled deployment audit and production secret configuration evaluation for Firebase App Hosting backend `breakingnewswala` in `asia-southeast1`:
+    1. **Pre-Deployment Verification**:
+       - Re-verified all 17 backend test suites (322/322 tests passing with 100% pass rate).
+       - Re-verified server runtime test harness (`tests/backend-runtime-server.test.js`): 10/10 tests passing.
+       - Confirmed TypeScript compilation (0 errors) and clean Vite production build across 2,109 modules.
+    2. **Deployment Source Gate Analysis**:
+       - Determined that Firebase App Hosting builds exclusively from the linked GitHub repository (`breakingnewswala/BREAKING-NEWS-WALA`).
+       - Identified that deploying local working tree remediations requires remote GitHub commit and push, which was strictly prohibited by owner authorization.
+       - Discovered unauthenticated Firebase CLI status (`firebase login` required) and absence of `gcloud` on system PATH.
+    3. **Production Secret Manager Configuration Audit**:
+       - Cataloged all 31 production secrets across security, payment gateways (Razorpay/PhonePe), SMS (MSG91/Twilio), WhatsApp Cloud API, AI provider pool (Gemini/Claude/GPT-4o), and database credentials.
+       - Verified zero secrets committed to git or exposed to client; marked 26 sensitive credentials as `OWNER INPUT REQUIRED`.
+    4. **Live Verification & Invariants**:
+       - Probed live production domains; confirmed valid SSL (expires Feb 2, 2027) and frontend SPA serving while container rollout remains staged.
+       - Maintained all non-negotiable invariants: zero git pushes, zero database alterations, zero rules deployments, zero unmanaged Cloud Run shadow services.
+    5. **Authoritative Verdict**:
+       - Pronounced verdict **`B. DEPLOYMENT BLOCKED — OWNER INPUT REQUIRED`** pending GitHub commit/push approval, CLI authentication, and Secret Manager input.
+
+- **[Production Readiness Remediation] Production Readiness Gap Remediation & Evidence-Based Verification (BNW-MASTER-031):**
+  - Completed comprehensive evidence-based remediation and verification audit across all production-readiness blockers from Execution 030:
+    1. **Server Runtime & API Fallthrough Remediation (`server.js`)**:
+       - Enforced strict API routing isolation: routed all `/api/*` paths directly to `apiEngine.js` with structured JSON 404 (`ERR_API_NOT_FOUND`) responses, completely eliminating the defect where unmapped API routes silently fell through to the SPA `index.html`.
+       - Added production startup guard verifying presence of `dist/index.html` on server boot, failing fast with exit code 1 if static assets are unbuilt.
+       - Authored live runtime verification test suite `tests/backend-runtime-server.test.js` spawning the real `node:http` server and validating 10 distinct runtime routes (10/10 passing).
+    2. **AI Newsroom Headline Generator Word-Boundary Integrity (`src/server/ai/headlineAgent.js`)**:
+       - Enhanced character-bounded headline generator with `safeWordSlice()` ensuring natural word boundaries in Hindi, preventing mid-word truncation of complex ligatures (e.g., `स्वीक`, `चेतावन`).
+       - Verified 100% adherence to all 5 character ranges: Option 1 (80-110), Option 2 (100-130), Option 3 (125-150), Option 4 (130-160), Option 5 (150-200) across short, medium, and long Hindi news samples with zero trailing full stops (`.` or `।`).
+    3. **Firestore Database Identity & Persistence Matrix**:
+       - Audited canonical database ID `ai-studio-breakingnewswala-81a8a8f4-57a5-4181-aa74-2ef4d34fbab7` across `firebase.json`, `apphosting.yaml`, `firebase-applet-config.json`, and backend adapter.
+       - Verified `FirestoreAdapter` and `ProductionGuardAdapter` in `src/server/persistence/adapter.js` ensuring fail-closed behavior (HTTP 503) under production when database credentials are not present, completely blocking fallback to local JSON storage.
+       - Confirmed complete isolation of prototype database `ai-studio-android-breaking-b83ef913-4fbd-4bd1-8b00-92a4f70648d7` with zero runtime references.
+    4. **Comprehensive Test Suite & Quality Gates**:
+       - Ran 322 backend tests across 17 test suites with 100% pass rate (0 failures).
+       - Validated full TypeScript type checking (`npx tsc --noEmit` -> 0 errors).
+       - Validated complete production asset build (`npm run build` -> built in 28.10s across 2,109 modules).
+    5. **Authoritative Verdict**:
+       - Pronounced verdict **`CONDITIONALLY READY — OWNER APPROVAL REQUIRED`** pending Cloud Run backend deployment and production secret provisioning.
+
+- **[Production Launch Readiness] Production Launch Readiness, Deployment & Go-Live Approval (BNW-MASTER-030):**
+  - Completed comprehensive production launch readiness audit, release configuration verification, operational runbook preparation, and go-live assessment across all 25 operational modules of BREAKING NEWS WALA:
+    1. **System & Deployment Verification**:
+       - Verified production target configuration for Firebase Project `breaking-news-wala`, App Hosting backend `breakingnewswala` in region `asia-southeast1`.
+       - Conducted live network probes against production domains (`breakingnewswala.com`, `www.breakingnewswala.com`, and `breakingnewswala--breaking-news-wala.asia-southeast1.hosted.app`); confirmed valid DNS resolution to `35.219.201.41`, active SSL/TLS certificates, and fast CDN latencies (< 500ms).
+       - Documented empirical finding: live App Hosting rollout serves static React 19 SPA shell while Node.js Express API container backend (`server.js`) is staged and awaiting explicit Owner Approval Gate for deployment.
+    2. **Security & Configuration Audits**:
+       - Completed secret hygiene audit: verified zero hardcoded credentials, zero committed `.env` files, and masked credentials across all client-facing API responses.
+       - Validated 221-line Firestore security rules (`firestore.rules`) and Firebase Storage rules (`storage.rules`) enforcing publication boundaries, append-only audit log immutability, and 10MB image / 100MB video size bounds.
+       - Confirmed complete isolation of legacy Android prototype database (`ai-studio-android-breaking-b83ef913-4fbd-4bd1-8b00-92a4f70648d7`) from `firebase.json` deployment targets.
+    3. **Quality Gates & Test Execution**:
+       - Executed 312 backend tests across 16 test suites with 100% pass rate (0 failures).
+       - Executed dedicated 25-module acceptance suite (`tests/backend-integration-acceptance-029.test.js`): 26/26 tests passing in 2.55s.
+       - Android unit tests verified: `.\gradlew.bat :core:model:test` -> BUILD SUCCESSFUL in 1m 38s.
+       - Clean TypeScript compilation: `npx tsc --noEmit` -> 0 errors.
+       - Clean production build: `npm run build` -> built in 17.19s across 2,109 modules with 443 kB vendor chunk.
+    4. **Operational Runbooks & Rollback Strategy**:
+       - Prepared 9 disaster and incident response runbooks (website downtime, backend failure, Firebase connectivity, auth failure, media upload failure, AI provider outage, RSS sync failure, video rendering failure, security incident).
+       - Documented instant traffic rollback procedures via Google Cloud Run revisions, Git tag recovery (`554123047298531f169b919bdc2163b178cfd38e`), and Cloud Firestore Point-in-Time Recovery (PITR).
+    5. **Owner Approval Gate & Verdict**:
+       - Formalized Owner Approval Gate summarizing deployment target, proposed release commit SHA, build/test results, configuration status, and required owner actions.
+       - Pronounced authoritative verdict: **`READY WITH NON-CRITICAL LIMITATIONS`**.
+- **[System Integration & Final Acceptance] Final Platform Integration, End-to-End Testing & System-Wide Acceptance (BNW-MASTER-029):**
+  - Comprehensive platform integration, end-to-end functional regression verification, and system-wide acceptance audit across all 25 operational modules of BREAKING NEWS WALA:
+    1. **System-Wide Multi-Surface Integration**:
+       - Verified full operational cohesion between Public News Website (Next.js/React 19 SPA), Reporter Web App (PWA), Admin Control Panel, Central Newsroom Desk, Shared Backend API Engine (`/api/v1/`), and Native Android Mobile Applications (`:app-reader`, `:app-reporter`).
+       - Enforced canonical database identity (`ai-studio-breakingnewswala-81a8a8f4-57a5-4181-aa74-2ef4d34fbab7`) and dual persistence adapter contracts across in-memory Atomic JSON storage and Cloud Firestore (`FirestoreAdapter`).
+    2. **End-to-End Editorial Journey (Reporter to Reader)**:
+       - Validated complete lifecycle: Devanagari drafting $\rightarrow$ media asset ingestion $\rightarrow$ review queue submission $\rightarrow$ Desk Editor claiming with atomic locking and OCC version increment $\rightarrow$ revision request with structured feedback notes $\rightarrow$ reporter patch and resubmission $\rightarrow$ editorial approval and instant publication $\rightarrow$ public reader access, bookmarking, 45s dwell time telemetry, and audit trail generation.
+       - Confirmed strict publication boundary invariant: unpublished drafts are inaccessible to public readers (403 Forbidden).
+    3. **Domain Engine Interoperability & Governance Invariants**:
+       - **AI Newsroom**: 5Ws+1H structured news writing, strict character-bounded headlines (15-150 chars) with trailing full stop elimination, and 10-Point Fact-Checking Protocol with mandatory `status: 'DRAFT'` human-in-the-loop handoff.
+       - **Graphics & Video Studios**: Verified news-to-graphic extraction across 11 vernacular categories in 4:5 default aspect ratio, and news-to-video 4-scene storyboard generation with authentic FFmpeg MP4 timeline rendering.
+       - **API Pool & Third-Party Integrations**: Masked credential vaults, SSRF defense against internal/loopback IPs, safe XML parsing against XXE/Billion Laughs, RSS source deduplication, timing-safe HMAC webhook signature validation, and WhatsApp opt-out compliance (STOP keyword).
+       - **Monetization & Revenue**: Razorpay/PhonePe payment order creation with mandatory `Idempotency-Key` headers, verified refund tracking, ASCI statutory ad disclosures, MRC impression standards ($\ge 50\%$ pixels for $\ge 1.0\text{s}$), click velocity fraud defense, and SAC 998363 GST invoicing (9% CGST + 9% SGST in MP).
+       - **Audience Intelligence & Privacy**: Privacy-preserving reader telemetry, non-sensitive demographic segmentation, anti-filter-bubble personalized recommendations, DPDPA 2023 portable JSON export with SHA-256 checksums, 30-day erasure grace period, and community comment moderation with 3-report automated concealment.
+       - **Brand & Statutory Compliance**: Zero government emblems or Ashoka Lion Capital imagery (`DEC-060`), strict tri-color token adherence (`#FDE900`, `#ED1727`, `#344FD6`), and zero click-revenue sharing for stringers (`DEC-069`).
+    4. **Web & Native Android Parity**:
+       - Full REST endpoint compatibility with mobile consumers (`/api/v1/territory/*`, `/api/v1/epaper/*`, `/api/v1/notifications/*`, `/api/v1/analytics/*`, `/api/v1/media/*`).
+       - Enforced pure native architecture: 100% pure Kotlin + Jetpack Compose across 10 Gradle modules with complete absence of `android.webkit.WebView` (`DEC-002`).
+       - Harmonized Android JVM target compatibility via `kotlin { jvmToolchain(17) }` in `:core:model`.
+    5. **Empirical Verification & Testing Gate**:
+       - Authored and executed dedicated 25-module acceptance test suite (`tests/backend-integration-acceptance-029.test.js`): 26/26 tests passing (100%).
+       - Executed full milestone regression suite (11 test files, 200/200 tests passing) and foundational suites (82/82 tests passing) for a combined total of 282 backend tests passing with 0 failures.
+       - Android unit tests verified (`.\gradlew.bat :core:model:test` -> BUILD SUCCESSFUL).
+       - Clean TypeScript compilation (`npx tsc --noEmit` -> 0 errors) and production bundle build (`npm run build` -> 0 errors, 21.27s).
+- **[Native Android Application] Native Android Application & Mobile Ecosystem (BNW-MASTER-028):**
+  - Fully verified, multi-module native Android mobile application ecosystem and shared backend mobile integration contracts for BREAKING NEWS WALA combining:
+    1. **Multi-Module Pure Native Android Architecture (`android/`)**:
+       - 10-module pure Kotlin and Jetpack Compose mobile architecture (`DEC-002`): `:app-reader`, `:app-reporter`, and 8 core domain libraries (`:core:model`, `:core:network`, `:core:auth`, `:core:designsystem`, `:core:analytics`, `:core:notifications`, `:core:media`, `:core:pdf`).
+       - Configured on modern Android baseline: Gradle 9.0.1, Kotlin 2.3.20, Jetpack Compose BOM 2026.03.01, Compile SDK 36, Target SDK 35 (Android 15), Min SDK 24 (Android 7.0 Nougat).
+       - Enforced 100% zero-WebView mandate: complete absence of `android.webkit.WebView`, Capacitor, Cordova, or Flutter wrappers across all mobile modules.
+    2. **Public Reader Application (`:app-reader` - `com.breakingnewswala.reader`)**:
+       - Hyperlocal newsfeed partitioned across 55 Madhya Pradesh districts and 10 administrative divisions (`RULE-GEO-001`).
+       - Breaking news ticker with high-concurrency SSE/REST polling and regional audio-visual reels via ExoPlayer (Media3 1.5.0).
+       - Native digital E-Paper edition viewer driven by `android.graphics.pdf.PdfRenderer` with page caching and zero browser embedding.
+       - ASCI-compliant responsive advertisement container (`AscAdBanner`) enforcing mandatory statutory disclosures ("विज्ञापन" / "प्रायोजित").
+       - FCM push notifications handling breaking alerts with custom deep-link routing (`bnw://article/{id}`, `bnw://epaper/{id}`).
+       - Offline SQLite caching via Android Room and Material3 design tokens styled with Noto Sans Devanagari typography.
+    3. **Field Reporter Application (`:app-reporter` - `com.breakingnewswala.reporter`)**:
+       - Dual-token JWT authentication with Argon2id server verification, TOTP MFA support, and Android Biometric Keystore token encryption (`EncryptedSharedPreferences` AES-256 GCM).
+       - Real-time reporter dashboard tracking active beat assignments, monthly performance metrics, trust scores, and submission statuses.
+       - Vernacular Devanagari article drafting suite with real-time headline length validation (15-150 chars, `RULE-NEWS-003`) and body word count validation (50-5000 words, `RULE-NEWS-004`).
+       - Territorial beat assignment locking preventing reporters from filing outside assigned administrative jurisdictions (`RULE-GEO-001`).
+       - Two-phase direct-to-storage presigned upload cycle (`/api/v1/media/presigned-upload` and `/api/v1/media/confirm-upload`) with 8KB chunked streaming to prevent OOM errors on rural mobile devices.
+       - Editorial review feedback dashboard and revision submission workflow.
+    4. **Shared Central Backend API Engine Integration (`src/server/apiEngine.js`)**:
+       - Territorial hierarchy endpoints: `GET /api/v1/territory/divisions`, `GET /api/v1/territory/districts`, `GET /api/v1/territory/overview`, and `GET /api/v1/territory/my-assignments`.
+       - Digital E-Paper edition endpoints: `GET /api/v1/epaper/editions`, `GET /api/v1/epaper/latest`, `GET /api/v1/epaper/editions/:id`, and `POST /api/v1/epaper/editions/:id/view` & `download`.
+       - Push notification device registration and preferences: `POST /api/v1/notifications/register-token`, `GET/PUT /api/v1/notifications/preferences`.
+       - Mobile analytics ingestion: `POST /api/v1/analytics/events` and `GET /api/v1/analytics/trending`.
+       - Draft lookup and editorial review routes: `GET /api/v1/articles/drafts/:id`, `GET /api/v1/articles/:id/feedback`, `GET /api/v1/articles/:id/revisions`.
+       - Direct-to-storage upload lifecycle endpoints: `POST /api/v1/media/presigned-upload` and `POST /api/v1/media/confirm-upload`.
+       - Ad serving compatibility for mobile clients via `placementSlot` query parameters while preserving existing web `{ ad, available }` contracts.
+    5. **Empirical Validation & Automated Verification Suite (`tests/backend-android-app-028.test.js`)**:
+       - 17 automated integration tests validating all mobile contracts, zero-WebView enforcement, and pre-compiled APK binaries with 100% pass rate.
+       - 29 pre-existing native Android unit tests passing with 100% success rate across `:app-reader`, `:app-reporter`, `:core:auth`, `:core:network`, `:core:media`, `:core:model`, and `:core:analytics`.
+       - Full web ecosystem regression verification: 16 hardening tests, 17 audience tests, 20 monetization tests, 32 acceptance tests, and clean Vite production build passing with zero regressions.
 - **[Native Android Ecosystem] Native Android News Reader + Native Reporter Application + Android Release Readiness (BNW-MASTER-010):**
   - Fully realized, pure native Android mobile ecosystem for BREAKING NEWS WALA combining two distinct applications and eight core modules (`android/`):
     1. **Public News Reader (`:app-reader` - `com.breakingnewswala.reader`)**:

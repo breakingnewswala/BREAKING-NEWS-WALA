@@ -1,15 +1,32 @@
-# Firebase App Hosting Configuration for BREAKING NEWS WALA (React + Vite)
+# Firebase App Hosting Configuration for BREAKING NEWS WALA (React + Vite + Node.js API Engine)
 # Backend: breakingnewswala (asia-southeast1)
 
 runConfig:
   cpu: 1
   memoryMiB: 512
-  minInstances: 0
+  minInstances: 1
   maxInstances: 10
   concurrency: 80
 
 env:
   - variable: NODE_ENV
-    value: development
+    value: production
     availability:
       - BUILD
+      - RUNTIME
+  - variable: PERSISTENCE_MODE
+    value: firestore
+    availability:
+      - RUNTIME
+  - variable: FIRESTORE_DATABASE_ID
+    value: ai-studio-breakingnewswala-81a8a8f4-57a5-4181-aa74-2ef4d34fbab7
+    availability:
+      - RUNTIME
+  - variable: FIREBASE_PROJECT_ID
+    value: breaking-news-wala
+    availability:
+      - RUNTIME
+  - variable: FIREBASE_STORAGE_BUCKET
+    value: breaking-news-wala.firebasestorage.app
+    availability:
+      - RUNTIME

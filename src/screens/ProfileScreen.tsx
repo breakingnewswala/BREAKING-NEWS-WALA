@@ -14,10 +14,18 @@ import {
   Award,
   LogIn,
   LogOut,
+  History,
+  Download,
+  Trash2,
+  RefreshCw,
+  MessageSquare,
+  AlertCircle,
+  Check,
 } from 'lucide-react';
-import { AppRole, ArticleDetail } from '../types';
+import { AppRole, ArticleDetail, ReadingHistoryRecord, UserPreferences } from '../types';
 import { auth, signInWithGoogle, logOut } from '../firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
+import { apiClient } from '../services/apiClient';
 
 interface ProfileScreenProps {
   currentRole: AppRole;
@@ -43,17 +51,101 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const [quietHours, setQuietHours] = useState(false);
   const [selectedHomeDistrict, setSelectedHomeDistrict] = useState('भोपाल (Bhopal)');
 
+  // Master Execution 026: Audience Intelligence & Engagement States
+  const [readingHistory, setReadingHistory] = useState<ReadingHistoryRecord[]>([]);
+  const [dpdpaMessage, setDpdpaMessage] = useState<string | null>(null);
+  const [feedbackCategory, setFeedbackCategory] = useState<'fact_error' | 'typo_grammar' | 'offensive_content' | 'app_bug' | 'general_feedback'>('general_feedback');
+  const [feedbackComments, setFeedbackComments] = useState('');
+  const [feedbackCorrection, setFeedbackCorrection] = useState('');
+  const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user: FirebaseUser | null) => {
       setCurrentUser(user);
+      if (user) {
+        apiClient.audience.getReadingHistory(20).then(setReadingHistory).catch(() => {});
+        apiClient.audience.getUserPreferences().then((p) => {
+          if (p.breakingAlertsEnabled !== undefined) setBreakingAlerts(p.breakingAlertsEnabled);
+        }).catch(() => {});
+      }
     });
     return () => unsubscribe();
   }, []);
 
+  const handleClearHistory = async () => {
+    try {
+      await apiClient.audience.clearReadingHistory();
+      setReadingHistory([]);
+      setDpdpaMessage('आपका पठन इतिहास सफलतापूर्वक साफ़ कर दिया गया है।');
+    } catch {
+      setDpdpaMessage('पठन इतिहास साफ़ करने में त्रुटि।');
+    }
+  };
+
+  const handleExportData = async () => {
+    try {
+      const data = await apiClient.audience.exportPrivacyData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bnw-dpdpa-data-export-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setDpdpaMessage('DPDPA 2023 डेटा एक्सपोर्ट पैकेज सफलतापूर्वक डाउनलोड हो गया।');
+    } catch {
+      setDpdpaMessage('डेटा एक्सपोर्ट पैकेज जनरेट करने में त्रुटि।');
+    }
+  };
+
+  const handleResetPersonalization = async () => {
+    try {
+      await apiClient.audience.resetPersonalization();
+      setDpdpaMessage('आपकी वैयक्तिकरण प्राथमिकताएं तटस्थ डिफ़ॉल्ट पर रीसेट कर दी गई हैं।');
+    } catch {
+      setDpdpaMessage('वैयक्तिकरण रीसेट करने में त्रुटि।');
+    }
+  };
+
+  const handleDeleteAccountRequest = async () => {
+    if (!window.confirm('क्या आप 30 दिनों की अनुग्रह अवधि के साथ खाता विलोपन अनुरोध दर्ज करना चाहते हैं?')) return;
+    try {
+      const res = await apiClient.audience.requestAccountDeletion('पाठक द्वारा अनुरोध');
+      setDpdpaMessage(res.messageHi || 'खाता विलोपन अनुरोध दर्ज कर लिया गया है।');
+    } catch {
+      setDpdpaMessage('खाता विलोपन अनुरोध में त्रुटि।');
+    }
+  };
+
+  const handleSubmitFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackComments.trim()) return;
+    try {
+      await apiClient.audience.submitFeedback({
+        category: feedbackCategory,
+        comments: feedbackComments,
+        suggestedCorrection: feedbackCorrection || undefined,
+      });
+      setFeedbackSuccess('आपकी प्रतिक्रिया/तथ्य संशोधन संपादकीय डेस्क को प्रेषित कर दिया गया है।');
+      setFeedbackComments('');
+      setFeedbackCorrection('');
+    } catch (err: any) {
+      setFeedbackSuccess(err.message || 'फीडबैक प्रेषण विफल।');
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setIsAuthLoading(true);
     try {
-      await signInWithGoogle();
+      const user = await signInWithGoogle();
+      if (user) {
+        try {
+          const idToken = await user.getIdToken();
+          await apiClient.auth.loginWithFirebase(idToken);
+        } catch (apiErr) {
+          console.warn('Backend session exchange notice:', apiErr);
+        }
+      }
     } catch (error) {
       console.error('Firebase Auth Sign In Failed:', error);
       alert('Google साइन-इन में समस्या आई। कृपया पुनः प्रयास करें।');
@@ -65,6 +157,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   const handleSignOut = async () => {
     try {
       await logOut();
+      await apiClient.auth.logout();
     } catch (error) {
       console.error('Sign Out Failed:', error);
     }
@@ -305,6 +398,152 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               />
             </label>
           </div>
+        </div>
+
+        {/* 4b. Reading History (Master Execution 026) */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <History className="w-4 h-4 text-indigo-600" />
+              पठन इतिहास (Reading History)
+            </h3>
+            {readingHistory.length > 0 && (
+              <button
+                onClick={handleClearHistory}
+                className="text-xs text-red-600 hover:text-red-700 font-bold flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>इतिहास साफ़ करें</span>
+              </button>
+            )}
+          </div>
+
+          {readingHistory.length === 0 ? (
+            <p className="text-xs text-slate-500 py-2 text-center">
+              हाल ही में पढ़ा गया कोई समाचार उपलब्ध नहीं है।
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {readingHistory.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => onArticleClick(item.articleId)}
+                  className="p-2 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-indigo-600">{item.districtName || 'मध्य प्रदेश'}</span>
+                    <h5 className="font-bold text-slate-900 truncate">{item.articleTitle}</h5>
+                  </div>
+                  <span className="text-[10px] text-slate-500 shrink-0">
+                    {item.dwellTimeSeconds ? `${item.dwellTimeSeconds}s पढ़ा` : 'अवलोकन'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 4c. DPDPA 2023 Privacy Rights & Data Governance */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+            <Shield className="w-4 h-4 text-emerald-600" />
+            डिजिटल व्यक्तिगत डेटा संरक्षण (DPDPA 2023) अधिकार:
+          </h3>
+
+          <p className="text-xs text-slate-600 leading-relaxed">
+            भारतीय डिजिटल व्यक्तिगत डेटा संरक्षण अधिनियम (DPDPA 2023) के अंतर्गत आपको अपने डेटा पोर्टेबिलिटी, विलोपन एवं तटस्थ वैयक्तिकरण का पूर्ण अधिकार प्राप्त है।
+          </p>
+
+          {dpdpaMessage && (
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg text-xs flex items-center gap-2">
+              <Check className="w-4 h-4 shrink-0 text-emerald-600" />
+              <span>{dpdpaMessage}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+            <button
+              onClick={handleExportData}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold border border-slate-200 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5 text-blue-600" />
+              <span>डेटा एक्सपोर्ट</span>
+            </button>
+            <button
+              onClick={handleResetPersonalization}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold border border-slate-200 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+              <span>वैयक्तिकरण रीसेट</span>
+            </button>
+            <button
+              onClick={handleDeleteAccountRequest}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold border border-red-200 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+              <span>खाता विलोपन</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4d. Reader Feedback & Article Corrections Form */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+            <MessageSquare className="w-4 h-4 text-blue-600" />
+            पाठक फीडबैक एवं तथ्य संशोधन (Correction Request):
+          </h3>
+
+          <form onSubmit={handleSubmitFeedback} className="space-y-2.5 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">फीडबैक श्रेणी *</label>
+                <select
+                  value={feedbackCategory}
+                  onChange={(e: any) => setFeedbackCategory(e.target.value)}
+                  className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                >
+                  <option value="fact_error">तथ्य त्रुटि / संशोधन (Fact Error)</option>
+                  <option value="typo_grammar">वर्तनी / व्याकरण (Typo / Grammar)</option>
+                  <option value="offensive_content">आपत्तिजनक सामग्री (Offensive)</option>
+                  <option value="app_bug">ऐप / तकनीकी त्रुटि (App Bug)</option>
+                  <option value="general_feedback">सामान्य सुझाव (General Feedback)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">प्रस्तावित संशोधन (वैकल्पिक)</label>
+                <input
+                  type="text"
+                  value={feedbackCorrection}
+                  onChange={(e) => setFeedbackCorrection(e.target.value)}
+                  placeholder="सही तथ्य अथवा लिंक..."
+                  className="w-full p-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">विस्तृत विवरण / टिप्पणी *</label>
+              <textarea
+                value={feedbackComments}
+                onChange={(e) => setFeedbackComments(e.target.value)}
+                rows={2}
+                placeholder="कृपया विस्तृत विवरण लिखें..."
+                className="w-full p-2 border border-slate-300 rounded-lg"
+                required
+              />
+            </div>
+
+            {feedbackSuccess && (
+              <p className="text-emerald-700 font-bold text-xs">{feedbackSuccess}</p>
+            )}
+
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors"
+            >
+              फीडबैक प्रेषित करें
+            </button>
+          </form>
         </div>
 
         {/* 5. Legal, Grievance Redressal & Editorial Policy (Indian IT Rules 2021) */}

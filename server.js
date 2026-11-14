@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handleHealthCheck, handleApiRequest, adapter } from './src/server/apiEngine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,24 +26,57 @@ const MIME_TYPES = {
   '.woff2': 'font/woff2',
   '.ttf': 'font/ttf',
   '.txt': 'text/plain; charset=UTF-8',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
 };
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = '0.0.0.0';
 
 const server = http.createServer((req, res) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { 'Content-Type': 'text/plain; charset=UTF-8' });
-    res.end('Method Not Allowed');
-    return;
-  }
-
   let parsedUrl;
   try {
     parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   } catch {
     res.writeHead(400, { 'Content-Type': 'text/plain; charset=UTF-8' });
     res.end('Bad Request');
+    return;
+  }
+
+  const pathname = parsedUrl.pathname;
+
+  // 1. Machine-readable health check endpoint (Section 13)
+  if (pathname === '/healthz' || pathname === '/healthz/') {
+    return handleHealthCheck(req, res);
+  }
+
+  // 2. Central REST API routing ingress (Section 4 & 5)
+  // Ensure that no /api/* route ever silently falls through to the SPA HTML fallback
+  if (pathname === '/api' || pathname.startsWith('/api/')) {
+    if (pathname === '/api/v1' || pathname.startsWith('/api/v1/')) {
+      return handleApiRequest(req, res);
+    }
+    res.writeHead(404, {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+    });
+    res.end(JSON.stringify({
+      success: false,
+      error: {
+        code: 'ERR_API_NOT_FOUND',
+        message: `API endpoint "${req.method} ${pathname}" not found. Central REST contracts are mounted at /api/v1/*`
+      }
+    }));
+    return;
+  }
+
+  // 3. Static asset and SPA HTML serving
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'text/plain; charset=UTF-8' });
+    res.end('Method Not Allowed');
     return;
   }
 
@@ -56,8 +90,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let pathname = decodeURIComponent(parsedUrl.pathname);
-  let filePath = path.normalize(path.join(DIST_DIR, pathname));
+  let filePath = path.normalize(path.join(DIST_DIR, decodeURIComponent(pathname)));
 
   // Security: prevent directory traversal outside DIST_DIR
   if (rawUrl.includes('..') || decodedRawUrl.includes('..') || !filePath.startsWith(DIST_DIR)) {
@@ -101,6 +134,9 @@ const server = http.createServer((req, res) => {
     const headers = {
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     };
 
     if (isFallback || ext === '.html') {
@@ -128,6 +164,23 @@ const server = http.createServer((req, res) => {
     });
   });
 });
+
+// Production startup validation guards
+const isProduction = process.env.NODE_ENV === 'production';
+if (isProduction && !fs.existsSync(INDEX_HTML)) {
+  console.error(`[FATAL] Production build directory or index.html missing at ${INDEX_HTML}. Run 'npm run build' before starting production server.`);
+  process.exit(1);
+}
+
+// Initialize persistence adapter if asynchronous initialization is supported
+if (typeof adapter?.init === 'function') {
+  try {
+    await adapter.init();
+    console.log(`[production] Persistence adapter initialized: ${adapter.getHealth?.().adapterType} (${adapter.getHealth?.().status})`);
+  } catch (err) {
+    console.warn('[production] Persistence adapter initialization deferred:', err.message);
+  }
+}
 
 server.listen(PORT, HOST, () => {
   console.log(`[production] Server (PID: ${process.pid}) listening on http://${HOST}:${PORT}`);

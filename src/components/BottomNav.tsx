@@ -10,7 +10,10 @@ export type NavTab =
   | 'admin'
   | 'desk'
   | 'search'
-  | 'profile';
+  | 'profile'
+  | 'graphics'
+  | 'videos'
+  | 'ai-newsroom';
 
 interface BottomNavProps {
   activeTab: NavTab;

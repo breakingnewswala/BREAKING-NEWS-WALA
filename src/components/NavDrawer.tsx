@@ -18,6 +18,9 @@ import {
   Radio,
   Award,
   Lock,
+  Palette,
+  Video,
+  Bot,
 } from 'lucide-react';
 import { AppRole, CategoryItem, DistrictItem, DivisionItem, EpaperEdition } from '../types';
 import { NavTab } from './BottomNav';
@@ -231,6 +234,60 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
               </span>
               <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
                 मास्टर कंट्रोल
+              </span>
+            </button>
+
+            {/* Surface 5: Graphics & Design Studio */}
+            <button
+              onClick={() => navigateTo('graphics')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                activeTab === 'graphics'
+                  ? 'bg-red-50 text-[#ED1727]'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Palette className="w-4 h-4 text-orange-500" />
+                ग्राफ़िक्स व डिज़ाइन स्टूडियो (Design)
+              </span>
+              <span className="text-[10px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded font-bold">
+                PRO STUDIO
+              </span>
+            </button>
+
+            {/* Surface 6: Video Production Studio */}
+            <button
+              onClick={() => navigateTo('videos')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                activeTab === 'videos'
+                  ? 'bg-red-50 text-[#ED1727]'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Video className="w-4 h-4 text-[#ED1727]" />
+                वीडियो स्टूडियो (Video Studio Pro)
+              </span>
+              <span className="text-[10px] bg-red-100 text-red-800 px-1.5 py-0.5 rounded font-bold">
+                HD MP4
+              </span>
+            </button>
+
+            {/* Surface 7: AI Newsroom & Automation */}
+            <button
+              onClick={() => navigateTo('ai-newsroom')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg font-bold transition-colors ${
+                activeTab === 'ai-newsroom'
+                  ? 'bg-red-50 text-[#ED1727]'
+                  : 'text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Bot className="w-4 h-4 text-amber-500" />
+                AI न्यूज़ रूम (AI Newsroom)
+              </span>
+              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                GEMINI AI
               </span>
             </button>
 

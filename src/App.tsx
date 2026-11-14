@@ -3,6 +3,7 @@ import {
   AppRole,
   ArticleDetail,
   ArticleItem,
+  ArticlePriority,
   CreateDraftRequest,
   ReporterProfile,
   BreakingTickerItem,
@@ -29,13 +30,19 @@ import { NavDrawer } from './components/NavDrawer';
 import { Footer } from './components/Footer';
 import { HomeScreen } from './screens/HomeScreen';
 import { ArticleDetailScreen } from './screens/ArticleDetailScreen';
-import { EpaperScreen } from './screens/EpaperScreen';
-import { ReporterDeskScreen } from './screens/ReporterDeskScreen';
-import { NewsroomDeskScreen } from './screens/NewsroomDeskScreen';
-import { AdminControlScreen } from './screens/AdminControlScreen';
-import { SearchScreen } from './screens/SearchScreen';
-import { ProfileScreen } from './screens/ProfileScreen';
+
+// Performance Optimization (ME-027): Code-splitting heavy operational and studio surfaces
+const EpaperScreen = React.lazy(() => import('./screens/EpaperScreen').then((m) => ({ default: m.EpaperScreen })));
+const ReporterDeskScreen = React.lazy(() => import('./screens/ReporterDeskScreen').then((m) => ({ default: m.ReporterDeskScreen })));
+const NewsroomDeskScreen = React.lazy(() => import('./screens/NewsroomDeskScreen').then((m) => ({ default: m.NewsroomDeskScreen })));
+const AdminControlScreen = React.lazy(() => import('./screens/AdminControlScreen').then((m) => ({ default: m.AdminControlScreen })));
+const SearchScreen = React.lazy(() => import('./screens/SearchScreen').then((m) => ({ default: m.SearchScreen })));
+const ProfileScreen = React.lazy(() => import('./screens/ProfileScreen').then((m) => ({ default: m.ProfileScreen })));
+const GraphicsStudioScreen = React.lazy(() => import('./screens/GraphicsStudioScreen').then((m) => ({ default: m.GraphicsStudioScreen })));
+const VideoStudioScreen = React.lazy(() => import('./screens/VideoStudioScreen').then((m) => ({ default: m.VideoStudioScreen })));
+const AiNewsroomScreen = React.lazy(() => import('./screens/AiNewsroomScreen').then((m) => ({ default: m.AiNewsroomScreen })));
 import { Radio, X } from 'lucide-react';
+import { apiClient } from './services/apiClient';
 
 export const App: React.FC = () => {
   // Navigation & View States
@@ -93,6 +100,50 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Shared Backend Server Data Synchronizer (Section 7, STEP E)
+  useEffect(() => {
+    let isMounted = true;
+    async function syncSharedBackend() {
+      try {
+        const [pubArticlesRes, queueRes, tickersRes, adsRes, reportersRes, logsRes] = await Promise.all([
+          apiClient.publicNews.fetchArticles({ status: 'PUBLISHED' }),
+          apiClient.newsroom.fetchIncomingQueue(),
+          apiClient.admin.fetchTickers(),
+          apiClient.admin.fetchAds(),
+          apiClient.admin.fetchReporters(),
+          apiClient.admin.fetchAuditLogs(),
+        ]);
+
+        if (!isMounted) return;
+        if (pubArticlesRes.items && pubArticlesRes.items.length > 0) {
+          setArticles(pubArticlesRes.items);
+        }
+        if (queueRes && queueRes.length > 0) {
+          setPendingStories(queueRes);
+          setReporterDrafts(queueRes);
+        }
+        if (tickersRes && tickersRes.length > 0) {
+          setTickers(tickersRes);
+        }
+        if (adsRes && adsRes.length > 0) {
+          setAds(adsRes);
+        }
+        if (reportersRes && reportersRes.length > 0) {
+          setReporters(reportersRes);
+        }
+        if (logsRes && logsRes.length > 0) {
+          setAuditLogs(logsRes);
+        }
+      } catch (err) {
+        console.warn('[BNW Shared Backend Sync] Using initial offline state:', err);
+      }
+    }
+    syncSharedBackend();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const navigateToTab = (tab: NavTab) => {
     setSelectedArticleId(null);
     setActiveTab(tab);
@@ -122,7 +173,7 @@ export const App: React.FC = () => {
         title: article.title,
         text: shareText,
         url: window.location.href,
-      }).catch(() => {});
+      }).catch(() => { });
     } else {
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`, '_blank');
     }
@@ -134,200 +185,353 @@ export const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Submit Reporter Draft
-  const handleSubmitReporterDraft = (draftReq: CreateDraftRequest, reporter?: ReporterProfile) => {
-    const newId = `draft-${Date.now()}`;
-    const dist = DISTRICTS.find((d) => d.id === draftReq.districtId);
-    const cat = CATEGORIES.find((c) => c.id === draftReq.categoryId);
-    const authorId = reporter?.id || 'rep-active';
+  // Submit Reporter Draft (Section 7, STEP A)
+  const handleSubmitReporterDraft = async (draftReq: CreateDraftRequest, reporter?: ReporterProfile) => {
+    const authorId = reporter?.id || 'rep-001';
     const authorName = reporter?.name || 'राजेश पटेल';
     const authorRole = reporter?.role === 'trusted_reporter' ? 'वरिष्ठ संवाददाता' : 'फील्ड संवाददाता';
 
-    const newDraft: ArticleDetail = {
-      id: newId,
-      slug: `draft-${newId}`,
-      title: draftReq.title,
-      summary: draftReq.summary || draftReq.content.slice(0, 150),
-      content: draftReq.content,
-      status: 'PENDING_REVIEW',
-      featuredImage:
-        draftReq.featuredImage ||
-        'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80',
-      imageCaption: draftReq.imageCaption,
-      imageAttribution: draftReq.imageAttribution || (reporter ? `${reporter.name} (${reporter.badgeNumber})` : 'बीएनडब्ल्यू फील्ड संवाददाता'),
-      categoryId: draftReq.categoryId,
-      categoryName: cat?.nameHi || 'मध्य प्रदेश',
-      districtId: draftReq.districtId,
-      districtName: dist?.nameHi || 'भोपाल',
-      authorId,
-      authorName,
-      authorRole,
-      isBreaking: draftReq.isBreaking,
-      viewCount: 0,
-      shareCount: 0,
-      createdAt: 'अभी-अभी दर्ज किया गया',
-      factChecked: false,
-    };
+    try {
+      // 1. Submit through Server API Engine
+      const draft = await apiClient.reporter.createDraft(draftReq, {
+        id: authorId,
+        name: authorName,
+        role: authorRole,
+      });
+      const submitted = await apiClient.reporter.submitStory(draft.id);
 
-    setPendingStories((prev) => [newDraft, ...prev]);
-    setReporterDrafts((prev) => [newDraft, ...prev]);
+      setPendingStories((prev) => [submitted, ...prev.filter((p) => p.id !== submitted.id)]);
+      setReporterDrafts((prev) => [submitted, ...prev.filter((d) => d.id !== submitted.id)]);
 
-    // Add Audit Log
-    const newLog: SystemAuditLogItem = {
-      id: `log-${Date.now()}`,
-      actorName: authorName,
-      actorRole: 'REPORTER',
-      actionType: 'ARTICLE_PUBLISHED',
-      description: `नई खबर दर्ज की गई (${reporter?.badgeNumber || 'REP'}): "${draftReq.title.slice(0, 50)}..."`,
-      ipAddress: '49.36.128.91',
-      timestamp: new Date().toLocaleString('hi-IN'),
-    };
-    setAuditLogs((prev) => [newLog, ...prev]);
+      const updatedLogs = await apiClient.admin.fetchAuditLogs();
+      if (updatedLogs.length > 0) setAuditLogs(updatedLogs);
+    } catch (err: any) {
+      console.warn('[Reporter Submit] Local fallback:', err?.message);
+      const newId = `draft-${Date.now()}`;
+      const dist = DISTRICTS.find((d) => d.id === draftReq.districtId);
+      const cat = CATEGORIES.find((c) => c.id === draftReq.categoryId);
+      const newDraft: ArticleDetail = {
+        id: newId,
+        slug: `draft-${newId}`,
+        title: draftReq.title,
+        summary: draftReq.summary || draftReq.content.slice(0, 150),
+        content: draftReq.content,
+        status: 'PENDING_REVIEW',
+        featuredImage: draftReq.featuredImage || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80',
+        imageCaption: draftReq.imageCaption,
+        imageAttribution: draftReq.imageAttribution || `${authorName} (${reporter?.badgeNumber || 'BNW'})`,
+        categoryId: draftReq.categoryId,
+        categoryName: cat?.nameHi || 'मध्य प्रदेश',
+        districtId: draftReq.districtId,
+        districtName: dist?.nameHi || 'भोपाल',
+        authorId,
+        authorName,
+        authorRole,
+        isBreaking: draftReq.isBreaking,
+        viewCount: 0,
+        shareCount: 0,
+        createdAt: 'अभी-अभी दर्ज किया गया',
+        factChecked: false,
+      };
+      setPendingStories((prev) => [newDraft, ...prev]);
+      setReporterDrafts((prev) => [newDraft, ...prev]);
+    }
   };
 
-  // Newsroom / Admin Approve and Publish (with desk sub-editing!)
-  const handleApproveAndPublish = (
+  // Newsroom / Admin Approve and Publish (Section 7, STEP B & C)
+  const handleApproveAndPublish = async (
     articleId: string,
     updatedTitle?: string,
     updatedContent?: string
   ) => {
-    const target = pendingStories.find((a) => a.id === articleId);
-    if (!target) return;
+    const target = pendingStories.find((a) => a.id === articleId) || reporterDrafts.find((d) => d.id === articleId);
 
-    const publishedArticle: ArticleDetail = {
-      ...target,
-      title: updatedTitle || target.title,
-      content: updatedContent || target.content,
-      status: 'PUBLISHED',
-      publishedAt: 'अभी-अभी लाइव',
-      factChecked: true,
-      factCheckScore: 98,
-    };
-
-    setArticles((prev) => [publishedArticle, ...prev]);
-    setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
-    setReporterDrafts((prev) =>
-      prev.map((d) => (d.id === articleId ? { ...d, status: 'PUBLISHED' } : d))
-    );
-
-    // If marked breaking, set alert
-    if (target.isBreaking) {
-      setActiveAlert({
-        title: updatedTitle || target.title,
-        district: target.districtName || 'मध्य प्रदेश',
+    try {
+      // 1. Submit through Server API Engine
+      const published = await apiClient.newsroom.reviewStory(articleId, {
+        action: 'approve',
+        updatedTitle,
+        updatedContent,
       });
-    }
 
-    // Add Audit Log
-    const newLog: SystemAuditLogItem = {
-      id: `log-${Date.now()}`,
-      actorName: 'मुख्य संपादक डेस्क',
-      actorRole: 'ADMIN',
-      actionType: 'ARTICLE_PUBLISHED',
-      description: `खबर स्वीकृत व लाइव प्रकाशित: "${(updatedTitle || target.title).slice(0, 50)}..."`,
-      ipAddress: '103.24.112.5',
-      timestamp: new Date().toLocaleString('hi-IN'),
-    };
-    setAuditLogs((prev) => [newLog, ...prev]);
+      setArticles((prev) => [published, ...prev.filter((a) => a.id !== articleId)]);
+      setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
+      setReporterDrafts((prev) =>
+        prev.map((d) => (d.id === articleId ? { ...d, status: 'PUBLISHED' } : d))
+      );
+
+      if (published.isBreaking) {
+        setActiveAlert({
+          title: published.title,
+          district: published.districtName || 'मध्य प्रदेश',
+        });
+      }
+
+      const updatedLogs = await apiClient.admin.fetchAuditLogs();
+      if (updatedLogs.length > 0) setAuditLogs(updatedLogs);
+    } catch (err: any) {
+      console.warn('[Newsroom Publish] Local fallback:', err?.message);
+      if (!target) return;
+      const publishedArticle: ArticleDetail = {
+        ...target,
+        title: updatedTitle || target.title,
+        content: updatedContent || target.content,
+        status: 'PUBLISHED',
+        publishedAt: 'अभी-अभी लाइव',
+        factChecked: true,
+        factCheckScore: 98,
+      };
+
+      setArticles((prev) => [publishedArticle, ...prev.filter((a) => a.id !== articleId)]);
+      setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
+      setReporterDrafts((prev) =>
+        prev.map((d) => (d.id === articleId ? { ...d, status: 'PUBLISHED' } : d))
+      );
+      if (target.isBreaking) {
+        setActiveAlert({
+          title: updatedTitle || target.title,
+          district: target.districtName || 'मध्य प्रदेश',
+        });
+      }
+    }
   };
 
   // Request Revision
-  const handleRequestRevision = (articleId: string, comments: string) => {
-    setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
-    setReporterDrafts((prev) =>
-      prev.map((d) =>
-        d.id === articleId
-          ? { ...d, status: 'REVISION_REQUESTED', summary: `संशोधन अपेक्षित: ${comments}` }
-          : d
-      )
-    );
-
-    const newLog: SystemAuditLogItem = {
-      id: `log-${Date.now()}`,
-      actorName: 'मुख्य संपादक डेस्क',
-      actorRole: 'ADMIN',
-      actionType: 'REVISION_REQUESTED',
-      description: `संशोधन अनुरोध भेजा गया (${articleId}): ${comments}`,
-      ipAddress: '103.24.112.5',
-      timestamp: new Date().toLocaleString('hi-IN'),
-    };
-    setAuditLogs((prev) => [newLog, ...prev]);
+  const handleRequestRevision = async (articleId: string, comments: string) => {
+    try {
+      const revised = await apiClient.newsroom.reviewStory(articleId, {
+        action: 'request_changes',
+        notes: comments,
+        feedbackComments: comments,
+      });
+      setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
+      setReporterDrafts((prev) =>
+        prev.map((d) => (d.id === articleId ? revised : d))
+      );
+      const updatedLogs = await apiClient.admin.fetchAuditLogs();
+      if (updatedLogs.length > 0) setAuditLogs(updatedLogs);
+    } catch {
+      setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
+      setReporterDrafts((prev) =>
+        prev.map((d) =>
+          d.id === articleId
+            ? { ...d, status: 'REVISION_REQUESTED', summary: `संशोधन अपेक्षित: ${comments}` }
+            : d
+        )
+      );
+    }
   };
 
   // Reject Article
-  const handleRejectArticle = (articleId: string) => {
-    setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
-    setReporterDrafts((prev) =>
-      prev.map((d) => (d.id === articleId ? { ...d, status: 'REJECTED' } : d))
-    );
+  const handleRejectArticle = async (articleId: string, reason = 'संपादकीय नीति के अनुरूप नहीं।') => {
+    try {
+      const rejected = await apiClient.newsroom.reviewStory(articleId, {
+        action: 'reject',
+        reasonCode: 'EDITORIAL_POLICY_VIOLATION',
+        feedbackComments: reason,
+      });
+      setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
+      setReporterDrafts((prev) =>
+        prev.map((d) => (d.id === articleId ? rejected : d))
+      );
+      const updatedLogs = await apiClient.admin.fetchAuditLogs();
+      if (updatedLogs.length > 0) setAuditLogs(updatedLogs);
+    } catch {
+      setPendingStories((prev) => prev.filter((a) => a.id !== articleId));
+      setReporterDrafts((prev) =>
+        prev.map((d) => (d.id === articleId ? { ...d, status: 'REJECTED' } : d))
+      );
+    }
+  };
 
-    const newLog: SystemAuditLogItem = {
-      id: `log-${Date.now()}`,
-      actorName: 'मुख्य संपादक डेस्क',
-      actorRole: 'ADMIN',
-      actionType: 'ARTICLE_REJECTED',
-      description: `खबर अस्वीकृत की गई: ${articleId}`,
-      ipAddress: '103.24.112.5',
-      timestamp: new Date().toLocaleString('hi-IN'),
-    };
-    setAuditLogs((prev) => [newLog, ...prev]);
+  // Advanced Newsroom 020: Claim Article
+  const handleClaimArticle = async (articleId: string, editorId: string, editorName: string) => {
+    try {
+      const updated = await apiClient.newsroom.reviewStory(articleId, {
+        action: 'claim',
+        assignedEditorId: editorId,
+        assignedEditorName: editorName,
+      });
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? updated : a)));
+    } catch {
+      setPendingStories((prev) =>
+        prev.map((a) => (a.id === articleId ? { ...a, claimedBy: editorName, assignedEditorName: editorName } : a))
+      );
+    }
+  };
+
+  // Advanced Newsroom 020: Reassign Story
+  const handleReassignArticle = async (articleId: string, editorId: string, editorName: string) => {
+    try {
+      const updated = await apiClient.newsroom.reassignStory(articleId, editorId, editorName);
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? updated : a)));
+    } catch {
+      setPendingStories((prev) =>
+        prev.map((a) => (a.id === articleId ? { ...a, assignedEditorId: editorId, assignedEditorName: editorName } : a))
+      );
+    }
+  };
+
+  // Advanced Newsroom 020: Update Priority
+  const handleUpdatePriority = async (articleId: string, priority: ArticlePriority) => {
+    try {
+      const updated = await apiClient.newsroom.updatePriority(articleId, priority);
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? updated : a)));
+      setArticles((prev) => prev.map((a) => (a.id === articleId ? { ...a, priority } : a)));
+    } catch {
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? { ...a, priority } : a)));
+      setArticles((prev) => prev.map((a) => (a.id === articleId ? { ...a, priority } : a)));
+    }
+  };
+
+  // Advanced Newsroom 020: Toggle Breaking
+  const handleToggleBreaking = async (articleId: string, isBreaking: boolean) => {
+    try {
+      const updated = await apiClient.newsroom.toggleBreaking(articleId, isBreaking);
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? updated : a)));
+      setArticles((prev) => prev.map((a) => (a.id === articleId ? { ...a, isBreaking } : a)));
+    } catch {
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? { ...a, isBreaking } : a)));
+      setArticles((prev) => prev.map((a) => (a.id === articleId ? { ...a, isBreaking } : a)));
+    }
+  };
+
+  // Advanced Newsroom 020: Schedule Publication
+  const handleSchedulePublication = async (articleId: string, scheduledAt: string) => {
+    try {
+      const updated = await apiClient.newsroom.schedulePublication(articleId, scheduledAt);
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? updated : a)));
+    } catch {
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? { ...a, scheduledAt } : a)));
+    }
+  };
+
+  // Advanced Newsroom 020: Save Editorial Notes
+  const handleSaveEditorialNotes = async (articleId: string, notes: string) => {
+    try {
+      const updated = await apiClient.newsroom.addEditorialNotes(articleId, notes);
+      setPendingStories((prev) => prev.map((a) => (a.id === articleId ? updated : a)));
+    } catch {
+      // Local fallback
+    }
+  };
+
+  // Advanced Newsroom 020: Update Reporter Verification Status
+  const handleUpdateReporterStatus = async (
+    reporterId: string,
+    status: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'TRAINEE'
+  ) => {
+    try {
+      await apiClient.admin.updateReporterStatus(reporterId, status);
+      setReporters((prev) =>
+        prev.map((r) =>
+          r.id === reporterId
+            ? {
+              ...r,
+              status,
+              verificationStatus: status === 'ACTIVE' ? 'VERIFIED' : status,
+            }
+            : r
+        )
+      );
+    } catch {
+      setReporters((prev) =>
+        prev.map((r) =>
+          r.id === reporterId
+            ? {
+              ...r,
+              status,
+              verificationStatus: status === 'ACTIVE' ? 'VERIFIED' : status,
+            }
+            : r
+        )
+      );
+    }
+  };
+
+  // Advanced Newsroom 020: Assign Reporter Beats
+  const handleAssignReporterBeats = async (reporterId: string, beats: string[]) => {
+    try {
+      await apiClient.admin.assignReporterBeats(reporterId, beats);
+      setReporters((prev) => prev.map((r) => (r.id === reporterId ? { ...r, beats } : r)));
+    } catch {
+      setReporters((prev) => prev.map((r) => (r.id === reporterId ? { ...r, beats } : r)));
+    }
   };
 
   // Broadcast Statewide Alert
-  const handleBroadcastAlert = (title: string, district: string) => {
+  const handleBroadcastAlert = async (title: string, district: string) => {
     setActiveAlert({ title, district });
-    const newLog: SystemAuditLogItem = {
-      id: `log-${Date.now()}`,
-      actorName: 'एडमिन कंट्रोल',
-      actorRole: 'ADMIN',
-      actionType: 'ALERT_BROADCAST',
-      description: `राज्यव्यापी अलर्ट [${district}]: ${title}`,
-      ipAddress: '103.24.112.5',
-      timestamp: new Date().toLocaleString('hi-IN'),
-    };
-    setAuditLogs((prev) => [newLog, ...prev]);
+    try {
+      await apiClient.admin.broadcastAlert(title, district);
+      const updatedLogs = await apiClient.admin.fetchAuditLogs();
+      if (updatedLogs.length > 0) setAuditLogs(updatedLogs);
+    } catch {
+      // Local fallback
+    }
   };
 
   // Ticker Handlers
-  const handleAddTicker = (ticker: BreakingTickerItem) => {
+  const handleAddTicker = async (ticker: BreakingTickerItem) => {
     setTickers((prev) => [ticker, ...prev]);
+    try {
+      await apiClient.admin.createTicker({
+        textHindi: ticker.textHindi,
+        districtName: ticker.districtName,
+        priority: ticker.priority,
+      });
+    } catch {
+      // Offline fallback
+    }
   };
 
-  const handleToggleTicker = (tickerId: string) => {
+  const handleToggleTicker = async (tickerId: string) => {
     setTickers((prev) =>
       prev.map((t) => (t.id === tickerId ? { ...t, isActive: !t.isActive } : t))
     );
+    try {
+      await apiClient.admin.toggleTicker(tickerId);
+    } catch {
+      // Offline fallback
+    }
   };
 
-  const handleDeleteTicker = (tickerId: string) => {
+  const handleDeleteTicker = async (tickerId: string) => {
     setTickers((prev) => prev.filter((t) => t.id !== tickerId));
+    try {
+      await apiClient.admin.deleteTicker(tickerId);
+    } catch {
+      // Offline fallback
+    }
   };
 
-  // Reporter Role Upgrade / Revision Handler
-  const handleUpdateReporterRole = (
+  // Reporter Role Upgrade Handler
+  const handleUpdateReporterRole = async (
     reporterId: string,
     role: 'reporter' | 'trusted_reporter'
   ) => {
     setReporters((prev) =>
       prev.map((r) => (r.id === reporterId ? { ...r, role } : r))
     );
-    const newLog: SystemAuditLogItem = {
-      id: `log-${Date.now()}`,
-      actorName: 'एडमिन कंट्रोल',
-      actorRole: 'ADMIN',
-      actionType: 'ROLE_CHANGED',
-      description: `संवाददाता (${reporterId}) की भूमिका परिवर्तित: ${role}`,
-      ipAddress: '103.24.112.5',
-      timestamp: new Date().toLocaleString('hi-IN'),
-    };
-    setAuditLogs((prev) => [newLog, ...prev]);
+    try {
+      await apiClient.admin.updateReporterRole(reporterId, role);
+      const updatedLogs = await apiClient.admin.fetchAuditLogs();
+      if (updatedLogs.length > 0) setAuditLogs(updatedLogs);
+    } catch {
+      // Offline fallback
+    }
   };
 
   // Ad Banner Toggle
-  const handleToggleAdActive = (adId: string) => {
+  const handleToggleAdActive = async (adId: string) => {
     setAds((prev) =>
       prev.map((a) => (a.id === adId ? { ...a, isActive: !a.isActive } : a))
     );
+    try {
+      await apiClient.admin.toggleAd(adId);
+    } catch {
+      // Offline fallback
+    }
   };
 
   // Resolve currently active article for detail view
@@ -409,7 +613,14 @@ export const App: React.FC = () => {
             onEarnCoins={handleEarnCoins}
           />
         ) : (
-          <>
+          <React.Suspense
+            fallback={
+              <div className="flex flex-col items-center justify-center min-h-[450px] space-y-4">
+                <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-sm font-medium text-slate-600">लोड हो रहा है... / Loading...</p>
+              </div>
+            }
+          >
             {/* Surface 1: Public News Website */}
             {activeTab === 'home' && (
               <HomeScreen
@@ -450,10 +661,23 @@ export const App: React.FC = () => {
             {activeTab === 'newsroom' && (
               <NewsroomDeskScreen
                 pendingArticles={pendingStories}
+                allArticles={articles}
+                reporters={reporters}
+                categories={CATEGORIES}
+                districts={DISTRICTS}
+                currentUser={{ id: 'usr-desk-chief', name: 'मुख्य संपादक (Desk Editor)', role: currentRole }}
                 onApproveAndPublish={handleApproveAndPublish}
                 onRequestRevision={handleRequestRevision}
                 onRejectArticle={handleRejectArticle}
                 onBroadcastBreakingAlert={handleBroadcastAlert}
+                onClaimArticle={handleClaimArticle}
+                onReassignArticle={handleReassignArticle}
+                onUpdatePriority={handleUpdatePriority}
+                onToggleBreaking={handleToggleBreaking}
+                onSchedulePublication={handleSchedulePublication}
+                onSaveEditorialNotes={handleSaveEditorialNotes}
+                onUpdateReporterStatus={handleUpdateReporterStatus}
+                onAssignReporterBeats={handleAssignReporterBeats}
               />
             )}
 
@@ -487,10 +711,23 @@ export const App: React.FC = () => {
                 {currentRole === 'ADMIN' ? (
                   <NewsroomDeskScreen
                     pendingArticles={pendingStories}
+                    allArticles={articles}
+                    reporters={reporters}
+                    categories={CATEGORIES}
+                    districts={DISTRICTS}
+                    currentUser={{ id: 'usr-desk-chief', name: 'मुख्य संपादक (Desk Editor)', role: currentRole }}
                     onApproveAndPublish={handleApproveAndPublish}
                     onRequestRevision={handleRequestRevision}
                     onRejectArticle={handleRejectArticle}
                     onBroadcastBreakingAlert={handleBroadcastAlert}
+                    onClaimArticle={handleClaimArticle}
+                    onReassignArticle={handleReassignArticle}
+                    onUpdatePriority={handleUpdatePriority}
+                    onToggleBreaking={handleToggleBreaking}
+                    onSchedulePublication={handleSchedulePublication}
+                    onSaveEditorialNotes={handleSaveEditorialNotes}
+                    onUpdateReporterStatus={handleUpdateReporterStatus}
+                    onAssignReporterBeats={handleAssignReporterBeats}
                   />
                 ) : (
                   <ReporterDeskScreen
@@ -529,7 +766,57 @@ export const App: React.FC = () => {
                 onRemoveBookmark={(id) => handleBookmarkToggle(id)}
               />
             )}
-          </>
+
+            {/* Surface 5: Graphics & Design Studio */}
+            {activeTab === 'graphics' && (
+              <GraphicsStudioScreen
+                currentUser={{
+                  id: 'usr-desk-chief',
+                  name: 'मुख्य संपादक (Desk Editor)',
+                  role: currentRole,
+                  roles: [currentRole],
+                }}
+                articles={articles}
+                districts={DISTRICTS}
+                categories={CATEGORIES}
+                onNavigateHome={() => navigateToTab('home')}
+                onNavigateDesk={() => navigateToTab('newsroom')}
+              />
+            )}
+
+            {/* Surface 6: Video Production Studio */}
+            {activeTab === 'videos' && (
+              <VideoStudioScreen
+                currentUser={{
+                  id: 'usr-desk-chief',
+                  name: 'मुख्य संपादक (Desk Editor)',
+                  role: currentRole,
+                  roles: [currentRole],
+                }}
+                articles={articles}
+                districts={DISTRICTS}
+                categories={CATEGORIES}
+                onNavigateHome={() => navigateToTab('home')}
+                onNavigateDesk={() => navigateToTab('newsroom')}
+              />
+            )}
+
+            {/* Surface 7: AI Newsroom & Intelligent Automation */}
+            {activeTab === 'ai-newsroom' && (
+              <AiNewsroomScreen
+                currentUser={{
+                  id: 'usr-desk-chief',
+                  name: 'मुख्य संपादक (Desk Editor)',
+                  role: currentRole,
+                  roles: [currentRole],
+                }}
+                articles={articles}
+                districts={DISTRICTS}
+                categories={CATEGORIES}
+                onNavigateToArticles={() => navigateToTab('newsroom')}
+              />
+            )}
+          </React.Suspense>
         )}
       </main>
 
@@ -539,21 +826,21 @@ export const App: React.FC = () => {
         activeTab === 'search' ||
         activeTab === 'profile' ||
         selectedArticleId) && (
-        <Footer
-          categories={CATEGORIES}
-          districts={DISTRICTS}
-          divisions={DIVISIONS}
-          onNavigateTab={navigateToTab}
-          onSelectCategory={(catId) => {
-            setInitialCategoryFilter(catId);
-            navigateToTab('home');
-          }}
-          onSelectDistrict={(distId) => {
-            setInitialDistrictFilter(distId);
-            navigateToTab('home');
-          }}
-        />
-      )}
+          <Footer
+            categories={CATEGORIES}
+            districts={DISTRICTS}
+            divisions={DIVISIONS}
+            onNavigateTab={navigateToTab}
+            onSelectCategory={(catId) => {
+              setInitialCategoryFilter(catId);
+              navigateToTab('home');
+            }}
+            onSelectDistrict={(distId) => {
+              setInitialDistrictFilter(distId);
+              navigateToTab('home');
+            }}
+          />
+        )}
 
       {/* 6. Bottom Tab Navigation (Mobile & Tablet only) */}
       <BottomNav

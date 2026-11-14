@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -26,6 +26,20 @@ import {
   Check,
   RotateCcw,
   Sliders,
+  Rss,
+  Share2,
+  MessageSquare,
+  Key,
+  RefreshCw,
+  Send,
+  Clock,
+  Database,
+  DollarSign,
+  Video,
+  TrendingUp,
+  Receipt,
+  Briefcase,
+  CreditCard,
 } from 'lucide-react';
 import {
   ArticleDetail,
@@ -37,8 +51,31 @@ import {
   DistrictItem,
   CategoryItem,
   EditorialFactCheckResult,
+  IntegrationProviderItem,
+  RssSourceItem,
+  ImportedRssItemDto,
+  SocialAccountItem,
+  SocialPublishingJobItem,
+  WhatsAppTemplateItem,
+  WhatsAppSubscriberItem,
+  WebhookLogItem,
+  ApiPoolUsageSummary,
+  SubscriptionPlanItem,
+  AdCampaignItem,
+  AdvertiserProfile,
+  SponsoredArticleItem,
+  InvoiceItem,
+  BusinessDashboardSummary,
+  CrmProposalItem,
+  TaxConfigItem,
+  AudienceOverviewSummary,
+  ContentPerformanceSummary,
+  AudienceSegmentRecord,
+  ReaderFeedbackRecord,
+  NotificationRecord,
 } from '../types';
 import { BnwAiService } from '../services/aiService';
+import { apiClient } from '../services/apiClient';
 
 interface AdminControlScreenProps {
   articles: ArticleDetail[];
@@ -82,7 +119,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   onBroadcastAlert,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'api_pool' | 'audit_logs'
+    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs'
   >('overview');
 
   // Review Queue state
@@ -107,6 +144,370 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
   // Reporter Search / Filter
   const [reporterSearch, setReporterSearch] = useState('');
+
+  // =========================================================================
+  // MASTER EXECUTION 024: INTEGRATION & API POOL DASHBOARD STATE
+  // =========================================================================
+  const [integrationSubTab, setIntegrationSubTab] = useState<'providers' | 'rss' | 'social' | 'whatsapp' | 'webhooks'>('providers');
+  const [liveProviders, setLiveProviders] = useState<IntegrationProviderItem[]>([]);
+  const [liveUsage, setLiveUsage] = useState<ApiPoolUsageSummary | null>(null);
+  const [rssSources, setRssSources] = useState<RssSourceItem[]>([]);
+  const [rssItems, setRssItems] = useState<ImportedRssItemDto[]>([]);
+  const [socialAccounts, setSocialAccounts] = useState<SocialAccountItem[]>([]);
+  const [socialJobs, setSocialJobs] = useState<SocialPublishingJobItem[]>([]);
+  const [waTemplates, setWaTemplates] = useState<WhatsAppTemplateItem[]>([]);
+  const [waSubscribers, setWaSubscribers] = useState<WhatsAppSubscriberItem[]>([]);
+  const [webhookLogs, setWebhookLogs] = useState<WebhookLogItem[]>([]);
+  const [loadingIntegrations, setLoadingIntegrations] = useState(false);
+  const [integrationMsg, setIntegrationMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+
+  // New RSS Source Form
+  const [newRssName, setNewRssName] = useState('');
+  const [newRssUrl, setNewRssUrl] = useState('');
+  const [newRssPublisher, setNewRssPublisher] = useState('');
+  const [newRssCategory, setNewRssCategory] = useState('madhya-pradesh');
+
+  // Webhook Test Tester
+  const [testWebhookPayload, setTestWebhookPayload] = useState('{"event":"news_alert","title":"भोपाल में मेट्रो विस्तार"}');
+  const [testWebhookSecret, setTestWebhookSecret] = useState('bnw_default_test_webhook_secret_2026');
+  const [testWebhookSig, setTestWebhookSig] = useState('');
+  const [testWebhookResult, setTestWebhookResult] = useState<any>(null);
+
+  // WhatsApp Simulator
+  const [simWaPhone, setSimWaPhone] = useState('+919826011111');
+  const [simWaKeyword, setSimWaKeyword] = useState('STOP');
+
+  const loadIntegrationData = async () => {
+    setLoadingIntegrations(true);
+    try {
+      const [provs, usage, sources, items, accounts, jobs, templates, subs, logs] = await Promise.all([
+        apiClient.integrations.getProviders(),
+        apiClient.integrations.getUsageSummary(),
+        apiClient.rss.listSources(),
+        apiClient.rss.listItems({ limit: 10 }),
+        apiClient.social.getAccounts(),
+        apiClient.social.listJobs(),
+        apiClient.whatsapp.getTemplates(),
+        apiClient.whatsapp.getSubscribers(),
+        apiClient.webhooks.listLogs(20),
+      ]);
+      setLiveProviders(provs);
+      setLiveUsage(usage);
+      setRssSources(sources.items);
+      setRssItems(items.items);
+      setSocialAccounts(accounts);
+      setSocialJobs(jobs);
+      setWaTemplates(templates);
+      setWaSubscribers(subs);
+      setWebhookLogs(logs);
+    } catch {
+      // Fallback gracefully
+    } finally {
+      setLoadingIntegrations(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'api_pool') {
+      loadIntegrationData();
+    }
+  }, [activeTab]);
+
+  const handleToggleProvider = async (id: string, currentEnabled: boolean) => {
+    try {
+      await apiClient.integrations.toggleProvider(id, !currentEnabled);
+      setIntegrationMsg({ text: `प्रोवाइडर स्थिति सफलतापूर्वक बदली गई।` });
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'स्थिति बदलने में विफल', isError: true });
+    }
+  };
+
+  const handleTestProviderHealth = async (id: string) => {
+    try {
+      const res = await apiClient.integrations.testHealth(id);
+      setIntegrationMsg({ text: `${res.name}: लाइव हेल्थ चेक संपन्न [स्थिति: ${res.healthStatus}, लेटेंसी: ${res.avgLatencyMs}ms]` });
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'हेल्थ टेस्ट विफल', isError: true });
+    }
+  };
+
+  const handleCreateRssSource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRssName || !newRssUrl || !newRssPublisher) return;
+    try {
+      await apiClient.rss.createSource({
+        name: newRssName,
+        feedUrl: newRssUrl,
+        publisherName: newRssPublisher,
+        sourceCategory: newRssCategory,
+      });
+      setNewRssName('');
+      setNewRssUrl('');
+      setNewRssPublisher('');
+      setIntegrationMsg({ text: 'RSS स्रोत सफलतापूर्वक जोड़ा गया (SSRF सत्यापित)।' });
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'स्रोत जोड़ने में विफल', isError: true });
+    }
+  };
+
+  const handleSyncRssSource = async (id: string) => {
+    try {
+      const res = await apiClient.rss.syncSource(id);
+      setIntegrationMsg({ text: `सिंक संपन्न! आयातित: ${res.importedCount}, डुप्लिकेट रोके गए: ${res.duplicateCount}` });
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'सिंक विफल', isError: true });
+    }
+  };
+
+  const handleConvertWireItem = async (id: string) => {
+    try {
+      const res = await apiClient.rss.convertToDraft(id);
+      setIntegrationMsg({ text: res.message || 'वायर सामग्री को ड्राफ्ट में सहेज लिया गया।' });
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'रूपांतरण विफल', isError: true });
+    }
+  };
+
+  const handleApproveSocialJob = async (id: string) => {
+    try {
+      await apiClient.social.approveJob(id);
+      setIntegrationMsg({ text: 'सोशल पोस्ट संपादकीय स्तर पर अनुमोदित।' });
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'अनुमोदन विफल', isError: true });
+    }
+  };
+
+  const handlePublishSocialJob = async (id: string) => {
+    try {
+      const res = await apiClient.social.publishImmediately(id);
+      setIntegrationMsg({ text: `सोशल मीडिया पर प्रसारण संपन्न! (सफल: ${res.successfulDeliveries})` });
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'प्रकाशन विफल', isError: true });
+    }
+  };
+
+  const handleTestWebhookVerify = async () => {
+    try {
+      const res = await apiClient.webhooks.testVerify({
+        rawBody: testWebhookPayload,
+        signature: testWebhookSig,
+        secret: testWebhookSecret,
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+      setTestWebhookResult(res);
+    } catch (err: any) {
+      setTestWebhookResult({ isValid: false, error: err.message });
+    }
+  };
+
+  const handleSimulateWhatsAppKeyword = async () => {
+    try {
+      if (simWaKeyword.toUpperCase() === 'STOP' || simWaKeyword === 'रोकें') {
+        await apiClient.whatsapp.optOut({ phoneNumber: simWaPhone, reason: 'keyword_stop_simulated' });
+        setIntegrationMsg({ text: `${simWaPhone} को सफलतापूर्वक अनसब्सक्राइब (OPTED_OUT) कर दिया गया।` });
+      } else {
+        await apiClient.whatsapp.optIn({ phoneNumber: simWaPhone });
+        setIntegrationMsg({ text: `${simWaPhone} का ऑप्ट-इन (ACTIVE) दर्ज हुआ।` });
+      }
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'कार्रवाई विफल', isError: true });
+    }
+  };
+
+  // =========================================================================
+  // MASTER EXECUTION 025: BUSINESS & MONETIZATION DASHBOARD STATE
+  // =========================================================================
+  const [monetizationSubTab, setMonetizationSubTab] = useState<
+    'dashboard' | 'plans' | 'campaigns' | 'sponsored' | 'crm' | 'invoices'
+  >('dashboard');
+  const [dashboardSummary, setDashboardSummary] = useState<BusinessDashboardSummary | null>(null);
+  const [subPlans, setSubPlans] = useState<SubscriptionPlanItem[]>([]);
+  const [adCampaigns, setAdCampaigns] = useState<AdCampaignItem[]>([]);
+  const [advertisers, setAdvertisers] = useState<AdvertiserProfile[]>([]);
+  const [sponsoredArticles, setSponsoredArticles] = useState<SponsoredArticleItem[]>([]);
+  const [invoices, setInvoices] = useState<InvoiceItem[]>([]);
+  const [proposals, setProposals] = useState<CrmProposalItem[]>([]);
+  const [taxConfig, setTaxConfig] = useState<TaxConfigItem | null>(null);
+  const [loadingMonetization, setLoadingMonetization] = useState(false);
+  const [monetizationMsg, setMonetizationMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+
+  const loadMonetizationData = async () => {
+    setLoadingMonetization(true);
+    try {
+      const [summary, plansData, campaignsData, advertisersData, sponsoredData, invoicesData, proposalsData, taxData] = await Promise.all([
+        apiClient.monetization.getDashboardSummary(),
+        apiClient.monetization.getPlans(),
+        apiClient.monetization.listCampaigns(),
+        apiClient.monetization.listAdvertisers(),
+        apiClient.monetization.listSponsoredArticles(),
+        apiClient.monetization.listInvoices(),
+        apiClient.monetization.getCrmProposals(),
+        apiClient.monetization.getTaxConfig(),
+      ]);
+      setDashboardSummary(summary);
+      setSubPlans(plansData || []);
+      setAdCampaigns(campaignsData || []);
+      setAdvertisers(advertisersData || []);
+      setSponsoredArticles(sponsoredData || []);
+      setInvoices(invoicesData || []);
+      setProposals(proposalsData || []);
+      setTaxConfig(taxData || null);
+    } catch (err: any) {
+      console.error('Failed to load monetization data:', err);
+    } finally {
+      setLoadingMonetization(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'monetization') {
+      loadMonetizationData();
+    }
+  }, [activeTab]);
+
+  const handleTogglePlan = async (id: string, currentActive: boolean) => {
+    try {
+      await apiClient.monetization.togglePlan(id, !currentActive);
+      setMonetizationMsg({ text: `सब्सक्रिप्शन प्लान स्थिति सफलतापूर्वक बदली गई।` });
+      loadMonetizationData();
+    } catch (err: any) {
+      setMonetizationMsg({ text: err.message || 'प्लान स्थिति बदलने में विफल', isError: true });
+    }
+  };
+
+  const handleApproveCampaign = async (id: string) => {
+    try {
+      await apiClient.monetization.reviewCampaign(id, 'approve', 'अनुमोदित (Admin Approved via Dashboard)');
+      setMonetizationMsg({ text: `विज्ञापन अभियान अनुमोदित हुआ!` });
+      loadMonetizationData();
+    } catch (err: any) {
+      setMonetizationMsg({ text: err.message || 'अभियान अनुमोदन विफल', isError: true });
+    }
+  };
+
+  const handleRejectCampaign = async (id: string) => {
+    try {
+      await apiClient.monetization.reviewCampaign(id, 'reject', 'अस्वीकृत - संपादकीय व सुरक्षा मानकों के अनुरूप नहीं');
+      setMonetizationMsg({ text: `विज्ञापन अभियान अस्वीकृत किया गया।` });
+      loadMonetizationData();
+    } catch (err: any) {
+      setMonetizationMsg({ text: err.message || 'कार्रवाई विफल', isError: true });
+    }
+  };
+
+  const handleReviewSponsored = async (id: string, approve: boolean) => {
+    try {
+      await apiClient.monetization.reviewSponsoredArticle(id, approve ? 'approve' : 'reject', approve ? 'संपादकीय रूप से स्वीकृत' : 'अस्वीकृत');
+      setMonetizationMsg({
+        text: approve
+          ? `प्रायोजित लेख स्वीकृत! न्यूज़ रूम ड्राफ्ट निर्मित किया गया।`
+          : `प्रायोजित लेख अस्वीकृत।`,
+      });
+      loadMonetizationData();
+    } catch (err: any) {
+      setMonetizationMsg({ text: err.message || 'समीक्षा विफल', isError: true });
+    }
+  };
+
+  const handleVerifyAdvertiser = async (id: string) => {
+    try {
+      await apiClient.monetization.verifyAdvertiser(id);
+      setMonetizationMsg({ text: `विज्ञापनदाता सफलतापूर्वक सत्यापित (Verified) हुआ।` });
+      loadMonetizationData();
+    } catch (err: any) {
+      setMonetizationMsg({ text: err.message || 'सत्यापन विफल', isError: true });
+    }
+  };
+
+  const handleMarkInvoicePaid = async (id: string) => {
+    try {
+      await apiClient.monetization.markInvoicePaid(id);
+      setMonetizationMsg({ text: `इनवॉइस सफलतापूर्वक भुगतान चिह्नित (PAID) किया गया।` });
+      loadMonetizationData();
+    } catch (err: any) {
+      setMonetizationMsg({ text: err.message || 'इनवॉइस अपडेट विफल', isError: true });
+    }
+  };
+
+  // =========================================================================
+  // MASTER EXECUTION 026: AUDIENCE GROWTH & INTELLIGENCE STATE & HANDLERS
+  // =========================================================================
+  const [audienceSubTab, setAudienceSubTab] = useState<
+    'overview' | 'content_perf' | 'segments' | 'notifications' | 'feedback' | 'privacy'
+  >('overview');
+  const [audienceOverview, setAudienceOverview] = useState<AudienceOverviewSummary | null>(null);
+  const [contentPerf, setContentPerf] = useState<ContentPerformanceSummary | null>(null);
+  const [audienceSegments, setAudienceSegments] = useState<AudienceSegmentRecord[]>([]);
+  const [feedbackList, setFeedbackList] = useState<ReaderFeedbackRecord[]>([]);
+  const [audienceTimeRange, setAudienceTimeRange] = useState<'24h' | '7d' | '30d'>('7d');
+  const [audienceBroadcastTitle, setAudienceBroadcastTitle] = useState('');
+  const [audienceBroadcastMessage, setAudienceBroadcastMessage] = useState('');
+  const [audienceBroadcastDistrict, setAudienceBroadcastDistrict] = useState('ALL');
+  const [audienceBroadcastPriority, setAudienceBroadcastPriority] = useState<'normal' | 'high' | 'critical'>('normal');
+  const [audienceMsg, setAudienceMsg] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [loadingAudience, setLoadingAudience] = useState(false);
+
+  const loadAudienceData = async () => {
+    setLoadingAudience(true);
+    try {
+      const [overview, perf, segments, feedback] = await Promise.all([
+        apiClient.audience.getDashboardOverview(audienceTimeRange).catch(() => null),
+        apiClient.audience.getContentPerformance(audienceTimeRange).catch(() => null),
+        apiClient.audience.getSegments().catch(() => []),
+        apiClient.audience.getFeedbackList().catch(() => []),
+      ]);
+      if (overview) setAudienceOverview(overview);
+      if (perf) setContentPerf(perf);
+      if (segments) setAudienceSegments(segments);
+      if (feedback) setFeedbackList(feedback);
+    } catch (err: any) {
+      console.warn('Failed to load audience data:', err);
+    } finally {
+      setLoadingAudience(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'audience') {
+      loadAudienceData();
+    }
+  }, [activeTab, audienceTimeRange]);
+
+  const handleBroadcastAlert = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!audienceBroadcastTitle.trim() || !audienceBroadcastMessage.trim()) return;
+    try {
+      const res = await apiClient.audience.broadcastNotification({
+        title: audienceBroadcastTitle.trim(),
+        message: audienceBroadcastMessage.trim(),
+        district: audienceBroadcastDistrict,
+        priority: audienceBroadcastPriority,
+      });
+      setAudienceMsg({ text: res.suppressedDuplicate ? res.message : 'अधिसूचना सफलतापूर्वक प्रसारित कर दी गई!' });
+      setAudienceBroadcastTitle('');
+      setAudienceBroadcastMessage('');
+    } catch (err: any) {
+      setAudienceMsg({ text: err.message || 'अधिसूचना प्रसारण विफल', isError: true });
+    }
+  };
+
+  const handleUpdateFeedbackStatus = async (id: string, status: string) => {
+    try {
+      await apiClient.audience.updateFeedbackStatus(id, status, 'संपादकीय डैशबोर्ड द्वारा स्थिति अद्यतित');
+      setAudienceMsg({ text: 'फीडबैक स्थिति सफलतापूर्वक अद्यतित हुई!' });
+      loadAudienceData();
+    } catch (err: any) {
+      setAudienceMsg({ text: err.message || 'फीडबैक स्थिति अद्यतन विफल', isError: true });
+    }
+  };
 
   const selectedReviewArticle =
     pendingArticles.find((a) => a.id === selectedReviewArticleId) || pendingArticles[0];
@@ -224,11 +625,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
         <div className="max-w-7xl mx-auto px-4 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs font-bold">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'overview'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'overview'
+              ? 'border-red-600 text-red-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
           >
             <Activity className="w-4 h-4" />
             <span>सिस्टम ओवरव्यू</span>
@@ -236,11 +636,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
           <button
             onClick={() => setActiveTab('review_queue')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'review_queue'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'review_queue'
+              ? 'border-red-600 text-red-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
           >
             <FileText className="w-4 h-4" />
             <span>समीक्षा कतार</span>
@@ -253,11 +652,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
           <button
             onClick={() => setActiveTab('reporters')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'reporters'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'reporters'
+              ? 'border-red-600 text-red-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
           >
             <Users className="w-4 h-4" />
             <span>संवाददाता मान्यता ({reporters.length})</span>
@@ -265,11 +663,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
           <button
             onClick={() => setActiveTab('tickers')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'tickers'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'tickers'
+              ? 'border-red-600 text-red-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
           >
             <Radio className="w-4 h-4" />
             <span>ब्रेकिंग टिकर ({tickers.length})</span>
@@ -277,23 +674,43 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
           <button
             onClick={() => setActiveTab('ads')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'ads'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'ads'
+              ? 'border-red-600 text-red-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
           >
             <Zap className="w-4 h-4 text-amber-500" />
             <span>विज्ञापन प्रबंधन</span>
           </button>
 
           <button
+            onClick={() => setActiveTab('monetization')}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'monetization'
+              ? 'border-emerald-600 text-emerald-600 font-bold'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <DollarSign className="w-4 h-4 text-emerald-600" />
+            <span>बिजनेस व मुद्रीकरण</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('audience')}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audience'
+              ? 'border-indigo-600 text-indigo-600 font-bold'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <Users className="w-4 h-4 text-indigo-600" />
+            <span>दर्शक व सहभागिता</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('api_pool')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'api_pool'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'api_pool'
+              ? 'border-red-600 text-red-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
           >
             <Server className="w-4 h-4 text-indigo-500" />
             <span>AI API Pool स्वास्थ्य</span>
@@ -301,11 +718,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
           <button
             onClick={() => setActiveTab('audit_logs')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'audit_logs'
-                ? 'border-red-600 text-red-600'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audit_logs'
+              ? 'border-red-600 text-red-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
           >
             <ShieldCheck className="w-4 h-4 text-emerald-500" />
             <span>ऑडिट लॉग्स</span>
@@ -502,11 +918,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                           setAuditResult(null);
                           setShowRevisionDialog(false);
                         }}
-                        className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
-                          isSelected
-                            ? 'bg-white border-red-500 shadow-md ring-1 ring-red-400/30'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
+                        className={`p-3.5 rounded-xl border cursor-pointer transition-all ${isSelected
+                          ? 'bg-white border-red-500 shadow-md ring-1 ring-red-400/30'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
                       >
                         <div className="flex items-center justify-between text-[11px] mb-1">
                           <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
@@ -770,11 +1185,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
                       <td className="py-3 px-3">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            rep.role === 'trusted_reporter'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                              : 'bg-blue-100 text-blue-800 border border-blue-300'
-                          }`}
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rep.role === 'trusted_reporter'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : 'bg-blue-100 text-blue-800 border border-blue-300'
+                            }`}
                         >
                           {rep.role === 'trusted_reporter' ? 'वरिष्ठ संवाददाता' : 'जिला संवाददाता'}
                         </span>
@@ -846,22 +1260,20 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => setNewTickerPriority('critical')}
-                      className={`flex-1 py-1.5 rounded font-bold transition-colors ${
-                        newTickerPriority === 'critical'
-                          ? 'bg-red-600 text-white'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}
+                      className={`flex-1 py-1.5 rounded font-bold transition-colors ${newTickerPriority === 'critical'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-slate-100 text-slate-700'
+                        }`}
                     >
                       🚨 अति महत्वपूर्ण (Critical)
                     </button>
                     <button
                       type="button"
                       onClick={() => setNewTickerPriority('normal')}
-                      className={`flex-1 py-1.5 rounded font-bold transition-colors ${
-                        newTickerPriority === 'normal'
-                          ? 'bg-slate-800 text-white'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}
+                      className={`flex-1 py-1.5 rounded font-bold transition-colors ${newTickerPriority === 'normal'
+                        ? 'bg-slate-800 text-white'
+                        : 'bg-slate-100 text-slate-700'
+                        }`}
                     >
                       सामान्य (Normal)
                     </button>
@@ -892,11 +1304,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-black ${
-                            t.priority === 'critical'
-                              ? 'bg-red-600 text-white'
-                              : 'bg-slate-200 text-slate-800'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-black ${t.priority === 'critical'
+                            ? 'bg-red-600 text-white'
+                            : 'bg-slate-200 text-slate-800'
+                            }`}
                         >
                           {t.priority === 'critical' ? 'CRITICAL' : 'NORMAL'}
                         </span>
@@ -910,11 +1321,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         onClick={() => onToggleTicker(t.id)}
-                        className={`px-2 py-1 rounded text-[11px] font-bold ${
-                          t.isActive
-                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                            : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                        }`}
+                        className={`px-2 py-1 rounded text-[11px] font-bold ${t.isActive
+                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                          : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                          }`}
                       >
                         {t.isActive ? 'सक्रिय' : 'निष्क्रिय'}
                       </button>
@@ -968,11 +1378,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200">
                     <button
                       onClick={() => onToggleAdActive(ad.id)}
-                      className={`px-2.5 py-1 rounded text-[11px] font-bold ${
-                        ad.isActive
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-slate-200 text-slate-700'
-                      }`}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold ${ad.isActive
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                        }`}
                     >
                       {ad.isActive ? 'सक्रिय (Live)' : 'बंद (Paused)'}
                     </button>
@@ -993,71 +1402,1426 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
           </div>
         )}
 
-        {/* TAB 6: API POOL */}
-        {activeTab === 'api_pool' && (
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        {/* TAB 6: BUSINESS MANAGEMENT & MONETIZATION (MASTER EXECUTION 025) */}
+        {activeTab === 'monetization' && (
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-5 text-xs">
+            {/* Header & Sub-Navigation */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  मल्टी-प्रोवाइडर AI API Pool सिमुलेशन एवं कोटा मॉनिटर
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <DollarSign className="w-5 h-5 text-emerald-600" />
+                  <span>बिजनेस प्रबंधन एवं राजस्व प्रणाली (Monetization & Revenue Desk)</span>
                 </h3>
-                <p className="text-xs text-slate-500">
-                  दर-सीमा (Rate Limits) व स्वचालित फेलओवर (सिम्युलेटेड टेलीमेट्री डेटा)
+                <p className="text-slate-500 text-xs">
+                  राजस्व ऑडिट, प्रीमियम सब्सक्रिप्शन, विज्ञापन अभियान, ASCI प्रायोजित सामग्री एवं जीएसटी इनवॉइसिंग
                 </p>
               </div>
 
-              <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold">
-                फेलओवर सिमुलेशन: सक्रिय (Demo)
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadMonetizationData}
+                  disabled={loadingMonetization}
+                  className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-50 font-medium flex items-center gap-1.5 text-slate-700"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingMonetization ? 'animate-spin text-emerald-600' : ''}`} />
+                  <span>{loadingMonetization ? 'लोड हो रहा है...' : 'डेटा रिफ्रेश'}</span>
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {apiPool.map((pool) => {
-                const usagePercent = Math.round((pool.dailyQuotaUsed / pool.dailyQuotaLimit) * 100);
-                return (
-                  <div
-                    key={pool.id}
-                    className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-3 text-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-slate-900 text-sm">{pool.name}</h4>
-                      <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">
-                        {pool.status}
-                      </span>
-                    </div>
+            {/* Notification Toast */}
+            {monetizationMsg && (
+              <div
+                className={`p-3 rounded-lg border flex items-center justify-between ${monetizationMsg.isError
+                  ? 'bg-red-50 border-red-200 text-red-700'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  }`}
+              >
+                <span>{monetizationMsg.text}</span>
+                <button
+                  onClick={() => setMonetizationMsg(null)}
+                  className="text-xs font-bold hover:opacity-75"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
-                    <div className="space-y-1.5 text-slate-600">
-                      <div className="flex justify-between">
-                        <span>मॉडल:</span>
-                        <strong className="font-mono text-slate-800">{pool.model}</strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>सुरक्षित की (Masked):</span>
-                        <strong className="font-mono text-slate-800">{pool.keyMasked}</strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>दैनिक टोकन उपयोग:</span>
-                        <strong>
-                          {pool.dailyQuotaUsed.toLocaleString()} / {pool.dailyQuotaLimit.toLocaleString()} ({usagePercent}%)
-                        </strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>औसत लेटेंसी:</span>
-                        <strong>{pool.avgLatencyMs} ms</strong>
-                      </div>
-                    </div>
+            {/* Sub-Tabs Selector */}
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
+              <button
+                onClick={() => setMonetizationSubTab('dashboard')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-colors ${monetizationSubTab === 'dashboard'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>बिजनेस डैशबोर्ड</span>
+              </button>
+              <button
+                onClick={() => setMonetizationSubTab('plans')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-colors ${monetizationSubTab === 'plans'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>सब्सक्रिप्शन योजनाएं ({subPlans.length})</span>
+              </button>
+              <button
+                onClick={() => setMonetizationSubTab('campaigns')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-colors ${monetizationSubTab === 'campaigns'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>विज्ञापन अभियान ({adCampaigns.length})</span>
+              </button>
+              <button
+                onClick={() => setMonetizationSubTab('sponsored')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-colors ${monetizationSubTab === 'sponsored'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>प्रायोजित सामग्री (ASCI) ({sponsoredArticles.length})</span>
+              </button>
+              <button
+                onClick={() => setMonetizationSubTab('crm')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-colors ${monetizationSubTab === 'crm'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>विज्ञापनदाता CRM ({advertisers.length})</span>
+              </button>
+              <button
+                onClick={() => setMonetizationSubTab('invoices')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-colors ${monetizationSubTab === 'invoices'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+              >
+                <Receipt className="w-3.5 h-3.5" />
+                <span>जीएसटी इनवॉइस व टैक्स ({invoices.length})</span>
+              </button>
+            </div>
 
-                    {/* Progress Bar */}
-                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-emerald-500 h-full transition-all"
-                        style={{ width: `${usagePercent}%` }}
-                      />
+            {/* SUB-TAB 1: BUSINESS DASHBOARD */}
+            {monetizationSubTab === 'dashboard' && (
+              <div className="space-y-6">
+                {/* 6 Metric KPI Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-bold text-emerald-800 block">कुल प्राप्त राजस्व (Realized)</span>
+                    <span className="text-lg font-black text-emerald-900 mt-1 block">
+                      ₹{dashboardSummary?.revenue?.totalRealizedRupees ?? '0'}
+                    </span>
+                    <span className="text-[10px] text-emerald-600">वास्तविक प्राप्त (Non-Refunded)</span>
+                  </div>
+
+                  <div className="bg-sky-50 border border-sky-200 p-3 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-bold text-sky-800 block">मासिक प्राप्त (Month)</span>
+                    <span className="text-lg font-black text-sky-900 mt-1 block">
+                      ₹{dashboardSummary?.revenue?.monthlyRealizedRupees ?? '0'}
+                    </span>
+                    <span className="text-[10px] text-sky-600">चालू माह का संचित</span>
+                  </div>
+
+                  <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-bold text-indigo-800 block">अनुमानित कुल (Projected)</span>
+                    <span className="text-lg font-black text-indigo-900 mt-1 block">
+                      ₹{dashboardSummary?.revenue?.projectedRupees ?? '0'}
+                    </span>
+                    <span className="text-[10px] text-indigo-600">प्राप्त + सक्रिय बजट + बकाया</span>
+                  </div>
+
+                  <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-bold text-amber-800 block">बकाया राशि (Receivables)</span>
+                    <span className="text-lg font-black text-amber-900 mt-1 block">
+                      ₹{dashboardSummary?.revenue?.outstandingReceivablesRupees ?? '0'}
+                    </span>
+                    <span className="text-[10px] text-amber-600">जारी इनवॉइस जिनका भुगतान शेष</span>
+                  </div>
+
+                  <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-bold text-rose-800 block">रिफंड राशि (Refunded)</span>
+                    <span className="text-lg font-black text-rose-900 mt-1 block">
+                      ₹{dashboardSummary?.revenue?.refundsTotalRupees ?? '0'}
+                    </span>
+                    <span className="text-[10px] text-rose-600">रिफंड संसाधित</span>
+                  </div>
+
+                  <div className="bg-purple-50 border border-purple-200 p-3 rounded-xl shadow-2xs">
+                    <span className="text-[11px] font-bold text-purple-800 block">सक्रिय सब्सक्रिप्शन</span>
+                    <span className="text-lg font-black text-purple-900 mt-1 block">
+                      {dashboardSummary?.counts?.activeSubscriptions ?? 0}
+                    </span>
+                    <span className="text-[10px] text-purple-600">सक्रिय पेड पाठक</span>
+                  </div>
+                </div>
+
+                {/* 2-Column Breakdown Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Revenue by Stream */}
+                  <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-3">
+                    <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-emerald-600" />
+                      <span>राजस्व स्रोत विभाजन (Revenue by Stream)</span>
+                    </h4>
+
+                    <div className="space-y-2.5">
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
+                          <span>डिस्प्ले विज्ञापन (Display Ads)</span>
+                          <span className="font-bold">₹{dashboardSummary?.revenue?.bySource?.advertisingRupees ?? '0'}</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="bg-emerald-500 h-2 rounded-full" style={{ width: '45%' }} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
+                          <span>प्रायोजित सामग्री (Sponsored Content)</span>
+                          <span className="font-bold">₹{dashboardSummary?.revenue?.bySource?.sponsoredRupees ?? '0'}</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="bg-sky-500 h-2 rounded-full" style={{ width: '30%' }} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
+                          <span>पाठक सब्सक्रिप्शन (Subscriptions)</span>
+                          <span className="font-bold">₹{dashboardSummary?.revenue?.bySource?.subscriptionsRupees ?? '0'}</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="bg-purple-500 h-2 rounded-full" style={{ width: '15%' }} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
+                          <span>पार्टनरशिप पैकेज (Partner Packages)</span>
+                          <span className="font-bold">₹{dashboardSummary?.revenue?.bySource?.partnersRupees ?? '0'}</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="bg-amber-500 h-2 rounded-full" style={{ width: '10%' }} />
+                        </div>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
+
+                  {/* 6-Month Realized Trend */}
+                  <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-3">
+                    <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-sky-600" />
+                      <span>विगत 6 माह राजस्व रुझान (Monthly Trends)</span>
+                    </h4>
+
+                    <div className="space-y-2">
+                      {(dashboardSummary?.monthlyTrends || []).map((t, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-200">
+                          <span className="font-bold text-slate-800">{t.month}</span>
+                          <div className="flex items-center gap-4 text-xs">
+                            <span className="text-emerald-700 font-bold">
+                              राजस्व: ₹{t.revenueRupees.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Compliance & Security Banner */}
+                <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-xs text-emerald-900 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>
+                      <strong>वैधानिक अनुपालन:</strong> यह प्रणाली भारतीय विज्ञापन मानक परिषद (ASCI) एवं मध्य प्रदेश जीएसटी (SAC 998363 - 18% GST) मानकों के पूर्णतः अनुरूप है।
+                    </span>
+                  </div>
+                  <span className="bg-emerald-200 text-emerald-900 font-bold px-2 py-0.5 rounded text-[10px]">
+                    ऑडिट ट्रेल सक्रिय
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 2: SUBSCRIPTION PLANS */}
+            {monetizationSubTab === 'plans' && (
+              <div className="space-y-4">
+                <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+                  <h4 className="font-bold text-slate-900 text-sm">
+                    पाठक सदस्यता एवं प्रीमियम योजनाएं (Reader Subscription Plans)
+                  </h4>
+                  <span className="text-xs text-slate-500">
+                    कुल सक्रिय योजनाएं: {subPlans.filter(p => p.isActive).length} / {subPlans.length}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {subPlans.map((plan) => (
+                    <div
+                      key={plan.id}
+                      className={`border rounded-xl p-4 space-y-3 relative flex flex-col justify-between ${plan.isActive ? 'border-emerald-300 bg-white shadow-2xs' : 'border-slate-200 bg-slate-50 opacity-75'
+                        }`}
+                    >
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h5 className="font-bold text-slate-900 text-sm">{plan.nameHi}</h5>
+                            <span className="text-[11px] text-slate-500">{plan.nameEn}</span>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${plan.isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                              }`}
+                          >
+                            {plan.isActive ? 'सक्रिय' : 'निष्क्रिय'}
+                          </span>
+                        </div>
+
+                        <div className="text-2xl font-black text-slate-900 my-2">
+                          ₹{plan.priceRupees}
+                          <span className="text-xs font-normal text-slate-500 ml-1">/{plan.billingCycle}</span>
+                        </div>
+
+                        <div className="space-y-1.5 border-t border-slate-100 pt-2 text-[11px] text-slate-700">
+                          <div className="flex items-center gap-1.5">
+                            {plan.entitlements?.includes('ad_free') ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <XCircle className="w-3.5 h-3.5 text-slate-400" />}
+                            <span>विज्ञापन मुक्त (Ad-Free)</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {plan.entitlements?.includes('pdf_download') ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <XCircle className="w-3.5 h-3.5 text-slate-400" />}
+                            <span>ई-पेपर पीडीएफ डाउनलोड</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {plan.entitlements?.includes('epaper_archive') ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <XCircle className="w-3.5 h-3.5 text-slate-400" />}
+                            <span>ई-पेपर पुराना आर्काइव</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {plan.entitlements?.includes('patron_badge') ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <XCircle className="w-3.5 h-3.5 text-slate-400" />}
+                            <span>संरक्षक बैज (Patron Badge)</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 pt-1">
+                            डाउनलोड सीमा: {plan.usageLimits?.maxDownloadsPerMonth ? `${plan.usageLimits.maxDownloadsPerMonth} डाउनलोड/माह` : 'असीमित'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleTogglePlan(plan.id, plan.isActive)}
+                        className={`w-full mt-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${plan.isActive
+                          ? 'border-red-300 text-red-700 hover:bg-red-50'
+                          : 'border-emerald-300 bg-emerald-600 text-white hover:bg-emerald-700'
+                          }`}
+                      >
+                        {plan.isActive ? 'निष्क्रिय करें' : 'सक्रिय करें'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 3: AD CAMPAIGNS */}
+            {monetizationSubTab === 'campaigns' && (
+              <div className="space-y-4">
+                <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      डिजिटल विज्ञापन अभियान (Digital Ad Campaigns)
+                    </h4>
+                    <p className="text-xs text-slate-500">
+                      मप्र के 55 जिलों में स्लॉट-आधारित एवं जियो-टारगेटेड विज्ञापन प्रबंधन
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-slate-700">
+                    कुल अभियान: {adCampaigns.length}
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 text-[11px] font-bold">
+                        <th className="p-2.5 rounded-l-lg">अभियान / शीर्षक</th>
+                        <th className="p-2.5">विज्ञापनदाता</th>
+                        <th className="p-2.5">स्लॉट कोड</th>
+                        <th className="p-2.5">बजट / खर्च</th>
+                        <th className="p-2.5">व्यू / क्लिक (CTR)</th>
+                        <th className="p-2.5">स्थिति</th>
+                        <th className="p-2.5 rounded-r-lg text-right">कार्रवाई</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {adCampaigns.map((camp) => (
+                        <tr key={camp.id} className="hover:bg-slate-50">
+                          <td className="p-2.5">
+                            <span className="font-bold text-slate-900 block">{camp.campaignName}</span>
+                            <span className="text-[10px] text-slate-500">
+                              टारगेट: {camp.targetDistricts?.join(', ') || 'पूरा मध्य प्रदेश'}
+                            </span>
+                          </td>
+                          <td className="p-2.5 font-medium text-slate-700">{camp.advertiserName}</td>
+                          <td className="p-2.5">
+                            <span className="bg-slate-200 text-slate-800 px-2 py-0.5 rounded text-[10px] font-mono">
+                              {camp.slotCode}
+                            </span>
+                          </td>
+                          <td className="p-2.5">
+                            <span className="font-bold text-slate-800">
+                              ₹{(camp.budgetSpentPaise ? camp.budgetSpentPaise / 100 : 0).toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-slate-400"> / ₹{(camp.budgetTotalPaise ? camp.budgetTotalPaise / 100 : 0).toLocaleString('en-IN')}</span>
+                          </td>
+                          <td className="p-2.5">
+                            <span className="text-slate-800 block">
+                              {camp.metrics?.impressions ?? 0} व्यूज • {camp.metrics?.clicks ?? 0} क्लिक्स
+                            </span>
+                            <span className="text-[10px] text-emerald-700 font-bold">
+                              CTR: {camp.metrics?.ctr ?? 0}%
+                            </span>
+                          </td>
+                          <td className="p-2.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${camp.status === 'active'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : camp.status === 'review'
+                                  ? 'bg-amber-100 text-amber-800 animate-pulse'
+                                  : camp.status === 'approved'
+                                    ? 'bg-sky-100 text-sky-800'
+                                    : camp.status === 'rejected'
+                                      ? 'bg-red-100 text-red-800'
+                                      : 'bg-slate-200 text-slate-700'
+                                }`}
+                            >
+                              {camp.status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-right space-x-1">
+                            {['review', 'draft'].includes(camp.status) && (
+                              <>
+                                <button
+                                  onClick={() => handleApproveCampaign(camp.id)}
+                                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold"
+                                >
+                                  अनुमोदन
+                                </button>
+                                <button
+                                  onClick={() => handleRejectCampaign(camp.id)}
+                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[10px] font-bold"
+                                >
+                                  अस्वीकार
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 4: SPONSORED CONTENT (MANDATORY EDITORIAL FIREWALL) */}
+            {monetizationSubTab === 'sponsored' && (
+              <div className="space-y-4">
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs text-amber-900 flex items-start gap-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">
+                      अनिवार्य संपादकीय फ़ायरवॉल (Mandatory Editorial Firewall - Rule BR-MON-004):
+                    </span>
+                    <p className="text-[11px] text-amber-800 mt-0.5">
+                      ASCI दिशानिर्देशों के तहत, प्रायोजित लेख स्वतः प्रकाशित नहीं हो सकते। संपादकीय समीक्षा एवं स्पष्ट
+                      &apos;प्रायोजित सामग्री / Sponsored Content&apos; प्रकटीकरण अनिवार्य है।
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {sponsoredArticles.map((art) => (
+                    <div
+                      key={art.id}
+                      className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded text-[10px] font-bold">
+                            {art.brandDisclosure || 'प्रायोजित सामग्री'}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${art.status === 'APPROVED'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : art.status === 'REJECTED'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-slate-100 text-slate-800'
+                              }`}
+                          >
+                            {art.status}
+                          </span>
+                        </div>
+                        <h5 className="font-bold text-slate-900 text-sm">{art.title}</h5>
+                        <p className="text-[11px] text-slate-500">
+                          विज्ञापनदाता: <strong className="text-slate-700">{art.advertiserName}</strong>
+                          {art.articleId && (
+                            <span className="ml-2 text-emerald-700 font-bold">
+                              • न्यूज़ रूम लेख आईडी: {art.articleId}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {art.status === 'PENDING_REVIEW' && (
+                          <>
+                            <button
+                              onClick={() => handleReviewSponsored(art.id, true)}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold"
+                            >
+                              संपादकीय अनुमोदन व ड्राफ्ट बनाएं
+                            </button>
+                            <button
+                              onClick={() => handleReviewSponsored(art.id, false)}
+                              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold"
+                            >
+                              अस्वीकार
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 5: ADVERTISER CRM */}
+            {monetizationSubTab === 'crm' && (
+              <div className="space-y-6">
+                {/* Advertisers Directory */}
+                <div className="space-y-3">
+                  <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      पंजीकृत विज्ञापनदाता प्रोफ़ाइल (Advertiser Directory)
+                    </h4>
+                    <span className="text-xs text-slate-500">
+                      कुल विज्ञापनदाता: {advertisers.length}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {advertisers.map((adv) => (
+                      <div
+                        key={adv.id}
+                        className="border border-slate-200 rounded-xl p-3.5 bg-white shadow-2xs space-y-2 flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex justify-between items-start">
+                            <h5 className="font-bold text-slate-900 text-xs">{adv.organizationName}</h5>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${adv.verificationStatus === 'verified'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                                }`}
+                            >
+                              {adv.verificationStatus.toUpperCase()}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-slate-600 space-y-0.5 mt-2">
+                            <div>सम्पर्क: {adv.contactPerson}</div>
+                            <div>फ़ोन: {adv.phone}</div>
+                            <div>ईमेल: {adv.email}</div>
+                            <div>राज्य कोड: {adv.stateCode || '23 (मध्य प्रदेश)'}</div>
+                            <div className="font-mono text-[10px] text-slate-500 pt-1">
+                              GSTIN: {adv.gstin || 'लागू नहीं'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {adv.verificationStatus !== 'verified' && (
+                          <button
+                            onClick={() => handleVerifyAdvertiser(adv.id)}
+                            className="w-full mt-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
+                          >
+                            सत्यापित करें (Verify)
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Proposals Section */}
+                <div className="space-y-3 pt-2">
+                  <div className="border-b border-slate-100 pb-2">
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      व्यावसायिक साझेदारी प्रस्ताव (Commercial Proposals)
+                    </h4>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 text-[11px] font-bold">
+                          <th className="p-2.5 rounded-l-lg">प्रस्ताव संख्या</th>
+                          <th className="p-2.5">शीर्षक</th>
+                          <th className="p-2.5">मूल्य (INR)</th>
+                          <th className="p-2.5">वैधता</th>
+                          <th className="p-2.5 rounded-r-lg">स्थिति</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {proposals.map((prop) => (
+                          <tr key={prop.id} className="hover:bg-slate-50">
+                            <td className="p-2.5 font-mono font-bold text-slate-800">{prop.proposalNumber}</td>
+                            <td className="p-2.5 text-slate-700 font-semibold">{prop.title}</td>
+                            <td className="p-2.5 font-bold text-emerald-800">
+                              ₹{prop.amountRupees}
+                            </td>
+                            <td className="p-2.5 text-slate-500">{prop.validUntil}</td>
+                            <td className="p-2.5">
+                              <span className="bg-sky-100 text-sky-800 px-2 py-0.5 rounded text-[10px] font-bold">
+                                {prop.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 6: INVOICES & TAX */}
+            {monetizationSubTab === 'invoices' && (
+              <div className="space-y-5">
+                {/* Tax Configuration Card */}
+                <div className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                      <Receipt className="w-4 h-4 text-emerald-600" />
+                      <span>जीएसटी कर विन्यास एवं पैरामीटर्स (GST Configuration)</span>
+                    </h4>
+                    <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">
+                      सक्रिय विन्यास
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-500 block">पंजीकृत राज्य (Home State)</span>
+                      <strong className="text-slate-800">
+                        {taxConfig?.homeStateName || 'मध्य प्रदेश'} (कोड: {taxConfig?.homeStateCode || '23'})
+                      </strong>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-500 block">डिजिटल विज्ञापन SAC कोड</span>
+                      <strong className="text-slate-800">{taxConfig?.sacCode || '998363'}</strong>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-500 block">राज्यीय कर (Intra-State GST)</span>
+                      <strong className="text-emerald-700">
+                        {taxConfig ? taxConfig.cgstRatePercent + taxConfig.sgstRatePercent : 18}% (CGST {taxConfig?.cgstRatePercent || 9}% + SGST {taxConfig?.sgstRatePercent || 9}%)
+                      </strong>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                      <span className="text-[10px] text-slate-500 block">अंतर-राज्यीय कर (Inter-State IGST)</span>
+                      <strong className="text-indigo-700">{taxConfig?.igstRatePercent || 18}% (IGST 18%)</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoices Table */}
+                <div className="space-y-3">
+                  <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      जीएसटी इनवॉइस रजिस्टर (GST Invoices Register)
+                    </h4>
+                    <span className="text-xs text-slate-500">कुल इनवॉइस: {invoices.length}</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 text-[11px] font-bold">
+                          <th className="p-2.5 rounded-l-lg">इनवॉइस संख्या</th>
+                          <th className="p-2.5">ग्राहक / विज्ञापनदाता</th>
+                          <th className="p-2.5">राज्य कोड</th>
+                          <th className="p-2.5">कर योग्य मूल्य</th>
+                          <th className="p-2.5">जीएसटी कर</th>
+                          <th className="p-2.5">कुल राशि</th>
+                          <th className="p-2.5">स्थिति</th>
+                          <th className="p-2.5 rounded-r-lg text-right">कार्रवाई</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        {invoices.map((inv) => (
+                          <tr key={inv.id} className="hover:bg-slate-50">
+                            <td className="p-2.5 font-mono font-bold text-slate-900">{inv.invoiceNumber}</td>
+                            <td className="p-2.5 font-semibold text-slate-800">{inv.customerName}</td>
+                            <td className="p-2.5 text-slate-600">{inv.customerStateCode}</td>
+                            <td className="p-2.5 text-slate-700">₹{(inv.taxableAmountPaise / 100).toLocaleString('en-IN')}</td>
+                            <td className="p-2.5 text-slate-600">₹{(inv.totalTaxPaise / 100).toLocaleString('en-IN')}</td>
+                            <td className="p-2.5 font-black text-emerald-800">
+                              ₹{inv.totalAmountRupees}
+                            </td>
+                            <td className="p-2.5">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${inv.status === 'PAID'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : inv.status === 'ISSUED'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-slate-200 text-slate-700'
+                                  }`}
+                              >
+                                {inv.status}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-right">
+                              {inv.status === 'ISSUED' && (
+                                <button
+                                  onClick={() => handleMarkInvoicePaid(inv.id)}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold"
+                                >
+                                  भुगतान दर्ज करें
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 7: API POOL & THIRD-PARTY INTEGRATIONS (MASTER EXECUTION 024) */}
+        {activeTab === 'api_pool' && (
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-5 text-xs">
+            {/* 1. Header with Live Telemetry & Sub-Navigation */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Server className="w-5 h-5 text-red-600" />
+                  <span>सेंट्रल API Pool व थर्ड-पार्टी इंटीग्रेशन कंसोल</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  AI मॉडल प्रोवाइडर्स, RSS वायर फ़ीड्स, सोशल मीडिया चैनल्स, व्हाट्सएप बिजनेस एवं वेबहुक सुरक्षा नियंत्रण
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadIntegrationData}
+                  disabled={loadingIntegrations}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg flex items-center gap-1.5 transition-colors"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingIntegrations ? 'animate-spin text-red-600' : ''}`} />
+                  <span>रिफ्रेश टेलीमेट्री</span>
+                </button>
+              </div>
             </div>
+
+            {/* Notification / Toast Message */}
+            {integrationMsg && (
+              <div
+                className={`p-3 rounded-lg flex items-center justify-between ${integrationMsg.isError ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  }`}
+              >
+                <span>{integrationMsg.text}</span>
+                <button onClick={() => setIntegrationMsg(null)} className="text-xs font-bold underline ml-2">
+                  बंद करें
+                </button>
+              </div>
+            )}
+
+            {/* 2. Sub-Tabs Bar */}
+            <div className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto no-scrollbar font-bold">
+              <button
+                type="button"
+                onClick={() => setIntegrationSubTab('providers')}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${integrationSubTab === 'providers' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+              >
+                <Server className="w-3.5 h-3.5" />
+                <span>API प्रोवाइडर्स व कोटा ({liveProviders.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIntegrationSubTab('rss')}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${integrationSubTab === 'rss' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+              >
+                <Rss className="w-3.5 h-3.5" />
+                <span>RSS व वायर फ़ीड्स ({rssSources.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIntegrationSubTab('social')}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${integrationSubTab === 'social' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>सोशल मीडिया चैनल्स ({socialAccounts.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIntegrationSubTab('whatsapp')}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${integrationSubTab === 'whatsapp' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                <span>व्हाट्सएप बिजनेस ({waSubscribers.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIntegrationSubTab('webhooks')}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${integrationSubTab === 'webhooks' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>वेबहुक्स व सुरक्षा ({webhookLogs.length})</span>
+              </button>
+            </div>
+
+            {/* -------------------------------------------------------- */}
+            {/* SUBTAB 1: API PROVIDERS & QUOTAS                         */}
+            {/* -------------------------------------------------------- */}
+            {integrationSubTab === 'providers' && (
+              <div className="space-y-4">
+                {/* KPI Metrics Strip */}
+                {liveUsage && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                      <span className="text-slate-500 block text-[11px]">कुल सक्रिय प्रोवाइडर्स</span>
+                      <strong className="text-base text-slate-900 font-mono">
+                        {liveUsage.activeProviders} / {liveUsage.totalProviders}
+                      </strong>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                      <span className="text-slate-500 block text-[11px]">दैनिक कुल टोकन उपभोग</span>
+                      <strong className="text-base text-slate-900 font-mono">
+                        {liveUsage.totalDailyTokens.toLocaleString()}
+                      </strong>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                      <span className="text-slate-500 block text-[11px]">मासिक कुल टोकन उपभोग</span>
+                      <strong className="text-base text-slate-900 font-mono">
+                        {liveUsage.totalMonthlyTokens.toLocaleString()}
+                      </strong>
+                    </div>
+
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                      <span className="text-emerald-700 block text-[11px]">अनुमानित दैनिक लागत</span>
+                      <strong className="text-base text-emerald-900 font-mono">
+                        ₹{liveUsage.totalEstimatedCostInr.toFixed(2)} (${liveUsage.totalEstimatedCostUsd.toFixed(4)})
+                      </strong>
+                      <span className="text-[10px] text-emerald-600 block">दर: ₹87.5 / USD (अनुमानित)</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Provider Cards Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {liveProviders.map((prov) => {
+                    const usagePercent = Math.min(
+                      100,
+                      Math.round(((prov.dailyQuotaUsed || 0) / (prov.dailyQuotaLimit || 1)) * 100)
+                    );
+                    return (
+                      <div
+                        key={prov.id}
+                        className={`p-4 rounded-xl border space-y-3 transition-colors ${prov.isEnabled ? 'bg-slate-50 border-slate-200' : 'bg-slate-100/70 border-slate-300 opacity-75'
+                          }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="font-bold text-slate-900 text-sm">{prov.name}</h4>
+                            <span className="text-[11px] text-slate-500 font-mono">{prov.baseUrl || prov.providerId}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${prov.healthStatus === 'healthy'
+                                ? 'bg-emerald-600 text-white'
+                                : prov.healthStatus === 'degraded'
+                                  ? 'bg-amber-500 text-white'
+                                  : 'bg-red-600 text-white'
+                                }`}
+                            >
+                              {prov.healthStatus}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${prov.isEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                                }`}
+                            >
+                              {prov.isEnabled ? 'सक्रिय' : 'बंद'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 text-slate-600">
+                          <div className="flex justify-between">
+                            <span>सुरक्षित की संदर्भ (Masked):</span>
+                            <strong className="font-mono text-slate-800">{prov.maskedCredential || 'N/A'}</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>दैनिक कोटा उपयोग:</span>
+                            <strong>
+                              {(prov.dailyQuotaUsed || 0).toLocaleString()} / {(prov.dailyQuotaLimit || 0).toLocaleString()} ({usagePercent}%)
+                            </strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>औसत लेटेंसी:</span>
+                            <strong className="font-mono text-slate-800">{prov.avgLatencyMs || 200} ms</strong>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>दर-सीमा विनिर्देश:</span>
+                            <span className="text-slate-500">{prov.rateLimitInfo || 'Standard'}</span>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            className={`h-full transition-all ${usagePercent > 80 ? 'bg-red-500' : usagePercent > 50 ? 'bg-amber-500' : 'bg-emerald-500'
+                              }`}
+                            style={{ width: `${usagePercent}%` }}
+                          />
+                        </div>
+
+                        {/* Actions */}
+                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleProvider(prov.id, prov.isEnabled)}
+                            className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${prov.isEnabled ? 'bg-slate-200 hover:bg-slate-300 text-slate-800' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              }`}
+                          >
+                            {prov.isEnabled ? 'प्रोवाइडर निष्क्रिय करें' : 'सक्रिय करें'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleTestProviderHealth(prov.id)}
+                            className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-[11px] font-bold flex items-center gap-1"
+                          >
+                            <Activity className="w-3 h-3 text-red-600" />
+                            <span>हेल्थ टेस्ट रन</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------- */}
+            {/* SUBTAB 2: RSS & NEWS SOURCES                             */}
+            {/* -------------------------------------------------------- */}
+            {integrationSubTab === 'rss' && (
+              <div className="space-y-6">
+                {/* 1. Register Source Form */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                      <Plus className="w-4 h-4 text-red-600" />
+                      <span>नया अधिकृत RSS / वायर स्रोत पंजीकृत करें</span>
+                    </h4>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-black">
+                      🛡️ Anti-SSRF & Safe-XXE Active
+                    </span>
+                  </div>
+
+                  <form onSubmit={handleCreateRssSource} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">स्रोत का नाम *</label>
+                      <input
+                        type="text"
+                        value={newRssName}
+                        onChange={(e) => setNewRssName(e.target.value)}
+                        placeholder="उदा. पीटीआई भाषा, एमपी जनसंपर्क"
+                        className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">फ़ीड URL *</label>
+                      <input
+                        type="url"
+                        value={newRssUrl}
+                        onChange={(e) => setNewRssUrl(e.target.value)}
+                        placeholder="https://.../feed.xml"
+                        className="w-full p-2 border border-slate-300 rounded-lg bg-white font-mono text-[11px]"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">प्रकाशक का नाम *</label>
+                      <input
+                        type="text"
+                        value={newRssPublisher}
+                        onChange={(e) => setNewRssPublisher(e.target.value)}
+                        placeholder="उदा. Press Trust of India"
+                        className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex items-end">
+                      <button
+                        type="submit"
+                        className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-colors"
+                      >
+                        स्रोत पंजीकृत करें
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* 2. Registered Sources List */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-900 text-sm">सक्रिय RSS व सरकारी सूचना स्रोत ({rssSources.length})</h4>
+
+                  <div className="space-y-2.5">
+                    {rssSources.map((src) => (
+                      <div
+                        key={src.id}
+                        className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${src.status === 'active' ? 'bg-emerald-600 text-white' : 'bg-slate-300 text-slate-700'
+                                }`}
+                            >
+                              {src.status}
+                            </span>
+                            <span className="font-bold text-slate-900">{src.name}</span>
+                            <span className="text-slate-500 font-mono text-[11px]">[{src.publisherName}]</span>
+                          </div>
+                          <p className="font-mono text-[11px] text-slate-600 truncate max-w-xl">{src.feedUrl}</p>
+                          <div className="text-[11px] text-slate-500">
+                            श्रेणी: {src.sourceCategory} • आवृत्ति: प्रत्येक {src.pollingIntervalMinutes} मिनट • डुप्लिकेट रोके गए: {src.duplicateCount || 0}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleSyncRssSource(src.id)}
+                            className="px-2.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded font-bold flex items-center gap-1 shadow-xs"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            <span>तुरंत सिंक करें</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. Ingested Wire News Stream (Draft Conversion) */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-900 text-sm">
+                    सिंक की गई वायर सामग्री (Human-in-the-Loop Review Queue) ({rssItems.length})
+                  </h4>
+
+                  <div className="space-y-2">
+                    {rssItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-3 bg-white border border-slate-200 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="bg-slate-100 text-slate-700 text-[10px] px-2 py-0.5 rounded font-black">
+                              {item.sourceAttribution || item.sourceName}
+                            </span>
+                            <span className="text-slate-400 text-[11px]">{new Date(item.importedAt).toLocaleTimeString('hi-IN')}</span>
+                          </div>
+                          <h5 className="font-bold text-slate-900">{item.originalTitle}</h5>
+                          <p className="text-slate-600 line-clamp-1">{item.originalSummary}</p>
+                        </div>
+
+                        <div className="shrink-0">
+                          {item.status === 'DRAFT_CONVERTED' ? (
+                            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded font-bold text-[11px]">
+                              ✓ ड्राफ्ट में परिवर्तित
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleConvertWireItem(item.id)}
+                              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded font-bold flex items-center gap-1"
+                            >
+                              <Plus className="w-3.5 h-3.5 text-amber-400" />
+                              <span>ड्राफ्ट में बदलें</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------- */}
+            {/* SUBTAB 3: SOCIAL MEDIA PUBLISHING                        */}
+            {/* -------------------------------------------------------- */}
+            {integrationSubTab === 'social' && (
+              <div className="space-y-6">
+                {/* 1. Platform Constraints Reference */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-sm">प्लेटफ़ॉर्म प्रकाशन सीमाएं व नियम (Publishing Limits)</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-[11px]">
+                    <div className="p-2 bg-white rounded border border-slate-200">
+                      <strong className="block text-slate-900">X (Twitter)</strong>
+                      <span className="text-red-600 font-bold">अधिकतम 280 अक्षर</span>
+                    </div>
+                    <div className="p-2 bg-white rounded border border-slate-200">
+                      <strong className="block text-slate-900">Facebook Page</strong>
+                      <span className="text-slate-600 font-bold">अधिकतम 63,206 अक्षर</span>
+                    </div>
+                    <div className="p-2 bg-white rounded border border-slate-200">
+                      <strong className="block text-slate-900">Instagram</strong>
+                      <span className="text-slate-600 font-bold">अधिकतम 2,200 अक्षर</span>
+                    </div>
+                    <div className="p-2 bg-white rounded border border-slate-200">
+                      <strong className="block text-slate-900">YouTube</strong>
+                      <span className="text-slate-600 font-bold">विवरण 5,000 अक्षर</span>
+                    </div>
+                    <div className="p-2 bg-white rounded border border-slate-200">
+                      <strong className="block text-slate-900">WhatsApp</strong>
+                      <span className="text-slate-600 font-bold">अधिकतम 1,024 अक्षर</span>
+                    </div>
+                    <div className="p-2 bg-white rounded border border-slate-200">
+                      <strong className="block text-slate-900">LinkedIn</strong>
+                      <span className="text-slate-600 font-bold">अधिकतम 3,000 अक्षर</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Connected Social Accounts */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-900 text-sm">कनेक्टेड आधिकारिक सोशल मीडिया खाते ({socialAccounts.length})</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {socialAccounts.map((acc) => (
+                      <div
+                        key={acc.id}
+                        className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-slate-800 text-white">
+                              {acc.platform}
+                            </span>
+                            <span className="font-bold text-slate-900">{acc.accountName}</span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 font-mono block mt-0.5">
+                            @{acc.accountIdentifier} • स्थिति: {acc.connectionStatus}
+                          </span>
+                        </div>
+
+                        <span className="px-2 py-1 bg-emerald-100 text-emerald-800 rounded text-[11px] font-bold">
+                          ✓ कनेक्टेड
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. Social Publishing Queue (Human-in-the-Loop Approval Required) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-slate-900 text-sm">सोशल पब्लिशिंग कतार ({socialJobs.length})</h4>
+                    <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-black">
+                      संपादकीय अनुमोदन अनिवार्य (Human Approval Gate)
+                    </span>
+                  </div>
+
+                  {socialJobs.length === 0 ? (
+                    <div className="p-6 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+                      वर्तमान में कोई लंबित सोशल पोस्ट कतार में नहीं है।
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {socialJobs.map((job) => (
+                        <div
+                          key={job.id}
+                          className="p-3.5 bg-white border border-slate-200 rounded-lg space-y-2 text-xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <h5 className="font-bold text-slate-900">{job.title}</h5>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${job.status === 'PUBLISHED'
+                                ? 'bg-emerald-600 text-white'
+                                : job.status === 'APPROVED'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-amber-500 text-white'
+                                }`}
+                            >
+                              {job.status}
+                            </span>
+                          </div>
+
+                          <p className="text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">{job.masterContent}</p>
+
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-slate-400 text-[11px]">वितरण लक्ष्य: {job.deliveries.length} प्लेटफॉर्म</span>
+
+                            <div className="flex items-center gap-2">
+                              {job.status === 'PENDING_APPROVAL' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveSocialJob(job.id)}
+                                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold"
+                                >
+                                  अनुमोदित करें
+                                </button>
+                              )}
+                              {(job.status === 'APPROVED' || job.status === 'SCHEDULED') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePublishSocialJob(job.id)}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold flex items-center gap-1"
+                                >
+                                  <Send className="w-3 h-3" />
+                                  <span>तुरंत प्रसारित करें</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------- */}
+            {/* SUBTAB 4: WHATSAPP BUSINESS PLATFORM                     */}
+            {/* -------------------------------------------------------- */}
+            {integrationSubTab === 'whatsapp' && (
+              <div className="space-y-6">
+                {/* 1. Pre-approved HSM Templates */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-900 text-sm">मेटा अनुमोदित व्हाट्सएप टेम्पलेट्स ({waTemplates.length})</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {waTemplates.map((tpl) => (
+                      <div key={tpl.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h5 className="font-bold text-slate-900">{tpl.displayName}</h5>
+                          <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded">
+                            {tpl.approvalStatus}
+                          </span>
+                        </div>
+                        <p className="font-mono text-[11px] text-slate-700 bg-white p-2 rounded border border-slate-200 whitespace-pre-line">
+                          {tpl.bodyText}
+                        </p>
+                        <span className="text-[10px] text-slate-500 block">फ़ूटर: {tpl.footerText}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Opt-in & STOP Simulator */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <h4 className="font-bold text-slate-900 text-sm">व्हाट्सएप ऑप्ट-इन व STOP अनसब्सक्राइब सिमुलेटर (TRAI/Meta Policy)</h4>
+                  <p className="text-[11px] text-slate-500">
+                    यदि कोई नागरिक "STOP", "UNSUBSCRIBE" अथवा "रोकें" लिखकर भेजता है, तो सिस्टम स्वतः उसे निष्क्रिय (OPTED_OUT) कर देता है।
+                  </p>
+
+                  <div className="flex flex-col md:flex-row gap-3">
+                    <input
+                      type="text"
+                      value={simWaPhone}
+                      onChange={(e) => setSimWaPhone(e.target.value)}
+                      placeholder="+91..."
+                      className="p-2 border border-slate-300 rounded-lg bg-white font-mono text-xs flex-1"
+                    />
+                    <select
+                      value={simWaKeyword}
+                      onChange={(e) => setSimWaKeyword(e.target.value)}
+                      className="p-2 border border-slate-300 rounded-lg bg-white text-xs font-bold"
+                    >
+                      <option value="STOP">STOP (अनसब्सक्राइब करें)</option>
+                      <option value="रोकें">रोकें (अनसब्सक्राइब करें)</option>
+                      <option value="START">START (ऑप्ट-इन सक्रिय करें)</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleSimulateWhatsAppKeyword}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold"
+                    >
+                      सिमुलेट संदेश भेजें
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3. Subscribers Directory */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-900 text-sm">पंजीकृत पाठक व ऑप्ट-इन स्थिति ({waSubscribers.length})</h4>
+                  <div className="space-y-2">
+                    {waSubscribers.map((sub) => (
+                      <div
+                        key={sub.id}
+                        className="p-3 bg-white border border-slate-200 rounded-lg flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <span className="font-bold text-slate-900 font-mono">{sub.phoneNumber}</span>
+                          <span className="text-slate-500 ml-2">[{sub.district || 'मध्य प्रदेश'}]</span>
+                          <span className="text-slate-400 text-[11px] block mt-0.5">स्रोतः {sub.consentSource}</span>
+                        </div>
+
+                        <span
+                          className={`px-2.5 py-1 rounded text-[11px] font-black ${sub.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                            }`}
+                        >
+                          {sub.status === 'ACTIVE' ? '✓ सक्रिय (ACTIVE)' : '✕ अनसब्सक्राइब्ड (OPTED_OUT)'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------- */}
+            {/* SUBTAB 5: WEBHOOKS & INGRESS SECURITY                    */}
+            {/* -------------------------------------------------------- */}
+            {integrationSubTab === 'webhooks' && (
+              <div className="space-y-6">
+                {/* 1. Webhook Ingress Architecture Reference */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                  <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>क्रिप्टोग्राफिक वेबहुक आर्किटेक्चर (DOC-20-INT-2026-V1.0)</span>
+                  </h4>
+                  <ul className="list-disc list-inside space-y-1 text-slate-600 text-[11px]">
+                    <li><strong>पब्लिक एंडपॉइंट:</strong> <code className="font-mono bg-white px-1 py-0.5 rounded">POST /api/v1/webhooks/ingress/:provider</code></li>
+                    <li><strong>हस्ताक्षर सत्यापन:</strong> HMAC-SHA256 (<code className="font-mono bg-white px-1 py-0.5 rounded">X-BNW-Signature</code>) विद <code className="font-mono">crypto.timingSafeEqual</code></li>
+                    <li><strong>रीप्ले सुरक्षा:</strong> <code className="font-mono bg-white px-1 py-0.5 rounded">X-BNW-Nonce</code> डुप्लिकेट जांच एवं 300 सेकंड अधिकतम टाइमस्टैम्प ड्रिफ्ट</li>
+                  </ul>
+                </div>
+
+                {/* 2. Webhook Signature Verification Tester */}
+                <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+                  <h4 className="font-bold text-slate-900 text-sm">वेबहुक हस्ताक्षर सत्यापन परीक्षक (Interactive Verifier)</h4>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">पेलोड स्ट्रिंग (Raw Body) *</label>
+                      <textarea
+                        value={testWebhookPayload}
+                        onChange={(e) => setTestWebhookPayload(e.target.value)}
+                        rows={2}
+                        className="w-full p-2 border border-slate-300 rounded-lg font-mono text-[11px]"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">शेयर्ड सीक्रेट *</label>
+                        <input
+                          type="text"
+                          value={testWebhookSecret}
+                          onChange={(e) => setTestWebhookSecret(e.target.value)}
+                          className="w-full p-2 border border-slate-300 rounded-lg font-mono text-[11px]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">HMAC-SHA256 सिग्नेचर *</label>
+                        <input
+                          type="text"
+                          value={testWebhookSig}
+                          onChange={(e) => setTestWebhookSig(e.target.value)}
+                          placeholder="sha256=... अथवा hex hash"
+                          className="w-full p-2 border border-slate-300 rounded-lg font-mono text-[11px]"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleTestWebhookVerify}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg"
+                    >
+                      हस्ताक्षर सत्यापन जांचें
+                    </button>
+
+                    {testWebhookResult && (
+                      <div
+                        className={`p-3 rounded-lg border font-mono text-[11px] ${testWebhookResult.isValid ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'
+                          }`}
+                      >
+                        <strong>सत्यापन परिणाम:</strong> {testWebhookResult.isValid ? '✓ हस्ताक्षर वैध है (VERIFIED)' : `✕ अस्वीकृत: ${testWebhookResult.error}`}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Ingress Audit Logs */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-slate-900 text-sm">वेबहुक इनग्रेस ऑडिट लॉग्स ({webhookLogs.length})</h4>
+
+                  <div className="space-y-2">
+                    {webhookLogs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${log.status === 'verified' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+                                }`}
+                            >
+                              {log.status}
+                            </span>
+                            <span className="font-bold text-slate-900">{log.providerId}</span>
+                            <span className="text-slate-500 font-mono text-[11px]">[{log.eventType}]</span>
+                          </div>
+                          {log.errorDetails && <p className="text-red-600 text-[11px] mt-0.5">{log.errorDetails}</p>}
+                        </div>
+
+                        <span className="text-slate-400 font-mono text-[11px]">{new Date(log.receivedAt).toLocaleTimeString('hi-IN')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1097,6 +2861,484 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* TAB 8: AUDIENCE INTELLIGENCE & ENGAGEMENT CONSOLE (MASTER EXECUTION 026) */}
+        {activeTab === 'audience' && (
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-5 text-xs">
+            {/* Header & Sub-Navigation */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-indigo-600" />
+                  <span>दर्शक सहभागिता एवं विश्लेषण कंसोल (Audience Intelligence & Engagement Desk)</span>
+                </h3>
+                <p className="text-slate-500 text-xs">
+                  सक्रिय पाठक ट्रैफ़िक, पठन समय (Dwell Time), सामग्री प्रदर्शन, DPDPA 2023 गोपनीयता एवं पाठक प्रतिक्रिया
+                </p>
+              </div>
+
+              {/* Time Range Selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-500 font-bold">अवधि:</span>
+                {(['24h', '7d', '30d'] as const).map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setAudienceTimeRange(range)}
+                    className={`px-2.5 py-1 rounded text-xs font-bold transition-colors ${
+                      audienceTimeRange === range
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {range === '24h' ? '24 घंटे' : range === '7d' ? '7 दिन' : '30 दिन'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Notification alert message banner */}
+            {audienceMsg && (
+              <div className={`p-3 rounded-lg text-xs font-bold flex items-center justify-between ${
+                audienceMsg.isError ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              }`}>
+                <span>{audienceMsg.text}</span>
+                <button onClick={() => setAudienceMsg(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+              </div>
+            )}
+
+            {/* Sub-Tabs Bar */}
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
+              <button
+                onClick={() => setAudienceSubTab('overview')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  audienceSubTab === 'overview'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>दर्शक सारांश</span>
+              </button>
+
+              <button
+                onClick={() => setAudienceSubTab('content_perf')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  audienceSubTab === 'content_perf'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>सामग्री प्रदर्शन</span>
+              </button>
+
+              <button
+                onClick={() => setAudienceSubTab('segments')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  audienceSubTab === 'segments'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>दर्शक वर्ग (Segments)</span>
+              </button>
+
+              <button
+                onClick={() => setAudienceSubTab('notifications')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  audienceSubTab === 'notifications'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Radio className="w-3.5 h-3.5" />
+                <span>पुश अलर्ट प्रसारण</span>
+              </button>
+
+              <button
+                onClick={() => setAudienceSubTab('feedback')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  audienceSubTab === 'feedback'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>पाठक फीडबैक ({feedbackList.filter((f) => f.status === 'pending').length} लंबित)</span>
+              </button>
+
+              <button
+                onClick={() => setAudienceSubTab('privacy')}
+                className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                  audienceSubTab === 'privacy'
+                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>DPDPA 2023 अनुपालन</span>
+              </button>
+            </div>
+
+            {/* Sub-Tab 1: Overview */}
+            {audienceSubTab === 'overview' && (
+              <div className="space-y-4">
+                {/* Metrics Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <span className="text-[10px] text-slate-500 font-bold block">दैनिक सक्रिय (DAU)</span>
+                    <span className="text-lg font-black text-slate-900">
+                      {audienceOverview?.overview?.dailyActiveUsers?.toLocaleString('hi-IN') || '35,490'}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">↑ 42% सहभागिता दर</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <span className="text-[10px] text-slate-500 font-bold block">साप्ताहिक सक्रिय (WAU)</span>
+                    <span className="text-lg font-black text-slate-900">
+                      {audienceOverview?.overview?.weeklyActiveUsers?.toLocaleString('hi-IN') || '64,220'}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">76% पहुंच</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <span className="text-[10px] text-slate-500 font-bold block">मासिक पाठक (MAU)</span>
+                    <span className="text-lg font-black text-slate-900">
+                      {audienceOverview?.overview?.monthlyActiveUsers?.toLocaleString('hi-IN') || '84,500'}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">कुल पाठक आधार</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <span className="text-[10px] text-slate-500 font-bold block">औसत पठन समय</span>
+                    <span className="text-lg font-black text-indigo-700">
+                      {audienceOverview?.overview?.avgReadingTimeFormatted || '2 मिनट 22 सेकंड'}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">योग्य पठन SLA</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <span className="text-[10px] text-slate-500 font-bold block">30-दिवसीय प्रतिधारण</span>
+                    <span className="text-lg font-black text-slate-900">
+                      {audienceOverview?.overview?.retention30DayPercent || '74.2'}%
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">पुनरावर्ती पाठक</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <span className="text-[10px] text-slate-500 font-bold block">कुल समाचार पठन</span>
+                    <span className="text-lg font-black text-slate-900">
+                      {audienceOverview?.overview?.totalArticleReads?.toLocaleString('hi-IN') || '3,21,100'}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">अवलोकन एवं अध्ययन</span>
+                  </div>
+                </div>
+
+                {/* District Distribution & Traffic Sources */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* District Readers */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <h4 className="font-bold text-slate-900 text-xs flex items-center justify-between">
+                      <span>ज़िलावार पाठक वितरण (Top Hyperlocal Districts)</span>
+                      <span className="text-slate-400 font-normal">मध्य प्रदेश</span>
+                    </h4>
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                      {(audienceOverview?.districtDistribution || [
+                        { district: 'भोपाल', readers: 19800, percentage: 23.4 },
+                        { district: 'इंदौर', readers: 17200, percentage: 20.3 },
+                        { district: 'जबलपुर', readers: 9800, percentage: 11.6 },
+                        { district: 'ग्वालियर', readers: 8700, percentage: 10.3 },
+                        { district: 'उज्जैन', readers: 6500, percentage: 7.7 },
+                        { district: 'सागर', readers: 4800, percentage: 5.7 },
+                        { district: 'रीवा', readers: 4100, percentage: 4.8 },
+                      ]).map((item) => (
+                        <div key={item.district} className="flex items-center justify-between text-xs py-1 border-b border-slate-200/60">
+                          <span className="font-bold text-slate-800">{item.district}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-slate-500">{item.readers.toLocaleString('hi-IN')} पाठक</span>
+                            <span className="font-mono text-indigo-700 font-bold bg-indigo-50 px-1.5 py-0.5 rounded text-[10px]">
+                              {item.percentage}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Platforms & Traffic Sources */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                    <h4 className="font-bold text-slate-900 text-xs">ट्रैफ़िक स्रोत व प्लेटफ़ॉर्म विभाजन</h4>
+                    <div className="space-y-2 text-xs">
+                      <div>
+                        <div className="flex justify-between font-bold text-slate-700 mb-0.5">
+                          <span>मोबाइल वेब (Mobile Web)</span>
+                          <span>78.4%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="bg-indigo-600 h-2 rounded-full" style={{ width: '78.4%' }}></div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between font-bold text-slate-700 mb-0.5">
+                          <span>डेस्कटॉप पोर्टल (Desktop Portal)</span>
+                          <span>18.2%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="bg-blue-500 h-2 rounded-full" style={{ width: '18.2%' }}></div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between font-bold text-slate-700 mb-0.5">
+                          <span>व्हाट्सएप शेयर ट्रैफ़िक (WhatsApp Direct)</span>
+                          <span>34.2%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="bg-emerald-500 h-2 rounded-full" style={{ width: '34.2%' }}></div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between font-bold text-slate-700 mb-0.5">
+                          <span>ऑर्गेनिक सर्च व डिस्कवरी (Google News & SEO)</span>
+                          <span>18.1%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div className="bg-amber-500 h-2 rounded-full" style={{ width: '18.1%' }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Tab 2: Content Performance */}
+            {audienceSubTab === 'content_perf' && (
+              <div className="space-y-4">
+                <h4 className="font-bold text-slate-900 text-xs">प्रकाशित समाचारों का गहन प्रदर्शन (Article Dwell Time & Scroll Depth)</h4>
+                <div className="border border-slate-200 rounded-lg overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
+                      <tr>
+                        <th className="p-2.5">समाचार शीर्षक</th>
+                        <th className="p-2.5">ज़िला</th>
+                        <th className="p-2.5">श्रेणी</th>
+                        <th className="p-2.5">अवलोकन (Views)</th>
+                        <th className="p-2.5">औसत पठन समय</th>
+                        <th className="p-2.5">स्क्रॉल गहराई</th>
+                        <th className="p-2.5">शेयर/बुकमार्क</th>
+                        <th className="p-2.5">सहभागिता दर</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(contentPerf?.topStories || []).map((story) => (
+                        <tr key={story.articleId} className="hover:bg-slate-50">
+                          <td className="p-2.5 font-bold text-slate-900 max-w-xs truncate">{story.title}</td>
+                          <td className="p-2.5 text-slate-600">{story.district}</td>
+                          <td className="p-2.5 text-slate-600">{story.category}</td>
+                          <td className="p-2.5 font-bold text-slate-800">{story.metrics.views.toLocaleString('hi-IN')}</td>
+                          <td className="p-2.5 font-mono text-indigo-700 font-bold">{story.metrics.avgDwellSeconds}s</td>
+                          <td className="p-2.5 font-mono text-slate-700">{story.metrics.avgScrollDepthPercent}%</td>
+                          <td className="p-2.5 text-slate-600">{story.metrics.shares} / {story.metrics.bookmarks}</td>
+                          <td className="p-2.5 font-bold text-emerald-600">{story.metrics.engagementRatePercent}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Tab 3: Audience Segments */}
+            {audienceSubTab === 'segments' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-900 text-xs">मानक एवं कस्टम दर्शक वर्ग (Canonical Segments)</h4>
+                  <span className="text-xs text-slate-500">DPDPA 2023 गैर-संवेदनशील सामूहिक संकेतक</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {(audienceSegments.length > 0 ? audienceSegments : [
+                    { id: 'seg-1', code: 'malwa_rural_agri', nameHi: 'मालवा ग्रामीण एवं कृषि पाठक', estimatedReach: 18500, descriptionHi: 'उज्जैन, देवास, धार क्षेत्र के किसान व कृषि-उन्मुख पाठक' },
+                    { id: 'seg-2', code: 'bhopal_policy_urban', nameHi: 'भोपाल शासकीय व नीति पाठक', estimatedReach: 14200, descriptionHi: 'राज्य मंत्रालय, विकास नीतियां एवं प्रशासन में रुचि रखने वाले' },
+                    { id: 'seg-3', code: 'indore_business_youth', nameHi: 'इंदौर व्यवसाय व युवा उद्यमी', estimatedReach: 16800, descriptionHi: 'स्टार्टअप, वाणिज्य, रोजगार व तकनीकी समाचार पाठक' },
+                    { id: 'seg-4', code: 'gwalior_chambal_civic', nameHi: 'ग्वालियर-चंबल नागरिक एवं सुरक्षा', estimatedReach: 11200, descriptionHi: 'स्थानीय अपराध, जनसमस्याएं एवं सामाजिक सुरक्षा पाठक' },
+                    { id: 'seg-5', code: 'epaper_digital_loyalists', nameHi: 'ई-पेपर व डिजिटल निष्ठावान पाठक', estimatedReach: 8900, descriptionHi: 'दैनिक ई-पेपर संस्करण के नियमित पाठक एवं सब्सक्राइबर' },
+                  ]).map((seg) => (
+                    <div key={seg.id || seg.code} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 text-xs">{seg.nameHi}</span>
+                        <span className="font-mono text-indigo-700 bg-indigo-50 font-bold px-1.5 py-0.5 rounded text-[10px]">
+                          ~{seg.estimatedReach?.toLocaleString('hi-IN')} पाठक
+                        </span>
+                      </div>
+                      <p className="text-slate-600 text-xs leading-relaxed">{seg.descriptionHi}</p>
+                      <div className="text-[10px] text-slate-400 font-mono pt-1 border-t border-slate-200/60">
+                        पहचानकर्ता: {seg.code}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Sub-Tab 4: Push Notification Broadcast */}
+            {audienceSubTab === 'notifications' && (
+              <div className="space-y-4 max-w-xl">
+                <h4 className="font-bold text-slate-900 text-xs">लक्षित पुश अधिसूचना प्रसारण (FCM Alert Dispatcher)</h4>
+                <p className="text-xs text-slate-500">
+                  डुप्लिकेट दमन सुरक्षा (Duplicate Suppression: 10 मिनट में समान अलर्ट केवल एक बार प्रसारित होगा)
+                </p>
+
+                <form onSubmit={handleBroadcastAlert} className="space-y-3 bg-slate-50 p-4 border border-slate-200 rounded-xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">लक्षित ज़िला / संभाग *</label>
+                      <select
+                        value={audienceBroadcastDistrict}
+                        onChange={(e) => setAudienceBroadcastDistrict(e.target.value)}
+                        className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                      >
+                        <option value="ALL">समस्त मध्य प्रदेश (ALL 55 Districts)</option>
+                        <option value="भोपाल">भोपाल ज़िला</option>
+                        <option value="इंदौर">इंदौर ज़िला</option>
+                        <option value="जबलपुर">जबलपुर ज़िला</option>
+                        <option value="ग्वालियर">ग्वालियर ज़िला</option>
+                        <option value="उज्जैन">उज्जैन ज़िला</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">प्राथमिकता स्तर *</label>
+                      <select
+                        value={audienceBroadcastPriority}
+                        onChange={(e: any) => setAudienceBroadcastPriority(e.target.value)}
+                        className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                      >
+                        <option value="normal">सामान्य बुलेटिन (Normal)</option>
+                        <option value="high">प्रमुख खबर (High)</option>
+                        <option value="critical">🚨 आपात ब्रेकिंग अलर्ट (Critical)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">अधिसूचना शीर्षक *</label>
+                    <input
+                      type="text"
+                      value={audienceBroadcastTitle}
+                      onChange={(e) => setAudienceBroadcastTitle(e.target.value)}
+                      placeholder="उदा. एमपी मौसम: अगले 24 घंटों में भारी वर्षा का अलर्ट..."
+                      className="w-full p-2 border border-slate-300 rounded-lg"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">संदेश विवरण *</label>
+                    <textarea
+                      value={audienceBroadcastMessage}
+                      onChange={(e) => setAudienceBroadcastMessage(e.target.value)}
+                      rows={2}
+                      placeholder="विस्तृत अलर्ट संदेश लिखें..."
+                      className="w-full p-2 border border-slate-300 rounded-lg"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-xs transition-colors"
+                  >
+                    🚨 अलर्ट प्रसारित करें
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* Sub-Tab 5: Reader Feedback */}
+            {audienceSubTab === 'feedback' && (
+              <div className="space-y-4">
+                <h4 className="font-bold text-slate-900 text-xs">पाठक प्रतिक्रिया एवं तथ्य सुधार कतार (Editorial Review Queue)</h4>
+                {feedbackList.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-3 text-center">कोई लंबित पाठक प्रतिक्रिया नहीं है।</p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {feedbackList.map((item) => (
+                      <div key={item.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900">{item.authorName}</span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                              {item.categoryNameHi || item.category}
+                            </span>
+                            <span className="text-[10px] text-slate-500">SLA: {item.slaHours} घंटे</span>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            item.status === 'resolved' ? 'bg-emerald-600 text-white' : item.status === 'reviewed' ? 'bg-blue-600 text-white' : 'bg-amber-600 text-white'
+                          }`}>
+                            {item.status}
+                          </span>
+                        </div>
+
+                        <p className="text-slate-800 text-xs">{item.comments}</p>
+                        {item.suggestedCorrection && (
+                          <div className="p-2 bg-white border border-slate-200 rounded text-xs">
+                            <strong className="text-slate-700">प्रस्तावित सुधार:</strong> {item.suggestedCorrection}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {new Date(item.createdAt).toLocaleString('hi-IN')}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {item.status !== 'resolved' && (
+                              <button
+                                onClick={() => handleUpdateFeedbackStatus(item.id, 'resolved')}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold"
+                              >
+                                सुधार स्वीकृत व निस्तारित
+                              </button>
+                            )}
+                            {item.status === 'pending' && (
+                              <button
+                                onClick={() => handleUpdateFeedbackStatus(item.id, 'dismissed')}
+                                className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[11px] font-bold"
+                              >
+                                खारिज करें
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Sub-Tab 6: DPDPA 2023 Privacy */}
+            {audienceSubTab === 'privacy' && (
+              <div className="space-y-4 max-w-2xl">
+                <h4 className="font-bold text-slate-900 text-xs">डिजिटल व्यक्तिगत डेटा संरक्षण अधिनियम (DPDPA 2023) अनुपालन स्थिति</h4>
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 leading-relaxed text-xs">
+                  <div className="flex items-center gap-2 text-emerald-700 font-bold">
+                    <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                    <span>सत्यापित अनुपालन: सक्रिय (Active Compliance)</span>
+                  </div>
+                  <ul className="space-y-2 text-slate-700">
+                    <li>• <strong>डेटा न्यूनीकरण (Data Minimization):</strong> केवल गैर-संवेदनशील पठन व्यवहार व चयनित प्राथमिकताओं का संग्रहण।</li>
+                    <li>• <strong>डेटा पोर्टेबिलिटी अधिकार (Portability):</strong> पाठक अपने संपूर्ण प्रोफाइल, बुकमार्क व पठन इतिहास को एक क्लिक में JSON प्रारूप में SHA-256 सुरक्षा चेकसम सहित डाउनलोड कर सकते हैं।</li>
+                    <li>• <strong>विस्मृति व विलोपन अधिकार (Right to Erasure):</strong> 30-दिवसीय अनुग्रह अवधि (Grace Period) के साथ खाता विलोपन की स्वचालित सुविधा।</li>
+                    <li>• <strong>तटस्थ वैयक्तिकरण (Neutral Default):</strong> पाठक किसी भी समय वैयक्तिकरण रीसेट कर विशुद्ध समय-आधारित (Chronological) समाचार प्रवाह चुन सकते हैं।</li>
+                    <li>• <strong>फ़िल्टर बबल सुरक्षा (Anti-Filter-Bubble Defense):</strong> ब्रेकिंग न्यूज़ एवं जनहित के समाचार कभी भी वैयक्तिकरण में छिपे नहीं रहेंगे।</li>
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
