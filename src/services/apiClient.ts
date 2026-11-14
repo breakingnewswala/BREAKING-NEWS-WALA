@@ -330,12 +330,20 @@ export const apiClient = {
   health: {
     async checkHealth(): Promise<any> {
       try {
-        const res = await fetch('/healthz');
+        const res = await fetch('/api/v1/health');
         if (res.ok) {
           return await res.json();
         }
       } catch {
-        // Fallback to API prefix
+        // Fallback to secondary endpoints
+      }
+      try {
+        const fallbackRes = await fetch('/healthz/');
+        if (fallbackRes.ok) {
+          return await fallbackRes.json();
+        }
+      } catch {
+        // Fallback to request wrapper
       }
       const apiRes = await request<any>('/health');
       return apiRes.success ? apiRes.data : null;

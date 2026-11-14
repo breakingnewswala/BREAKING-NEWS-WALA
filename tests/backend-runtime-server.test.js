@@ -116,6 +116,18 @@ test('Master Execution 031: Live server.js Runtime Verification', async (t) => {
     assert.ok(res.json.services.persistence);
   });
 
+  // 1b. Trailing slash and alternate health check aliases
+  await t.test('1b. Health check aliases (/healthz/, /health, /api/health, /api/v1/healthz) return JSON', async () => {
+    const paths = ['/healthz/', '/health', '/health/', '/api/health', '/api/healthz', '/api/v1/healthz', '/api/v1/healthz/'];
+    for (const p of paths) {
+      const res = await httpRequest('GET', p);
+      assert.strictEqual(res.statusCode, 200, `Expected 200 for ${p}`);
+      assert.ok(res.headers['content-type'].includes('application/json'), `Expected JSON for ${p}`);
+      assert.ok(res.json, `Expected valid JSON for ${p}`);
+      assert.strictEqual(res.json.status, 'healthy', `Expected healthy status for ${p}`);
+    }
+  });
+
   // 2. REST API v1 health
   await t.test('2. GET /api/v1/health returns JSON response and does NOT fall through to SPA HTML', async () => {
     const res = await httpRequest('GET', '/api/v1/health');

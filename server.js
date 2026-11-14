@@ -48,7 +48,12 @@ const server = http.createServer((req, res) => {
   const pathname = parsedUrl.pathname;
 
   // 1. Machine-readable health check endpoint (Section 13)
-  if (pathname === '/healthz' || pathname === '/healthz/') {
+  if (
+    pathname === '/healthz' || pathname === '/healthz/' ||
+    pathname === '/health' || pathname === '/health/' ||
+    pathname === '/api/health' || pathname === '/api/health/' ||
+    pathname === '/api/healthz' || pathname === '/api/healthz/'
+  ) {
     return handleHealthCheck(req, res);
   }
 

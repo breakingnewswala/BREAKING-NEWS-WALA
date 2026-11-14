@@ -354,13 +354,15 @@ export function handleHealthCheck(req, res) {
     },
     services: {
       database: {
-        status: dbUrl ? 'configured' : 'unverified',
-        provider: 'postgresql',
+        status: dbUrl ? 'configured' : (healthMeta.adapterType === 'firestore' && healthMeta.status === 'connected') ? 'connected' : 'unverified',
+        provider: dbUrl ? 'postgresql' : (healthMeta.adapterType === 'firestore' ? 'firebase_firestore' : 'postgresql'),
         message: dbUrl
           ? 'PostgreSQL connection configured'
-          : isProduction
-            ? 'DATABASE_URL not provisioned. Persistence mutations blocked to protect against data loss in multi-instance environment.'
-            : 'DATABASE_URL not provisioned. Local atomic file storage active in non-production mode.',
+          : (healthMeta.adapterType === 'firestore' && healthMeta.status === 'connected')
+            ? `Authoritative Cloud Firestore active [database: ${healthMeta.firestoreDatabaseId || 'default'}]. Multi-instance safe.`
+            : isProduction
+              ? 'DATABASE_URL not provisioned. Persistence mutations blocked to protect against data loss in multi-instance environment.'
+              : 'DATABASE_URL not provisioned. Local atomic file storage active in non-production mode.',
       },
       persistence: healthMeta,
       queue: {
@@ -405,8 +407,15 @@ export async function handleApiRequest(req, res) {
   const query = parsedUrl.searchParams;
   const user = await resolveRequestUser(req);
 
-  // 1. Health Endpoint (/api/v1/health)
-  if (pathname === '/api/v1/health' || pathname === '/api/v1') {
+  // 1. Health Endpoint (/api/v1/health, /api/v1/healthz)
+  if (
+    pathname === '/api/v1/health' ||
+    pathname === '/api/v1/health/' ||
+    pathname === '/api/v1/healthz' ||
+    pathname === '/api/v1/healthz/' ||
+    pathname === '/api/v1' ||
+    pathname === '/api/v1/'
+  ) {
     return handleHealthCheck(req, res);
   }
 
