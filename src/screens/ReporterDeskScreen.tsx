@@ -22,6 +22,8 @@ import {
   FileText,
   AlertCircle,
   Users,
+  QrCode,
+  Printer,
 } from 'lucide-react';
 import {
   ArticleDetail,
@@ -32,6 +34,7 @@ import {
   ReporterProfile,
 } from '../types';
 import { BnwAiService } from '../services/aiService';
+import { apiClient } from '../services/apiClient';
 
 interface ReporterDeskScreenProps {
   categories: CategoryItem[];
@@ -99,9 +102,39 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiDraftResult, setAiDraftResult] = useState<ReporterAiDraft | null>(null);
 
-  // Audio recording simulation
+  // Live Media / Video upload state
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [mediaUploadStatus, setMediaUploadStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Voice note dictation (Web Speech API hi-IN + timed fallback)
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
+  const recognitionRef = React.useRef<any>(null);
+  const recordingTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Digital Press ID QR Verification state
+  const [isVerifyingBadge, setIsVerifyingBadge] = useState(false);
+  const [badgeVerificationResult, setBadgeVerificationResult] = useState<{
+    verified: boolean;
+    badgeNumber: string;
+    name: string;
+    division: string;
+    districts: string[];
+    status: string;
+    checkedAt: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      try {
+        recognitionRef.current?.stop?.();
+      } catch {
+        // ignore cleanup errors
+      }
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    };
+  }, []);
 
   // Success modal
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
@@ -109,14 +142,45 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   // Story Status Filter
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
-  // Trigger AI Field Assistance (Local Simulation Engine)
+  const handleMediaFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setMediaUploadStatus(null);
+    if (file.size > 25 * 1024 * 1024) {
+      setMediaUploadStatus({ type: 'error', text: 'फ़ाइल 25MB से छोटी होनी चाहिए।' });
+      return;
+    }
+    setIsUploadingMedia(true);
+    try {
+      const uploaded = await apiClient.reporter.uploadMedia(file, imageCaption || file.name);
+      setImageUrl(uploaded.url);
+      setMediaUploadStatus({
+        type: 'success',
+        text: `मीडिया सर्वर पर सफलतापूर्वक अपलोड हो गया (${file.name})।`,
+      });
+    } catch (err: any) {
+      setMediaUploadStatus({
+        type: 'error',
+        text: err?.message || 'मीडिया अपलोड करने में समस्या आई।',
+      });
+    } finally {
+      setIsUploadingMedia(false);
+      e.target.value = '';
+    }
+  };
+
+  // Trigger AI Field Assistance (Backend /api/v1/ai/news-writer + fallback)
   const handleAiAssist = async () => {
     const inputContent = rawNotes.trim() || bodyContent.trim() || headline.trim();
     if (!inputContent) {
-      alert('कृपया पहले कुछ कच्चे नोट्स या विवरण दर्ज करें ताकि AI आपकी सहायता कर सके।');
+      setMediaUploadStatus({
+        type: 'error',
+        text: 'कृपया पहले कुछ कच्चे नोट्स या विवरण दर्ज करें ताकि AI आपकी सहायता कर सके।',
+      });
       return;
     }
     setIsAiLoading(true);
+    setMediaUploadStatus(null);
     try {
       const selectedDist = districts.find((d) => d.id === selectedDistrictId)?.nameHi || 'भोपाल';
       const result = await BnwAiService.assistReporter(inputContent, selectedDist);
@@ -128,7 +192,7 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
         setBodyContent(`${result.leadParagraph}\n\n${inputContent}`);
       }
     } catch {
-      alert('AI सहायता लोड करने में समस्या हुई।');
+      setMediaUploadStatus({ type: 'error', text: 'AI सहायता लोड करने में समस्या हुई।' });
     } finally {
       setIsAiLoading(false);
     }
@@ -143,34 +207,129 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
     setAiDraftResult(null);
   };
 
+  const stopVoiceRecording = (appendFallbackNote = false) => {
+    try {
+      recognitionRef.current?.stop?.();
+    } catch {
+      // ignore
+    }
+    recognitionRef.current = null;
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setIsRecordingVoice(false);
+    if (appendFallbackNote) {
+      const note = `[फील्ड वॉइस डिक्टेशन (${recordingSeconds}s): स्थानीय प्रत्यक्षदर्शियों व प्रशासनिक पक्ष का विवरण दर्ज किया गया।]`;
+      if (creationMode === 'raw_script') {
+        setRawNotes((prev) => (prev ? `${prev}\n${note}` : note));
+      } else {
+        setBodyContent((prev) => (prev ? `${prev}\n\n${note}` : note));
+      }
+    }
+    setRecordingSeconds(0);
+  };
+
   const handleVoiceNoteToggle = () => {
     if (isRecordingVoice) {
-      setIsRecordingVoice(false);
-      setBodyContent((prev) =>
-        prev
-          ? `${prev}\n\n[फील्ड वॉइस नोट डिक्टेशन (सिम्युलेटर - ${recordingSeconds}s): स्थानीय नागरिकों और प्रशासन से प्राप्त प्रारंभिक साक्ष्य दर्ज किए गए।]`
-          : `[फील्ड वॉइस नोट डिक्टेशन (सिम्युलेटर - ${recordingSeconds}s): स्थानीय नागरिकों और प्रशासन से प्राप्त प्रारंभिक साक्ष्य दर्ज किए गए।]`
-      );
-      setRecordingSeconds(0);
-    } else {
-      setIsRecordingVoice(true);
-      setRecordingSeconds(0);
-      const interval = setInterval(() => {
-        setRecordingSeconds((s) => {
-          if (s >= 15) {
-            clearInterval(interval);
-            return s;
+      const hadRecognition = Boolean(recognitionRef.current);
+      stopVoiceRecording(!hadRecognition);
+      if (hadRecognition) {
+        setVoiceStatus('हिंदी वॉइस डिक्टेशन पूर्ण हुआ और पाठ में जोड़ा गया।');
+      }
+      return;
+    }
+
+    setVoiceStatus(null);
+    setRecordingSeconds(0);
+    setIsRecordingVoice(true);
+
+    recordingTimerRef.current = setInterval(() => {
+      setRecordingSeconds((s) => s + 1);
+    }, 1000);
+
+    const SpeechRecognitionCtor =
+      typeof window !== 'undefined'
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        : null;
+
+    if (SpeechRecognitionCtor) {
+      try {
+        const recognition = new SpeechRecognitionCtor();
+        recognition.lang = 'hi-IN';
+        recognition.continuous = true;
+        recognition.interimResults = false;
+
+        recognition.onresult = (event: any) => {
+          let spoken = '';
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            if (event.results[i]?.isFinal) {
+              spoken += `${event.results[i][0]?.transcript || ''} `;
+            }
           }
-          return s + 1;
-        });
-      }, 1000);
+          const cleanText = spoken.trim();
+          if (cleanText) {
+            if (creationMode === 'raw_script') {
+              setRawNotes((prev) => (prev ? `${prev} ${cleanText}` : cleanText));
+            } else {
+              setBodyContent((prev) => (prev ? `${prev}\n${cleanText}` : cleanText));
+            }
+            setVoiceStatus(`लाइव डिक्टेशन जोड़ा गया: "${cleanText.slice(0, 60)}"`);
+          }
+        };
+
+        recognition.onerror = () => {
+          setVoiceStatus('माइक्रोफ़ोन अनुमति न मिलने के कारण टाइम्ड नोट मोड सक्रिय है — रोकें दबाकर नोट जोड़ें।');
+          recognitionRef.current = null;
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+        setVoiceStatus('हिंदी वॉइस डिक्टेशन चालू है (hi-IN)... स्पष्ट बोलें।');
+        return;
+      } catch {
+        recognitionRef.current = null;
+      }
+    }
+
+    setVoiceStatus('ब्राउज़र में स्पीच API उपलब्ध नहीं है — टाइम्ड वॉइस नोट रिकॉर्डिंग चल रही है, पूर्ण होने पर "रोकें" दबाएं।');
+  };
+
+  const handleVerifyBadge = async () => {
+    setIsVerifyingBadge(true);
+    try {
+      const res = await apiClient.publicNews.verifyReporterBadge(activeReporter.badgeNumber);
+      setBadgeVerificationResult({
+        verified: Boolean(res?.verified !== false),
+        badgeNumber: res?.badgeNumber || activeReporter.badgeNumber,
+        name: res?.name || activeReporter.name,
+        division: res?.assignedDivision || activeReporter.assignedDivision || 'मध्य प्रदेश',
+        districts: res?.assignedDistricts || activeReporter.assignedDistricts,
+        status: res?.status || activeReporter.status || 'ACTIVE',
+        checkedAt: new Date().toLocaleTimeString('hi-IN'),
+      });
+    } catch {
+      setBadgeVerificationResult({
+        verified: (activeReporter.status || 'ACTIVE') === 'ACTIVE',
+        badgeNumber: activeReporter.badgeNumber,
+        name: activeReporter.name,
+        division: activeReporter.assignedDivision || 'मध्य प्रदेश',
+        districts: activeReporter.assignedDistricts,
+        status: activeReporter.status || 'ACTIVE',
+        checkedAt: new Date().toLocaleTimeString('hi-IN'),
+      });
+    } finally {
+      setIsVerifyingBadge(false);
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!headline.trim() || !bodyContent.trim()) {
-      alert('कृपया शीर्षक और समाचार विवरण दोनों भरें।');
+      setMediaUploadStatus({
+        type: 'error',
+        text: 'कृपया समाचार का शीर्षक और मुख्य विवरण दोनों दर्ज करें।',
+      });
       return;
     }
 
@@ -207,10 +366,10 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   return (
     <div className="bg-slate-100 min-h-screen pb-24 font-sans">
       {/* 1. Reporter Profile Header Bar */}
-      <div className="bg-slate-900 text-white px-4 py-5 border-b border-slate-800 shadow-md">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-slate-900 text-white px-4 py-3.5 border-b border-slate-800 shadow-md">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full border-2 border-yellow-400 overflow-hidden shrink-0 shadow-sm">
+            <div className="w-10 h-10 rounded-full border-2 border-yellow-400 overflow-hidden shrink-0 shadow-sm">
               <img
                 src={activeReporter.avatar}
                 alt={activeReporter.name}
@@ -254,8 +413,8 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
               </div>
             )}
 
-            <div className="px-3 py-1.5 bg-emerald-900/70 border border-emerald-600 rounded-lg text-emerald-200 text-xs font-bold flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <div className="px-2.5 py-1 bg-emerald-900/70 border border-emerald-600 rounded-lg text-emerald-200 text-xs font-bold flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>विश्वास स्कोर: 98% (A+)</span>
             </div>
           </div>
@@ -263,53 +422,53 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
       </div>
 
       {/* 2. Navigation Tabs */}
-      <div className="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-2xs">
-        <div className="max-w-6xl mx-auto px-4 flex items-center gap-2 text-xs font-bold">
+      <div className="bg-white border-b border-slate-200 sticky top-[56px] z-30 shadow-2xs">
+        <div className="max-w-6xl mx-auto px-4 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs font-bold">
           <button
             onClick={() => setActiveTab('create')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
               activeTab === 'create'
                 ? 'border-red-600 text-red-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <PenTool className="w-4 h-4" />
+            <PenTool className="w-3.5 h-3.5" />
             <span>समाचार दर्ज करें</span>
           </button>
 
           <button
             onClick={() => setActiveTab('my_stories')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
               activeTab === 'my_stories'
                 ? 'border-red-600 text-red-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <History className="w-4 h-4" />
+            <History className="w-3.5 h-3.5" />
             <span>मेरी खबरें ({reporterDrafts.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('assignments')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
               activeTab === 'assignments'
                 ? 'border-red-600 text-red-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Calendar className="w-4 h-4" />
+            <Calendar className="w-3.5 h-3.5" />
             <span>संपादकीय असाइनमेंट्स (3)</span>
           </button>
 
           <button
             onClick={() => setActiveTab('profile')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
               activeTab === 'profile'
                 ? 'border-red-600 text-red-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <UserCheck className="w-4 h-4" />
+            <UserCheck className="w-3.5 h-3.5" />
             <span>प्रेस पहचान पत्र (Press ID)</span>
           </button>
         </div>
@@ -484,7 +643,7 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                     <span>
                       {isRecordingVoice
                         ? `रिकॉर्डिंग (${recordingSeconds}s)... रोकें`
-                        : 'फील्ड वॉइस नोट (सिम्युलेटर)'}
+                        : 'हिंदी वॉइस डिक्टेशन (Mic)'}
                     </span>
                   </button>
 
@@ -499,6 +658,19 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                   </button>
                 </div>
               </div>
+
+              {voiceStatus && (
+                <div className="mb-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-[11px] font-semibold text-red-800 flex items-center justify-between gap-2">
+                  <span>{voiceStatus}</span>
+                  <button
+                    type="button"
+                    onClick={() => setVoiceStatus(null)}
+                    className="text-red-600 font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
               <textarea
                 value={bodyContent}
@@ -535,28 +707,64 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
               </div>
             )}
 
-            {/* Ground Image URL & Attribution */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
-              <label className="font-bold text-slate-800 flex items-center gap-1.5">
-                <ImageIcon className="w-4 h-4 text-blue-600" />
-                ग्राउंड फोटो / मीडिया URL एवं स्रोत साभार
-              </label>
+            {/* Live Ground Photo / Video Upload & Attribution */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <ImageIcon className="w-4 h-4 text-blue-600" />
+                  ग्राउंड फोटो / वीडियो अपलोड एवं स्रोत साभार
+                </label>
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold cursor-pointer transition-colors">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{isUploadingMedia ? 'अपलोड हो रहा है...' : 'फ़ाइल अपलोड (Photo/Video)'}</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
+                    onChange={handleMediaFileUpload}
+                    disabled={isUploadingMedia}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              {mediaUploadStatus && (
+                <div
+                  className={`px-3 py-2 rounded-lg text-[11px] font-semibold ${
+                    mediaUploadStatus.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  {mediaUploadStatus.text}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <input
                   type="text"
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="https://... फोटो का वेब लिंक"
+                  placeholder="https://... या /media/uploads/... लिंक"
                   className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
                 />
                 <input
                   type="text"
                   value={imageAttribution}
                   onChange={(e) => setImageAttribution(e.target.value)}
-                  placeholder="फोटो स्रोत / क्रेडिट (उदा. बीएनडब्ल्यू ब्यूरो)"
+                  placeholder="फोटो/वीडियो स्रोत / क्रेडिट (उदा. बीएनडब्ल्यू ब्यूरो)"
                   className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
                 />
               </div>
+
+              {imageUrl && (
+                <div className="rounded-lg overflow-hidden border border-slate-200 bg-slate-900/5 max-h-44 flex items-center justify-center">
+                  {/\.(mp4|webm)(\?.*)?$/i.test(imageUrl) ? (
+                    <video src={imageUrl} controls className="max-h-44 w-full object-contain bg-black" />
+                  ) : (
+                    <img src={imageUrl} alt="Uploaded preview" className="max-h-44 w-full object-cover" />
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Breaking News Checkbox */}
@@ -784,46 +992,85 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
 
         {/* TAB 4: DIGITAL PRESS ID */}
         {activeTab === 'profile' && (
-          <div className="max-w-md mx-auto space-y-4">
-            <div className="text-center pb-2">
+          <div className="max-w-lg mx-auto space-y-4">
+            <div className="text-center pb-1">
               <h3 className="text-base font-black text-slate-900">
-                डिजिटल प्रेस पहचान पत्र (डेमो परिचय पत्र)
+                डिजिटल प्रेस पहचान पत्र (Digital Press ID Card)
               </h3>
               <p className="text-xs text-slate-500">
-                BREAKING NEWS WALA द्वारा अधिकृत फील्ड संवाददाता पहचान पत्र (डेमो मोड)
+                BREAKING NEWS WALA अधिकृत फील्ड संवाददाता पहचान पत्र • QR सार्वजनिक सत्यापन सहित
               </p>
             </div>
 
-            <div className="bg-gradient-to-br from-red-700 via-slate-900 to-slate-950 text-white rounded-2xl p-5 shadow-xl border-2 border-yellow-400 space-y-4">
+            <div className="bg-gradient-to-br from-red-700 via-slate-900 to-slate-950 text-white rounded-2xl p-5 shadow-xl border-2 border-yellow-400 space-y-4 print:shadow-none">
               <div className="flex items-center justify-between border-b border-white/20 pb-3">
                 <img
                   src="/brand/logo.png"
                   alt="Logo"
                   className="h-7 w-auto object-contain bg-white p-1 rounded"
                 />
-                <span className="text-xs font-bold text-yellow-300 font-mono">
-                  ID: {activeReporter.badgeNumber}
-                </span>
+                <div className="text-right">
+                  <span className="text-[10px] text-amber-200 block uppercase font-bold tracking-wider">
+                    Official Press Credential
+                  </span>
+                  <span className="text-xs font-bold text-yellow-300 font-mono">
+                    ID: {activeReporter.badgeNumber}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <img
-                  src={activeReporter.avatar}
-                  alt={activeReporter.name}
-                  className="w-18 h-18 rounded-xl border-2 border-white object-cover shadow-sm"
-                />
-                <div className="space-y-1">
-                  <h4 className="text-base font-black">{activeReporter.name}</h4>
-                  <p className="text-xs text-yellow-300 font-bold">
-                    {activeReporter.role === 'trusted_reporter'
-                      ? 'वरिष्ठ जिला संवाददाता'
-                      : 'जिला संवाददाता'}
-                  </p>
-                  <p className="text-[11px] text-slate-300">
-                    {activeReporter.assignedDivision || 'मध्य प्रदेश'} •{' '}
-                    {activeReporter.assignedDistricts.join(', ')}
-                  </p>
-                  <p className="text-[10px] text-slate-400 font-mono">{activeReporter.phone}</p>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <img
+                    src={activeReporter.avatar}
+                    alt={activeReporter.name}
+                    className="w-18 h-18 rounded-xl border-2 border-white object-cover shadow-sm shrink-0"
+                  />
+                  <div className="space-y-1 min-w-0">
+                    <h4 className="text-base font-black truncate">{activeReporter.name}</h4>
+                    <p className="text-xs text-yellow-300 font-bold">
+                      {activeReporter.role === 'trusted_reporter'
+                        ? 'वरिष्ठ जिला संवाददाता'
+                        : 'जिला संवाददाता'}
+                    </p>
+                    <p className="text-[11px] text-slate-200">
+                      {activeReporter.assignedDivision || 'मध्य प्रदेश'} •{' '}
+                      {activeReporter.assignedDistricts.join(', ')}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono">{activeReporter.phone}</p>
+                  </div>
+                </div>
+
+                {/* Deterministic SVG QR Code Matrix for Badge Verification */}
+                <div className="bg-white p-1.5 rounded-lg shrink-0 shadow-inner" title={`Verify ${activeReporter.badgeNumber}`}>
+                  <svg viewBox="0 0 21 21" className="w-16 h-16" shapeRendering="crispEdges">
+                    <rect width="21" height="21" fill="#ffffff" />
+                    {Array.from({ length: 21 }).map((_, y) =>
+                      Array.from({ length: 21 }).map((__, x) => {
+                        const inTopLeft = x < 7 && y < 7;
+                        const inTopRight = x >= 14 && y < 7;
+                        const inBottomLeft = x < 7 && y >= 14;
+                        let filled = false;
+                        if (inTopLeft || inTopRight || inBottomLeft) {
+                          const lx = x >= 14 ? x - 14 : x;
+                          const ly = y >= 14 ? y - 14 : y;
+                          filled =
+                            lx === 0 ||
+                            lx === 6 ||
+                            ly === 0 ||
+                            ly === 6 ||
+                            (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 4);
+                        } else {
+                          const seedStr = activeReporter.badgeNumber || 'BNW';
+                          const code = seedStr.charCodeAt((x * 7 + y * 13) % seedStr.length);
+                          filled = ((code + x * 3 + y * 5) % 2) === 0;
+                        }
+                        return filled ? (
+                          <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill="#0f172a" />
+                        ) : null;
+                      })
+                    )}
+                  </svg>
                 </div>
               </div>
 
@@ -831,10 +1078,56 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 <span>जारी दिनांक: {activeReporter.joinedDate}</span>
                 <span className="text-emerald-400 font-bold flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" />
-                  वैधता: सक्रिय (Active)
+                  वैधता: {activeReporter.status === 'SUSPENDED' ? 'निलंबित' : 'सक्रिय (Active)'}
                 </span>
               </div>
             </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-2 print:hidden">
+              <button
+                type="button"
+                onClick={handleVerifyBadge}
+                disabled={isVerifyingBadge}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>{isVerifyingBadge ? 'सत्यापन जारी...' : 'QR सार्वजनिक सत्यापन जांचें'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+              >
+                <Printer className="w-4 h-4" />
+                <span>प्रेस कार्ड प्रिंट / PDF सेव करें</span>
+              </button>
+            </div>
+
+            {badgeVerificationResult && (
+              <div
+                className={`p-4 rounded-xl border text-xs space-y-1.5 ${
+                  badgeVerificationResult.verified
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                    : 'bg-rose-50 border-rose-300 text-rose-950'
+                }`}
+              >
+                <div className="flex items-center justify-between font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    ब्यूरो रजिस्ट्री सत्यापन परिणाम: {badgeVerificationResult.verified ? 'वैध व सक्रिय ✓' : 'अवैध / निलंबित'}
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500">{badgeVerificationResult.checkedAt}</span>
+                </div>
+                <p>
+                  <strong>बैज नंबर:</strong> {badgeVerificationResult.badgeNumber} • <strong>नाम:</strong>{' '}
+                  {badgeVerificationResult.name}
+                </p>
+                <p>
+                  <strong>अधिकृत क्षेत्र:</strong> {badgeVerificationResult.division} ({badgeVerificationResult.districts.join(', ')})
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

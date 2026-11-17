@@ -18,6 +18,7 @@ import {
   ReporterProfile,
   BreakingTickerItem,
   AdBannerItem,
+  MandiRateItem,
   SystemAuditLogItem,
   GraphicTemplate,
   GraphicItem,
@@ -464,6 +465,17 @@ export const apiClient = {
       const res = await request<AdBannerItem[]>('/ads');
       return res.success && Array.isArray(res.data) ? res.data : [];
     },
+
+    async fetchMandiRates(): Promise<MandiRateItem[]> {
+      const res = await request<MandiRateItem[]>('/public/mandi-rates');
+      return res.success && Array.isArray(res.data) ? res.data : [];
+    },
+
+    async verifyReporterBadge(badgeNumber: string): Promise<any | null> {
+      if (!badgeNumber) return null;
+      const res = await request<any>(`/public/reporters/verify/${encodeURIComponent(badgeNumber)}`);
+      return res.success ? res.data : null;
+    },
   },
 
   // 4. Reporter Domain (Section 7, STEP A & Section 8)
@@ -744,6 +756,17 @@ export const apiClient = {
       return res.success && Array.isArray(res.data) ? res.data : [];
     },
 
+    async createAd(dto: Partial<AdBannerItem>): Promise<AdBannerItem> {
+      const res = await request<AdBannerItem>('/admin/ads', {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      });
+      if (res.success && res.data) {
+        return res.data;
+      }
+      throw new Error(res.error?.message || 'विज्ञापन जोड़ने में त्रुटि हुई।');
+    },
+
     async toggleAd(adId: string): Promise<AdBannerItem> {
       const res = await request<AdBannerItem>(`/admin/ads/${encodeURIComponent(adId)}`, {
         method: 'PATCH',
@@ -752,6 +775,42 @@ export const apiClient = {
         return res.data;
       }
       throw new Error(res.error?.message || 'विज्ञापन स्थिति बदलने में त्रुटि हुई।');
+    },
+
+    async deleteAd(adId: string): Promise<void> {
+      const res = await request<any>(`/admin/ads/${encodeURIComponent(adId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.success) {
+        throw new Error(res.error?.message || 'विज्ञापन हटाने में त्रुटि हुई।');
+      }
+    },
+
+    async createMandiRate(dto: Partial<MandiRateItem>): Promise<MandiRateItem> {
+      const res = await request<MandiRateItem>('/admin/mandi-rates', {
+        method: 'POST',
+        body: JSON.stringify(dto),
+      });
+      if (res.success && res.data) return res.data;
+      throw new Error(res.error?.message || 'मंडी भाव जोड़ने में त्रुटि हुई।');
+    },
+
+    async updateMandiRate(id: string, dto: Partial<MandiRateItem>): Promise<MandiRateItem> {
+      const res = await request<MandiRateItem>(`/admin/mandi-rates/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(dto),
+      });
+      if (res.success && res.data) return res.data;
+      throw new Error(res.error?.message || 'मंडी भाव अपडेट करने में त्रुटि हुई।');
+    },
+
+    async deleteMandiRate(id: string): Promise<void> {
+      const res = await request<any>(`/admin/mandi-rates/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.success) {
+        throw new Error(res.error?.message || 'मंडी भाव हटाने में त्रुटि हुई।');
+      }
     },
 
     async fetchAuditLogs(): Promise<SystemAuditLogItem[]> {

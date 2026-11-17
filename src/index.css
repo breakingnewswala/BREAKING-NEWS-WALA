@@ -12,8 +12,35 @@
   }
 
   body {
-    font-family: 'Noto Sans Devanagari', 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Hind', 'Noto Sans Devanagari', 'Poppins', system-ui, -apple-system, sans-serif;
   }
+}
+
+/* Modern & Classic Newspaper Devanagari Multi-Font System */
+.font-news-hero {
+  font-family: 'Rozha One', 'Tiro Devanagari Hindi', 'Noto Sans Devanagari', serif;
+  letter-spacing: 0.01em;
+}
+
+.font-news-editorial {
+  font-family: 'Tiro Devanagari Hindi', 'Noto Sans Devanagari', serif;
+}
+
+.font-news-stylish {
+  font-family: 'Yatra One', 'Noto Sans Devanagari', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.font-news-body {
+  font-family: 'Hind', 'Noto Sans Devanagari', sans-serif;
+}
+
+.font-news-quote {
+  font-family: 'Kalam', 'Tiro Devanagari Hindi', cursive;
+}
+
+.font-news-ui {
+  font-family: 'Poppins', 'Noto Sans Devanagari', sans-serif;
 }
 
 /* Custom scrollbars for district & category tabs */

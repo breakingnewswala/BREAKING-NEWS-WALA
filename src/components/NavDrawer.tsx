@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   X,
   Home,
@@ -19,11 +19,9 @@ import {
   Video,
   Bot,
   Flame,
-  Bell,
-  Sliders,
-  Settings,
   HelpCircle,
   LogOut,
+  Crown,
 } from 'lucide-react';
 import { AppRole, CategoryItem, DistrictItem, DivisionItem, EpaperEdition } from '../types';
 import { NavTab } from './BottomNav';
@@ -34,7 +32,9 @@ interface NavDrawerProps {
   activeTab: NavTab;
   onTabSelect: (tab: NavTab) => void;
   currentRole: AppRole;
+  accountRole?: AppRole;
   onRoleChange: (role: AppRole) => void;
+  onSwitchPersona?: (role: AppRole, targetTab?: NavTab) => void;
   userCoins: number;
   bookmarkedCount: number;
   categories: CategoryItem[];
@@ -44,7 +44,11 @@ interface NavDrawerProps {
   onSelectCategory?: (categoryId: string) => void;
   onSelectDistrict?: (districtId: string) => void;
   onLogout?: () => void;
+  onQuickMasterLogin?: () => void;
+  isAuthenticated?: boolean;
 }
+
+type DrawerSectionTab = 'menu' | 'categories' | 'districts';
 
 export const NavDrawer: React.FC<NavDrawerProps> = ({
   isOpen,
@@ -52,19 +56,26 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
   activeTab,
   onTabSelect,
   currentRole,
+  accountRole = currentRole,
   onRoleChange,
+  onSwitchPersona,
   userCoins,
   bookmarkedCount,
   categories,
   districts,
-  divisions,
   epaperEditions,
   onSelectCategory,
   onSelectDistrict,
   onLogout,
+  onQuickMasterLogin,
+  isAuthenticated = false,
 }) => {
+  const [drawerTab, setDrawerTab] = useState<DrawerSectionTab>('menu');
+  const [districtFilter, setDistrictFilter] = useState('');
+
   if (!isOpen) return null;
 
+  const isMasterAccount = accountRole === 'MASTER_ADMIN';
   const isMasterAdmin = currentRole === 'MASTER_ADMIN';
   const isAdmin = currentRole === 'ADMIN' || isMasterAdmin;
   const isPrivilegedStaff = ['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole);
@@ -74,13 +85,23 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
     onClose();
   };
 
-  const districtListRef = React.useRef<HTMLDivElement>(null);
-
-  const scrollToDistricts = () => {
-    if (districtListRef.current) {
-      districtListRef.current.scrollIntoView({ behavior: 'smooth' });
+  // Switch persona directly inside Menu without closing drawer so user can inspect each role's menu bar & tabs
+  const handlePersonaClick = (targetRole: AppRole) => {
+    if (onSwitchPersona) {
+      onSwitchPersona(targetRole);
+    } else {
+      onRoleChange(targetRole);
     }
+    setDrawerTab('menu');
   };
+
+  const filteredDistricts = districtFilter.trim()
+    ? districts.filter(
+        (d) =>
+          d.nameHi.includes(districtFilter.trim()) ||
+          d.nameEn.toLowerCase().includes(districtFilter.trim().toLowerCase())
+      )
+    : districts;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
@@ -93,12 +114,12 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
       {/* Sliding Drawer Panel */}
       <div className="fixed inset-y-0 left-0 max-w-sm w-full bg-white shadow-2xl flex flex-col z-10 animate-in slide-in-from-left duration-250">
         {/* Drawer Header */}
-        <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+        <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-2">
             <img
               src="/brand/logo.png"
               alt="BREAKING NEWS WALA"
-              className="h-8 w-auto object-contain"
+              className="h-7 w-auto object-contain"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
               }}
@@ -108,7 +129,7 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
                 BREAKING NEWS WALA
               </span>
               <span className="text-[10px] text-slate-300 font-bold">
-                मुख्य मेन्यू • 55 जिले
+                मध्य प्रदेश डिजिटल नेटवर्क • 55 जिले
               </span>
             </div>
           </div>
@@ -129,427 +150,442 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
           <div className="flex-1 bg-[#344FD6]" />
         </div>
 
-        {/* 1. User Persona & Coins Quick Card (Item 1: Reader Profile) */}
-        <div className="p-3.5 bg-gradient-to-r from-slate-900 to-slate-800 text-white border-b border-slate-800">
+        {/* Persona & Coins Quick Card */}
+        <div className="px-3.5 py-2.5 bg-gradient-to-r from-slate-900 to-slate-800 text-white border-b border-slate-800 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-red-600 text-white font-black flex items-center justify-center text-sm shadow-xs">
-                {isMasterAdmin ? '⭐' : isAdmin ? '👑' : 'पा'}
+              <div className="w-8 h-8 rounded-full bg-red-600 text-white font-black flex items-center justify-center text-xs shadow-xs">
+                {isMasterAdmin ? '⭐' : isAdmin ? '👑' : currentRole === 'REPORTER' ? 'रि' : 'पा'}
               </div>
               <div>
                 <p className="text-xs font-bold leading-tight">
                   {isMasterAdmin
-                    ? 'मास्टर एडमिनिस्ट्रेटर'
+                    ? 'मास्टर एडमिन मोड'
                     : isAdmin
-                    ? 'एडमिनिस्ट्रेटर'
+                    ? 'एडमिन मोड'
                     : currentRole === 'EDITOR'
-                    ? 'डेस्क संपादक'
+                    ? 'डेस्क संपादक मोड'
                     : currentRole === 'REPORTER'
-                    ? 'फील्ड संवाददाता'
+                    ? 'संवाददाता (रिपोर्टर) मोड'
+                    : isMasterAccount
+                    ? 'पाठक / यूजर मोड (मास्टर)'
                     : 'पाठक बंधु'}
                 </p>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[10px] text-slate-400">
                   {isMasterAdmin
-                    ? 'पूर्ण प्रशासनिक नियंत्रण'
-                    : isAdmin
-                    ? 'संपादकीय नियंत्रण'
-                    : currentRole === 'EDITOR'
-                    ? 'संपादकीय डेस्क'
+                    ? 'पूर्ण प्रशासनिक एवं स्टूडियो नियंत्रण'
                     : currentRole === 'REPORTER'
-                    ? 'सत्यापित रिपोर्टर'
-                    : 'सामान्य पाठक मोड'}
+                    ? 'फील्ड रिपोर्टिंग व ड्राफ्ट डेस्क'
+                    : 'सार्वजनिक समाचार व पाठक अनुभव'}
                 </p>
               </div>
             </div>
 
-            <div
+            <button
               onClick={() => navigateTo('profile')}
-              className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full text-amber-300 text-xs font-bold cursor-pointer hover:bg-amber-500/30 transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full text-amber-300 text-[11px] font-bold cursor-pointer hover:bg-amber-500/30 transition-colors"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>{userCoins} सिक्के</span>
-            </div>
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>{userCoins}</span>
+            </button>
           </div>
+
+          {/* Master Admin 3-Tab Persona Switcher permanently inside Menu */}
+          {isMasterAccount ? (
+            <div className="space-y-1">
+              <p className="text-[10px] font-bold text-amber-300/90 tracking-wide">
+                रोल प्रीव्यू बदलें (मेन्यू टैब यहीं देखें):
+              </p>
+              <div className="grid grid-cols-3 gap-1 bg-slate-950/70 p-1 rounded-lg border border-slate-700/80 text-[10px] font-bold">
+                <button
+                  onClick={() => handlePersonaClick('MASTER_ADMIN')}
+                  className={`py-1.5 px-1 rounded-md flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                    currentRole === 'MASTER_ADMIN' || currentRole === 'ADMIN'
+                      ? 'bg-amber-500 text-slate-950 shadow-xs'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <Crown className="w-3 h-3 shrink-0" />
+                  <span className="truncate">मास्टर एडमिन</span>
+                </button>
+                <button
+                  onClick={() => handlePersonaClick('REPORTER')}
+                  className={`py-1.5 px-1 rounded-md flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                    currentRole === 'REPORTER'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <PenTool className="w-3 h-3 shrink-0" />
+                  <span className="truncate">रिपोर्टर</span>
+                </button>
+                <button
+                  onClick={() => handlePersonaClick('READER')}
+                  className={`py-1.5 px-1 rounded-md flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                    currentRole === 'READER'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  <User className="w-3 h-3 shrink-0" />
+                  <span className="truncate">यूजर</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            onQuickMasterLogin && (
+              <button
+                onClick={onQuickMasterLogin}
+                className="w-full py-1.5 px-3 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-lg text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Crown className="w-3.5 h-3.5" />
+                <span>मास्टर एडमिन प्रीव्यू अनलॉक करें (3-रोल स्विचर)</span>
+              </button>
+            )
+          )}
         </div>
 
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs">
-          {/* Master Admin / Privileged Staff Section (Only for Authorized Staff) */}
-          {isPrivilegedStaff && (
-            <div className="p-3 bg-slate-50 space-y-1">
-              <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider px-2 mb-1 flex items-center gap-1">
-                <Lock className="w-3 h-3" />
-                प्रशासनिक व संपादकीय कार्यक्षेत्र (Staff Desks)
-              </p>
+        {/* User-Friendly Drawer Section Tabs */}
+        <div className="grid grid-cols-3 bg-slate-100 border-b border-slate-200 text-xs font-bold">
+          <button
+            onClick={() => setDrawerTab('menu')}
+            className={`py-2.5 border-b-2 transition-colors ${
+              drawerTab === 'menu'
+                ? 'border-[#ED1727] bg-white text-[#ED1727]'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            मुख्य मेन्यू
+          </button>
+          <button
+            onClick={() => setDrawerTab('categories')}
+            className={`py-2.5 border-b-2 transition-colors ${
+              drawerTab === 'categories'
+                ? 'border-[#ED1727] bg-white text-[#ED1727]'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            श्रेणियां ({categories.length})
+          </button>
+          <button
+            onClick={() => setDrawerTab('districts')}
+            className={`py-2.5 border-b-2 transition-colors ${
+              drawerTab === 'districts'
+                ? 'border-[#ED1727] bg-white text-[#ED1727]'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            जिले ({districts.length})
+          </button>
+        </div>
 
-              {/* Master Admin Dashboard Button */}
-              {isAdmin && (
+        {/* Scrollable Drawer Tab Content */}
+        <div className="flex-1 overflow-y-auto text-xs">
+          {drawerTab === 'menu' && (
+            <div className="divide-y divide-slate-100">
+              {/* Staff Desks & Studios (Role-Aware) */}
+              {isPrivilegedStaff && (
+                <div className="p-3 bg-slate-50 space-y-1">
+                  <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider px-2 mb-1 flex items-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    कार्यक्षेत्र व स्टूडियो (Workspaces)
+                  </p>
+
+                  {isAdmin && (
+                    <button
+                      onClick={() => navigateTo('admin')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
+                        activeTab === 'admin'
+                          ? 'bg-slate-900 text-amber-400 shadow-xs'
+                          : 'bg-amber-500/10 text-slate-800 hover:bg-amber-500/20 border border-amber-500/30'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-amber-500" />
+                        मास्टर एडमिन डैशबोर्ड
+                      </span>
+                      <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold">
+                        कंट्रोल
+                      </span>
+                    </button>
+                  )}
+
+                  {(isAdmin || currentRole === 'EDITOR') && (
+                    <button
+                      onClick={() => navigateTo('newsroom')}
+                      className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                        activeTab === 'newsroom' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-white'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Building2 className="w-3.5 h-3.5 text-red-600" />
+                        केंद्रीय संपादकीय (न्यूज़रूम) डेस्क
+                      </span>
+                      <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded">समीक्षा</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => navigateTo('reporter')}
+                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                      activeTab === 'reporter' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <PenTool className="w-3.5 h-3.5 text-blue-600" />
+                      संवाददाता फील्ड डेस्क
+                    </span>
+                    <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">प्रेस</span>
+                  </button>
+
+                  {isAdmin && (
+                    <>
+                      <button
+                        onClick={() => navigateTo('epaper')}
+                        className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                          activeTab === 'epaper' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-white'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Newspaper className="w-3.5 h-3.5 text-[#344FD6]" />
+                          दैनिक डिजिटल ई-पेपर
+                        </span>
+                        <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">एडिशन</span>
+                      </button>
+
+                      <div className="grid grid-cols-3 gap-1.5 pt-1">
+                        <button
+                          onClick={() => navigateTo('graphics')}
+                          className={`flex flex-col items-center justify-center p-2 rounded-lg font-bold border text-[11px] transition-colors ${
+                            activeTab === 'graphics'
+                              ? 'bg-orange-50 border-orange-300 text-orange-700'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-orange-50/50'
+                          }`}
+                        >
+                          <Palette className="w-4 h-4 text-orange-500 mb-1" />
+                          <span>ग्राफ़िक्स</span>
+                        </button>
+                        <button
+                          onClick={() => navigateTo('videos')}
+                          className={`flex flex-col items-center justify-center p-2 rounded-lg font-bold border text-[11px] transition-colors ${
+                            activeTab === 'videos'
+                              ? 'bg-red-50 border-red-300 text-[#ED1727]'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-red-50/50'
+                          }`}
+                        >
+                          <Video className="w-4 h-4 text-[#ED1727] mb-1" />
+                          <span>वीडियो Pro</span>
+                        </button>
+                        <button
+                          onClick={() => navigateTo('ai-newsroom')}
+                          className={`flex flex-col items-center justify-center p-2 rounded-lg font-bold border text-[11px] transition-colors ${
+                            activeTab === 'ai-newsroom'
+                              ? 'bg-amber-50 border-amber-300 text-amber-700'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-amber-50/50'
+                          }`}
+                        >
+                          <Bot className="w-4 h-4 text-amber-500 mb-1" />
+                          <span>AI न्यूज़</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Public User Navigation (Clean, zero duplicate links) */}
+              <div className="p-3 space-y-1">
+                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-2 mb-1">
+                  सार्वजनिक नेविगेशन
+                </p>
+
                 <button
-                  onClick={() => navigateTo('admin')}
+                  onClick={() => navigateTo('home')}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
-                    activeTab === 'admin'
-                      ? 'bg-slate-900 text-amber-400 shadow-xs'
-                      : 'bg-amber-500/10 text-slate-800 hover:bg-amber-500/20 border border-amber-500/30'
+                    activeTab === 'home' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-amber-500" />
-                    {isMasterAdmin ? '⭐ मास्टर एडमिन डैशबोर्ड' : 'एडमिनिस्ट्रेटिव कंट्रोल रूम'}
+                  <span className="flex items-center gap-2.5">
+                    <Home className="w-4 h-4 text-red-600" />
+                    होम व ताज़ा खबरें
                   </span>
-                  <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold">
-                    कंट्रोल रूम
-                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                 </button>
-              )}
 
-              {/* Reporter Desk */}
-              <button
-                onClick={() => navigateTo('reporter')}
-                className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                  activeTab === 'reporter' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-white'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <PenTool className="w-3.5 h-3.5 text-blue-600" />
-                  संवाददाता फील्ड डेस्क
-                </span>
-                <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">प्रेस पोर्टल</span>
-              </button>
-
-              {/* Newsroom Desk */}
-              {(isMasterAdmin || isAdmin || currentRole === 'EDITOR') && (
                 <button
-                  onClick={() => navigateTo('newsroom')}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                    activeTab === 'newsroom' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-white'
+                  onClick={() => navigateTo('search')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
+                    activeTab === 'search' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="flex items-center gap-2">
-                    <Building2 className="w-3.5 h-3.5 text-red-600" />
-                    केंद्रीय संपादकीय डेस्क
+                  <span className="flex items-center gap-2.5">
+                    <Search className="w-4 h-4 text-slate-600" />
+                    समाचार खोजें (Archive)
                   </span>
-                  <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded">समीक्षा</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                 </button>
-              )}
 
-              {/* Studios */}
-              {isAdmin && (
-                <>
+                <button
+                  onClick={() => navigateTo('profile')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
+                    activeTab === 'profile' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Bookmark className="w-4 h-4 text-blue-600" />
+                    सहेजे गए समाचार (बुकमार्क)
+                  </span>
+                  <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">
+                    {bookmarkedCount} सेव्ड
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => navigateTo('profile')}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <User className="w-4 h-4 text-purple-600" />
+                    मेरी प्रोफ़ाइल, सिक्के व सेटिंग्स
+                  </span>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
+                    {userCoins} सिक्के
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setDrawerTab('districts')}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <MapPin className="w-4 h-4 text-red-500" />
+                    ज़िला चुनें (55 जिले)
+                  </span>
+                  <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">
+                    एमपी विशेष
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => navigateTo('profile')}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <HelpCircle className="w-4 h-4 text-cyan-600" />
+                    सहायता, फीडबैक व शिकायत
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                </button>
+
+                {isAuthenticated && (
                   <button
-                    onClick={() => navigateTo('graphics')}
-                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                      activeTab === 'graphics' ? 'bg-orange-50 text-orange-700' : 'text-slate-700 hover:bg-white'
-                    }`}
+                    onClick={() => {
+                      if (onLogout) onLogout();
+                      onClose();
+                    }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-rose-600 hover:bg-rose-50 transition-colors mt-1"
                   >
-                    <span className="flex items-center gap-2">
-                      <Palette className="w-3.5 h-3.5 text-orange-500" />
-                      ग्राफ़िक्स स्टूडियो
+                    <span className="flex items-center gap-2.5">
+                      <LogOut className="w-4 h-4 text-rose-600" />
+                      लॉग आउट (Logout)
                     </span>
-                    <span className="text-[10px] bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">STUDIO</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-rose-400" />
                   </button>
+                )}
+              </div>
+
+              {/* Legal & Ethics Compact Footer */}
+              <div className="p-3 space-y-1.5 text-[11px] text-slate-500 bg-slate-50">
+                <p className="font-bold text-slate-700 flex items-center gap-1">
+                  <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                  IT Rules 2021 व आचार संहिता
+                </p>
+                <div className="space-y-0.5 text-slate-600">
+                  <p className="flex items-center gap-1">
+                    <Mail className="w-3 h-3 text-red-600" />
+                    grievance@breakingnewswala.com
+                  </p>
+                  <p className="flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-blue-600" />
+                    +91 755 4920000 (भोपाल ब्यूरो)
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {drawerTab === 'categories' && (
+            <div className="p-3 space-y-2">
+              <p className="text-[11px] font-bold text-slate-500 px-1">
+                श्रेणी चुनकर तुरंत संबंधित समाचार देखें:
+              </p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {categories.map((cat) => (
                   <button
-                    onClick={() => navigateTo('videos')}
-                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                      activeTab === 'videos' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-white'
-                    }`}
+                    key={cat.id}
+                    onClick={() => {
+                      if (onSelectCategory) onSelectCategory(cat.id);
+                      navigateTo('home');
+                    }}
+                    className="text-left px-3 py-2 rounded-lg bg-slate-50 hover:bg-red-50 hover:text-red-600 font-semibold text-slate-700 border border-slate-200/60 transition-colors truncate flex items-center gap-1.5"
                   >
-                    <span className="flex items-center gap-2">
-                      <Video className="w-3.5 h-3.5 text-[#ED1727]" />
-                      वीडियो स्टूडियो Pro
-                    </span>
-                    <span className="text-[10px] bg-red-100 text-red-800 px-1.5 py-0.5 rounded">HD MP4</span>
+                    <Flame className="w-3 h-3 text-red-500 shrink-0" />
+                    <span className="truncate">{cat.nameHi}</span>
                   </button>
-                  <button
-                    onClick={() => navigateTo('ai-newsroom')}
-                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                      activeTab === 'ai-newsroom' ? 'bg-amber-50 text-amber-700' : 'text-slate-700 hover:bg-white'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Bot className="w-3.5 h-3.5 text-amber-500" />
-                      AI न्यूज़ रूम
-                    </span>
-                    <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">AI AUTO</span>
-                  </button>
-                  {/* E-Paper (Staff Only) */}
-                  <button
-                    onClick={() => navigateTo('epaper')}
-                    className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                      activeTab === 'epaper' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-white'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Newspaper className="w-3.5 h-3.5 text-[#344FD6]" />
-                      दैनिक डिजिटल ई-पेपर (E-Paper)
-                    </span>
-                    <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">एडिशन</span>
-                  </button>
-                </>
+                ))}
+              </div>
+
+              {isAdmin && epaperEditions.length > 0 && (
+                <div className="pt-3 mt-3 border-t border-slate-200 space-y-1.5">
+                  <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-1">
+                    ई-पेपर जिला संस्करण (Admin)
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {epaperEditions.map((ed) => (
+                      <button
+                        key={ed.id}
+                        onClick={() => navigateTo('epaper')}
+                        className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#344FD6] rounded-lg font-semibold text-[11px] transition-colors"
+                      >
+                        📰 {ed.districtName}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
 
-          {/* Standard 12-Item Public User Navigation List */}
-          <div className="p-3 space-y-1">
-            <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-2 mb-1">
-              नेविगेशन मेन्यू (Navigation)
-            </p>
+          {drawerTab === 'districts' && (
+            <div className="p-3 space-y-2.5">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={districtFilter}
+                  onChange={(e) => setDistrictFilter(e.target.value)}
+                  placeholder="ज़िला खोजें (जैसे: भोपाल, इंदौर)..."
+                  className="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-red-500"
+                />
+              </div>
 
-            {/* Item 2: Home (होम पेज) */}
-            <button
-              onClick={() => navigateTo('home')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
-                activeTab === 'home' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Home className="w-4 h-4 text-red-600" />
-                होम पेज
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* Item 3: All News (ताज़ा व समस्त समाचार) */}
-            <button
-              onClick={() => navigateTo('home')}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <Flame className="w-4 h-4 text-amber-500" />
-                ताज़ा व समस्त समाचार
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* Item 4: Saved News (सेव्ड समाचार / बुकमार्क) */}
-            <button
-              onClick={() => navigateTo('profile')}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <Bookmark className="w-4 h-4 text-blue-600" />
-                सेव्ड समाचार (बुकमार्क)
-              </span>
-              <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">
-                {bookmarkedCount} सेव्ड
-              </span>
-            </button>
-
-            {/* Item 5: Coin Wallet (सिक्के / कॉइन रिवॉर्ड्स) */}
-            <button
-              onClick={() => navigateTo('profile')}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                सिक्के व कॉइन रिवॉर्ड्स
-              </span>
-              <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
-                {userCoins} सिक्के
-              </span>
-            </button>
-
-            {/* Item 6: Notifications (अधिसूचनाएं) */}
-            <button
-              onClick={() => navigateTo('profile')}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <Bell className="w-4 h-4 text-emerald-600" />
-                अधिसूचनाएं (Notifications)
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* Item 7: Select My District (ज़िला चयन) */}
-            <button
-              onClick={scrollToDistricts}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <MapPin className="w-4 h-4 text-red-500" />
-                ज़िला चयन (55 जिले)
-              </span>
-              <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">
-                एमपी विशेष
-              </span>
-            </button>
-
-            {/* Item 8: News Preferences (प्राथमिकताएं) */}
-            <button
-              onClick={() => navigateTo('profile')}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <Sliders className="w-4 h-4 text-indigo-500" />
-                समाचार प्राथमिकताएं
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* Item 9: My Profile (मेरी प्रोफ़ाइल) */}
-            <button
-              onClick={() => navigateTo('profile')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
-                activeTab === 'profile' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <User className="w-4 h-4 text-purple-600" />
-                मेरी प्रोफ़ाइल (My Profile)
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* Item 10: Settings (ऐप सेटिंग्स) */}
-            <button
-              onClick={() => navigateTo('profile')}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <Settings className="w-4 h-4 text-slate-600" />
-                ऐप सेटिंग्स (Settings)
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* Item 11: Help and Contact (सहायता व संपर्क) */}
-            <button
-              onClick={() => navigateTo('profile')}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <HelpCircle className="w-4 h-4 text-cyan-600" />
-                सहायता व संपर्क (Help & Contact)
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-
-            {/* Item 12: Logout (लॉग आउट) */}
-            <button
-              onClick={() => {
-                if (onLogout) {
-                  onLogout();
-                } else {
-                  navigateTo('profile');
-                }
-              }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold text-rose-600 hover:bg-rose-50 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <LogOut className="w-4 h-4 text-rose-600" />
-                लॉग आउट (Logout)
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-rose-400" />
-            </button>
-          </div>
-
-          {/* Search Archive */}
-          <div className="p-3">
-            <button
-              onClick={() => navigateTo('search')}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
-                activeTab === 'search' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <Search className="w-4 h-4 text-slate-600" />
-                समाचार खोजें (Search Archive)
-              </span>
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            </button>
-          </div>
-
-          {/* News Categories (11 specific categories) */}
-          <div className="p-3 space-y-1">
-            <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-2 mb-1">
-              समाचार श्रेणियां (Categories)
-            </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => {
-                    if (onSelectCategory) onSelectCategory(cat.id);
-                    navigateTo('home');
-                  }}
-                  className="text-left px-2.5 py-1.5 rounded bg-slate-50 hover:bg-red-50 hover:text-red-600 font-medium text-slate-700 transition-colors truncate"
-                >
-                  • {cat.nameHi}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Daily Epaper Editions (Shown ONLY to Authorized Master Admin & Admin) */}
-          {isAdmin && (
-            <div className="p-3 space-y-1">
-              <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-2 mb-1">
-                ई-पेपर जिला संस्करण (Staff Only)
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {epaperEditions.map((ed) => (
+              <div className="space-y-1">
+                {filteredDistricts.map((d) => (
                   <button
-                    key={ed.id}
-                    onClick={() => navigateTo('epaper')}
-                    className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-[#344FD6] rounded font-semibold text-[11px] transition-colors"
+                    key={d.id}
+                    onClick={() => {
+                      if (onSelectDistrict) onSelectDistrict(d.id);
+                      navigateTo('home');
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-red-50 rounded-lg text-slate-700 hover:text-red-600 font-semibold flex items-center justify-between border border-transparent hover:border-red-100 transition-colors"
                   >
-                    📰 {ed.districtName}
+                    <span>📍 {d.nameHi}</span>
+                    <span className="text-[10px] text-slate-400">{d.nameEn}</span>
                   </button>
                 ))}
               </div>
             </div>
           )}
-
-          {/* 55 Districts of Madhya Pradesh Directory */}
-          <div ref={districtListRef} className="p-3 space-y-1.5">
-            <div className="flex items-center justify-between px-2">
-              <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                <MapPin className="w-3 h-3 text-red-600" />
-                मध्य प्रदेश के 55 जिले
-              </p>
-              <span className="text-[10px] text-slate-500 font-semibold">10 संभाग</span>
-            </div>
-            <div className="max-h-48 overflow-y-auto border border-slate-100 rounded-lg p-2 bg-slate-50/70 space-y-1">
-              {districts.map((d) => (
-                <button
-                  key={d.id}
-                  onClick={() => {
-                    if (onSelectDistrict) onSelectDistrict(d.id);
-                    navigateTo('home');
-                  }}
-                  className="block w-full text-left px-2 py-1 hover:bg-white rounded text-slate-700 hover:text-red-600 font-medium truncate"
-                >
-                  📍 {d.nameHi} ({d.nameEn})
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Legal & Ethics */}
-          <div className="p-3 space-y-2 text-[11px] text-slate-500 bg-slate-50">
-            <p className="font-bold text-slate-700 flex items-center gap-1">
-              <Shield className="w-3.5 h-3.5 text-emerald-600" />
-              डिजिटल मीडिया आचार संहिता व विधिक जानकारी
-            </p>
-            <p className="leading-tight">
-              प्रेस काउंसिल ऑफ इंडिया व आईटी रूल्स 2021 के तहत संचालित।
-            </p>
-            <div className="space-y-0.5 text-slate-600">
-              <p className="flex items-center gap-1">
-                <Mail className="w-3 h-3 text-red-600" />
-                grievance@breakingnewswala.com
-              </p>
-              <p className="flex items-center gap-1">
-                <Phone className="w-3 h-3 text-blue-600" />
-                +91 755 4920000 (भोपाल ब्यूरो)
-              </p>
-            </div>
-            <div className="pt-2 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
-              <span>संस्करण: v1.6.0 (Web)</span>
-              <span>BREAKING NEWS WALA</span>
-            </div>
-          </div>
         </div>
       </div>
     </div>

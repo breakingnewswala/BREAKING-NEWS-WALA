@@ -167,6 +167,7 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
   const [broadcastHeadline, setBroadcastHeadline] = useState('');
   const [broadcastDistrict, setBroadcastDistrict] = useState('पूरा मध्य प्रदेश');
   const [broadcastToast, setBroadcastToast] = useState<string | null>(null);
+  const [deskNotice, setDeskNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   const [showReporterDrawer, setShowReporterDrawer] = useState(false);
   const [selectedReporter, setSelectedReporter] = useState<ReporterProfile | null>(null);
@@ -274,7 +275,7 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
         setEditedTitle(result.refinedHeadline);
       }
     } catch {
-      alert('AI तथ्य-जांच विश्लेषण में त्रुटि हुई।');
+      setDeskNotice({ type: 'error', text: 'AI तथ्य-जांच विश्लेषण में त्रुटि हुई।' });
     } finally {
       setIsAiAuditing(false);
     }
@@ -341,12 +342,13 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
 
   const handleRevisionSubmit = () => {
     if (!selectedArticle || !revisionComments.trim()) {
-      alert('कृपया आवश्यक संशोधन टिप्पणी दर्ज करें।');
+      setDeskNotice({ type: 'error', text: 'कृपया आवश्यक संशोधन टिप्पणी दर्ज करें।' });
       return;
     }
     onRequestRevision(selectedArticle.id, revisionComments.trim());
     setShowRevisionModal(false);
     setRevisionComments('');
+    setDeskNotice({ type: 'success', text: 'संशोधन निर्देश संवाददाता को भेज दिए गए हैं।' });
   };
 
   const handlePublishClick = () => {
@@ -358,11 +360,12 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
       editedDistrict,
       editedCategory
     );
+    setDeskNotice({ type: 'success', text: 'स्टोरी सफलतापूर्वक लाइव प्रकाशित की गई।' });
   };
 
   const handleTriggerBroadcast = () => {
     if (!broadcastHeadline.trim()) {
-      alert('कृपया ब्रेकिंग अलर्ट का शीर्षक दर्ज करें।');
+      setDeskNotice({ type: 'error', text: 'कृपया ब्रेकिंग अलर्ट का शीर्षक दर्ज करें।' });
       return;
     }
     if (onBroadcastBreakingAlert) {
@@ -490,6 +493,23 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
               {broadcastToast}
             </span>
             <button onClick={() => setBroadcastToast(null)} className="text-white hover:text-slate-200 font-bold px-2">
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {deskNotice && (
+        <div className="max-w-7xl mx-auto mt-3 px-4">
+          <div
+            className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-between ${
+              deskNotice.type === 'error'
+                ? 'bg-rose-50 border-rose-300 text-rose-800'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+            }`}
+          >
+            <span>{deskNotice.text}</span>
+            <button onClick={() => setDeskNotice(null)} className="px-2 font-bold">
               ✕
             </button>
           </div>

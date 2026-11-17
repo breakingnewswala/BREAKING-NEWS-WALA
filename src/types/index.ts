@@ -393,6 +393,8 @@ export interface AdBannerItem {
   targetUrl: string;
   advertiserName: string;
   isActive: boolean;
+  impressionsCount?: number;
+  clicksCount?: number;
 }
 
 export interface MandiRateItem {
@@ -1606,6 +1608,8 @@ export interface UserPreferences {
   preferredLanguage: 'hi' | 'en';
   pushNotificationTopics: string[];
   breakingAlertsEnabled: boolean;
+  districtAlertsEnabled?: boolean;
+  quietHoursEnabled?: boolean;
   digestFrequency: 'instant' | 'daily' | 'weekly' | 'none';
   offlineDownloadEnabled: boolean;
   contentViewPreferences: {

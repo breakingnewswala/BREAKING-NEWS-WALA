@@ -8,6 +8,8 @@ import {
   ReporterProfile,
   BreakingTickerItem,
   AdBannerItem,
+  MandiRateItem,
+  ReadingHistoryRecord,
   ApiPoolKeyItem,
   SystemAuditLogItem,
 } from './types';
@@ -20,6 +22,7 @@ import {
   INITIAL_PENDING_STORIES,
   MOCK_REPORTERS,
   MOCK_ADS,
+  MOCK_MANDI_RATES,
   MOCK_API_POOL,
   MOCK_AUDIT_LOGS,
   MOCK_TICKERS,
@@ -42,7 +45,7 @@ const GraphicsStudioScreen = React.lazy(() => import('./screens/GraphicsStudioSc
 const VideoStudioScreen = React.lazy(() => import('./screens/VideoStudioScreen').then((m) => ({ default: m.VideoStudioScreen })));
 const AiNewsroomScreen = React.lazy(() => import('./screens/AiNewsroomScreen').then((m) => ({ default: m.AiNewsroomScreen })));
 import { Radio, X } from 'lucide-react';
-import { apiClient, AuthUser } from './services/apiClient';
+import { apiClient, AuthUser, getStoredAccessToken } from './services/apiClient';
 import { auth, onAuthStateChanged, FirebaseUser } from './firebase';
 
 export const App: React.FC = () => {
@@ -52,9 +55,12 @@ export const App: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // App Role Persona: Default MUST strictly be 'READER' for all visitors
+  // accountRole preserves the verified Firebase/backend privilege (e.g. MASTER_ADMIN) while switching personas
+  const [accountRole, setAccountRole] = useState<AppRole>('READER');
   const [currentRole, setCurrentRole] = useState<AppRole>('READER');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
+  const lastAuthUidRef = React.useRef<string | null>(null);
 
   // Filter signals from Drawer Menu to Home
   const [initialCategoryFilter, setInitialCategoryFilter] = useState<string | null>(null);
@@ -68,6 +74,7 @@ export const App: React.FC = () => {
   // Operational Surface States
   const [reporters, setReporters] = useState<ReporterProfile[]>(MOCK_REPORTERS);
   const [ads, setAds] = useState<AdBannerItem[]>(MOCK_ADS);
+  const [mandiRates, setMandiRates] = useState<MandiRateItem[]>(MOCK_MANDI_RATES);
   const [tickers, setTickers] = useState<BreakingTickerItem[]>(MOCK_TICKERS);
   const [apiPool, setApiPool] = useState<ApiPoolKeyItem[]>(MOCK_API_POOL);
   const [auditLogs, setAuditLogs] = useState<SystemAuditLogItem[]>(MOCK_AUDIT_LOGS);
@@ -75,6 +82,16 @@ export const App: React.FC = () => {
   // User engagement
   const [bookmarkedIds, setBookmarkedIds] = useState<string[]>(['art-1', 'art-3']);
   const [userCoins, setUserCoins] = useState<number>(45);
+  const [shareToast, setShareToast] = useState<string | null>(null);
+  const [readingHistory, setReadingHistory] = useState<ReadingHistoryRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('bnw_reading_history');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return [];
+  });
 
   // Active Statewide Alert
   const [activeAlert, setActiveAlert] = useState<{ title: string; district: string } | null>({
@@ -82,18 +99,73 @@ export const App: React.FC = () => {
     district: 'पूरा मध्य प्रदेश',
   });
 
-  // Authenticated Session Synchronizer with Firebase Auth Observer & Authoritative Backend Verification
+  const resolveHighestRole = (roles: string[]): AppRole => {
+    const upperRoles = roles.map((r) => String(r).toUpperCase());
+    if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
+      return 'MASTER_ADMIN';
+    }
+    if (upperRoles.includes('ADMIN')) {
+      return 'ADMIN';
+    }
+    if (upperRoles.includes('CHIEF_EDITOR') || upperRoles.includes('EDITOR')) {
+      return 'EDITOR';
+    }
+    if (upperRoles.includes('REPORTER')) {
+      return 'REPORTER';
+    }
+    return 'READER';
+  };
+
+  const handleBackendSessionLogin = (user: AuthUser) => {
+    const resolvedRole = resolveHighestRole(user.roles || []);
+    lastAuthUidRef.current = user.id;
+    setAuthUser(user);
+    setAccountRole(resolvedRole);
+    setCurrentRole(resolvedRole);
+  };
+
+  const handleQuickMasterLogin = async () => {
+    try {
+      const user = await apiClient.auth.login('master_admin');
+      handleBackendSessionLogin(user);
+    } catch (err) {
+      console.warn('[BNW Preview Auth] Master login fallback notice:', err);
+    }
+  };
+
+  // Authenticated Session Synchronizer (Supports both Firebase & Backend Preview JWT Sessions)
   useEffect(() => {
     let isMounted = true;
 
-    // Listen to Firebase Authentication state changes in real time
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (!isMounted) return;
 
       if (!firebaseUser) {
-        // Unauthenticated visitor / logged out -> strictly PUBLIC READER MODE
+        // Check if an authenticated backend JWT session is active (e.g., Preview Master Admin login)
+        if (getStoredAccessToken()) {
+          try {
+            const backendUser = await apiClient.auth.getCurrentUser();
+            if (isMounted && backendUser && backendUser.roles && backendUser.roles.length > 0) {
+              const resolvedRole = resolveHighestRole(backendUser.roles);
+              const isNewUserSession = lastAuthUidRef.current !== backendUser.id;
+              lastAuthUidRef.current = backendUser.id;
+              setAuthUser(backendUser);
+              setAccountRole(resolvedRole);
+              if (isNewUserSession) {
+                setCurrentRole(resolvedRole);
+              }
+              setIsAuthChecking(false);
+              return;
+            }
+          } catch {
+            // Fall through to clean public reader reset
+          }
+        }
+
         apiClient.auth.clearStoredTokens?.();
+        lastAuthUidRef.current = null;
         setAuthUser(null);
+        setAccountRole('READER');
         setCurrentRole('READER');
         setIsAuthChecking(false);
         return;
@@ -107,41 +179,32 @@ export const App: React.FC = () => {
         if (!isMounted) return;
 
         if (authUserRecord && authUserRecord.roles && authUserRecord.roles.length > 0) {
+          const resolvedRole = resolveHighestRole(authUserRecord.roles);
+          const isNewUserSession = lastAuthUidRef.current !== authUserRecord.id;
+          lastAuthUidRef.current = authUserRecord.id;
           setAuthUser(authUserRecord);
-          const upperRoles = authUserRecord.roles.map((r) => String(r).toUpperCase());
-          if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
-            setCurrentRole('MASTER_ADMIN');
-          } else if (upperRoles.includes('ADMIN')) {
-            setCurrentRole('ADMIN');
-          } else if (upperRoles.includes('CHIEF_EDITOR') || upperRoles.includes('EDITOR')) {
-            setCurrentRole('EDITOR');
-          } else if (upperRoles.includes('REPORTER')) {
-            setCurrentRole('REPORTER');
-          } else {
-            setCurrentRole('READER');
+          setAccountRole(resolvedRole);
+          if (isNewUserSession) {
+            setCurrentRole(resolvedRole);
           }
         } else {
+          lastAuthUidRef.current = null;
           setAuthUser(null);
+          setAccountRole('READER');
           setCurrentRole('READER');
         }
       } catch (err) {
         console.warn('[BNW Auth] Backend session exchange notice:', err);
-        // Fallback: Check if stored verified session exists
         try {
           const user = await apiClient.auth.getCurrentUser();
           if (isMounted && user && user.roles && user.roles.length > 0) {
+            const resolvedRole = resolveHighestRole(user.roles);
+            const isNewUserSession = lastAuthUidRef.current !== user.id;
+            lastAuthUidRef.current = user.id;
             setAuthUser(user);
-            const upperRoles = user.roles.map((r) => String(r).toUpperCase());
-            if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
-              setCurrentRole('MASTER_ADMIN');
-            } else if (upperRoles.includes('ADMIN')) {
-              setCurrentRole('ADMIN');
-            } else if (upperRoles.includes('CHIEF_EDITOR') || upperRoles.includes('EDITOR')) {
-              setCurrentRole('EDITOR');
-            } else if (upperRoles.includes('REPORTER')) {
-              setCurrentRole('REPORTER');
-            } else {
-              setCurrentRole('READER');
+            setAccountRole(resolvedRole);
+            if (isNewUserSession) {
+              setCurrentRole(resolvedRole);
             }
             return;
           }
@@ -149,7 +212,9 @@ export const App: React.FC = () => {
           // ignore fallback error
         }
         if (isMounted) {
+          lastAuthUidRef.current = null;
           setAuthUser(null);
+          setAccountRole('READER');
           setCurrentRole('READER');
         }
       } finally {
@@ -162,6 +227,73 @@ export const App: React.FC = () => {
     return () => {
       isMounted = false;
       unsubscribe();
+    };
+  }, []);
+
+  // Real-Time Push Notification Service Worker & Live SSE Stream Listener
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
+    if (typeof EventSource === 'undefined') return;
+    const stream = new EventSource('/api/v1/notifications/stream');
+
+    const handleLiveNotification = async (ev: Event) => {
+      try {
+        const msgEv = ev as MessageEvent;
+        const data = JSON.parse(msgEv.data);
+        const title = data.title || data.message || 'ताज़ा ब्रेकिंग न्यूज़ अलर्ट';
+        const district = data.district || 'मध्य प्रदेश';
+
+        setActiveAlert({ title, district });
+
+        // Respect quiet hours unless critical priority
+        let suppressPush = false;
+        try {
+          const saved = localStorage.getItem('bnw_notif_prefs');
+          if (saved) {
+            const prefs = JSON.parse(saved);
+            if (prefs.breakingAlerts === false && data.priority !== 'critical') {
+              suppressPush = true;
+            }
+            if (prefs.quietHours && data.priority !== 'critical') {
+              const hour = new Date().getHours();
+              if (hour >= 22 || hour < 6) suppressPush = true;
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        if (!suppressPush && 'Notification' in window && Notification.permission === 'granted') {
+          if ('serviceWorker' in navigator) {
+            const reg = await navigator.serviceWorker.getRegistration('/sw.js').catch(() => null);
+            if (reg) {
+              await reg.showNotification('BREAKING NEWS WALA', {
+                body: `[${district}] ${title}`,
+                icon: '/brand/logo.png',
+                tag: `bnw-alert-${data.id || Date.now()}`,
+              });
+              return;
+            }
+          }
+          new Notification('BREAKING NEWS WALA', {
+            body: `[${district}] ${title}`,
+            icon: '/brand/logo.png',
+          });
+        }
+      } catch {
+        // Ignore malformed SSE payload
+      }
+    };
+
+    stream.addEventListener('notification', handleLiveNotification);
+    return () => {
+      stream.removeEventListener('notification', handleLiveNotification);
+      stream.close();
     };
   }, []);
 
@@ -219,10 +351,11 @@ export const App: React.FC = () => {
     async function syncSharedBackend() {
       try {
         // 1. Public Feeds for all visitors
-        const [pubArticlesRes, tickersRes, adsRes] = await Promise.all([
-          apiClient.publicNews.fetchArticles({ status: 'PUBLISHED' }),
+        const [pubArticlesRes, tickersRes, adsRes, mandiRes] = await Promise.all([
+          apiClient.publicNews.fetchArticles({ status: 'PUBLISHED', limit: 200 }),
           apiClient.publicNews.fetchBreakingTickers(),
           apiClient.publicNews.fetchAds(),
+          apiClient.publicNews.fetchMandiRates().catch(() => []),
         ]);
 
         if (!isMounted) return;
@@ -234,6 +367,9 @@ export const App: React.FC = () => {
         }
         if (adsRes && adsRes.length > 0) {
           setAds(adsRes);
+        }
+        if (mandiRes && mandiRes.length > 0) {
+          setMandiRates(mandiRes);
         }
 
         // 2. Privileged Feeds only for authenticated Staff / Admins
@@ -273,6 +409,23 @@ export const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Master Admin 3-Persona Switcher (Master Admin / Reporter / User)
+  const handleSwitchPersona = (targetRole: AppRole, targetTab?: NavTab) => {
+    if (accountRole !== 'MASTER_ADMIN') return;
+    setCurrentRole(targetRole);
+    if (targetTab) {
+      navigateToTab(targetTab);
+      return;
+    }
+    if (targetRole === 'READER' && ['admin', 'newsroom', 'reporter', 'graphics', 'videos', 'ai-newsroom'].includes(activeTab)) {
+      navigateToTab('home');
+    } else if (targetRole === 'REPORTER' && ['admin', 'newsroom', 'graphics', 'videos', 'ai-newsroom'].includes(activeTab)) {
+      navigateToTab('reporter');
+    } else if (targetRole === 'MASTER_ADMIN' && activeTab === 'home') {
+      navigateToTab('admin');
+    }
+  };
+
   // Coin earning helper
   const handleEarnCoins = (amount: number) => {
     setUserCoins((prev) => prev + amount);
@@ -286,18 +439,79 @@ export const App: React.FC = () => {
     );
   };
 
-  // Share article helper
+  // Share article helper (iFrame-safe: Web Share API + Clipboard toast, never window.open)
   const handleShareArticle = (article: ArticleItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const shareText = `*${article.title}*\n\nपूरी खबर पढ़ें 'ब्रेकिंग न्यूज़ वाला' पर:\nhttps://breakingnewswala.com/article/${article.slug}`;
+    const articleUrl = `${window.location.origin}/#article-${article.slug || article.id}`;
+    const shareText = `${article.title}\n\nपूरी खबर पढ़ें BREAKING NEWS WALA पर:\n${articleUrl}`;
     if (navigator.share) {
-      navigator.share({
-        title: article.title,
-        text: shareText,
-        url: window.location.href,
-      }).catch(() => { });
+      navigator
+        .share({
+          title: article.title,
+          text: shareText,
+          url: articleUrl,
+        })
+        .catch(() => {});
+    } else if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(shareText)
+        .then(() => {
+          setShareToast(`समाचार लिंक कॉपी हो गया: ${article.title.slice(0, 48)}...`);
+          setTimeout(() => setShareToast(null), 3500);
+        })
+        .catch(() => {
+          setShareToast('शेयर लिंक तैयार है: ' + article.title.slice(0, 48));
+          setTimeout(() => setShareToast(null), 3500);
+        });
     } else {
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`, '_blank');
+      setShareToast('शेयर लिंक: ' + articleUrl);
+      setTimeout(() => setShareToast(null), 3500);
+    }
+  };
+
+  // Record Article Reading History (persists locally + syncs to backend when logged in)
+  const handleRecordArticleRead = (article: ArticleDetail) => {
+    setReadingHistory((prev) => {
+      const entry: ReadingHistoryRecord = {
+        id: `hist-${article.id}`,
+        userId: authUser?.id || 'guest',
+        articleId: article.id,
+        articleTitle: article.title,
+        districtName: article.districtName,
+        category: article.categoryName,
+        dwellTimeSeconds: 20,
+        scrollDepthPercent: 85,
+        readAt: new Date().toISOString(),
+      };
+      const updated = [entry, ...prev.filter((r) => r.articleId !== article.id)].slice(0, 30);
+      try {
+        localStorage.setItem('bnw_reading_history', JSON.stringify(updated));
+      } catch {
+        // ignore storage quota
+      }
+      return updated;
+    });
+
+    if (authUser) {
+      apiClient.audience
+        .recordReadingHistory({
+          articleId: article.id,
+          dwellTimeSeconds: 20,
+          scrollDepthPercent: 85,
+          articleTitle: article.title,
+          districtName: article.districtName,
+          category: article.categoryName,
+        })
+        .catch(() => {});
+    }
+  };
+
+  const handleClearReadingHistory = () => {
+    setReadingHistory([]);
+    try {
+      localStorage.removeItem('bnw_reading_history');
+    } catch {
+      // ignore
     }
   };
 
@@ -644,13 +858,83 @@ export const App: React.FC = () => {
     }
   };
 
-  // Ad Banner Toggle
+  // Ad Banner Toggle / Create / Delete
   const handleToggleAdActive = async (adId: string) => {
     setAds((prev) =>
       prev.map((a) => (a.id === adId ? { ...a, isActive: !a.isActive } : a))
     );
     try {
       await apiClient.admin.toggleAd(adId);
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  const handleCreateAd = async (dto: Partial<AdBannerItem>) => {
+    const tempAd: AdBannerItem = {
+      id: `ad-${Date.now()}`,
+      title: dto.title || 'प्रायोजित विज्ञापन',
+      advertiserName: dto.advertiserName || 'विज्ञापनदाता',
+      placement: dto.placement || 'top_leaderboard',
+      imageUrl: dto.imageUrl || 'https://images.unsplash.com/photo-1516426122078-c23e76319801?w=1200&auto=format&fit=crop&q=80',
+      targetUrl: dto.targetUrl || 'https://breakingnewswala.com',
+      isActive: true,
+      impressionsCount: 0,
+      clicksCount: 0,
+    };
+    try {
+      const created = await apiClient.admin.createAd(dto);
+      setAds((prev) => [created, ...prev]);
+    } catch {
+      setAds((prev) => [tempAd, ...prev]);
+    }
+  };
+
+  const handleDeleteAd = async (adId: string) => {
+    setAds((prev) => prev.filter((a) => a.id !== adId));
+    try {
+      await apiClient.admin.deleteAd(adId);
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  // Mandi Rates CRUD
+  const handleAddMandiRate = async (dto: Partial<MandiRateItem>) => {
+    const fallbackRate: MandiRateItem = {
+      id: `mandi-${Date.now()}`,
+      commodityName: dto.commodityName || 'सोयाबीन',
+      mandiName: dto.mandiName || 'सीहोर मंडी',
+      districtName: dto.districtName || 'सीहोर',
+      minPrice: Number(dto.minPrice) || 4000,
+      maxPrice: Number(dto.maxPrice) || 4800,
+      modalPrice: Number(dto.modalPrice) || 4500,
+      unit: 'क्विंटल',
+      updatedAt: 'अभी-अभी अपडेटेड',
+    };
+    try {
+      const created = await apiClient.admin.createMandiRate(dto);
+      setMandiRates((prev) => [created, ...prev]);
+    } catch {
+      setMandiRates((prev) => [fallbackRate, ...prev]);
+    }
+  };
+
+  const handleUpdateMandiRate = async (id: string, dto: Partial<MandiRateItem>) => {
+    setMandiRates((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, ...dto, updatedAt: 'अभी-अभी अपडेटेड' } : m))
+    );
+    try {
+      await apiClient.admin.updateMandiRate(id, dto);
+    } catch {
+      // Offline fallback
+    }
+  };
+
+  const handleDeleteMandiRate = async (id: string) => {
+    setMandiRates((prev) => prev.filter((m) => m.id !== id));
+    try {
+      await apiClient.admin.deleteMandiRate(id);
     } catch {
       // Offline fallback
     }
@@ -672,6 +956,9 @@ export const App: React.FC = () => {
         onSearchClick={() => navigateToTab('search')}
         onProfileClick={() => navigateToTab('profile')}
         currentRole={currentRole}
+        accountRole={accountRole}
+        isAuthenticated={Boolean(authUser)}
+        onQuickMasterLogin={handleQuickMasterLogin}
         pendingQueueCount={pendingStories.length}
       />
 
@@ -682,7 +969,11 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         onTabSelect={navigateToTab}
         currentRole={currentRole}
+        accountRole={accountRole}
         onRoleChange={(role) => setCurrentRole(role)}
+        onSwitchPersona={handleSwitchPersona}
+        onQuickMasterLogin={handleQuickMasterLogin}
+        isAuthenticated={Boolean(authUser)}
         userCoins={userCoins}
         bookmarkedCount={bookmarkedIds.length}
         categories={CATEGORIES}
@@ -704,31 +995,42 @@ export const App: React.FC = () => {
           } catch (e) {
             console.error('Logout error:', e);
           }
+          lastAuthUidRef.current = null;
+          setAccountRole('READER');
           setCurrentRole('READER');
           setAuthUser(null);
           navigateToTab('home');
         }}
       />
 
-      {/* 3. Statewide Emergency Breaking Notice Banner if active */}
+      {/* 3. Statewide Emergency Breaking Notice Banner if active (compact single-line) */}
       {activeAlert && (
-        <div className="bg-[#ED1727] text-white px-3 sm:px-4 py-2 flex items-center justify-between text-xs font-bold shadow-xs">
+        <div className="bg-[#ED1727] text-white px-3 sm:px-4 py-1 flex items-center justify-between text-xs font-bold shadow-xs">
           <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 truncate pr-2">
-              <Radio className="w-4 h-4 text-white animate-spin shrink-0" />
-              <span className="bg-white text-red-600 px-2 py-0.5 rounded text-[10px] shrink-0 font-black">
+              <Radio className="w-3.5 h-3.5 text-white animate-pulse shrink-0" />
+              <span className="bg-white text-red-600 px-1.5 py-0.5 rounded text-[10px] shrink-0 font-black">
                 आपात अलर्ट [{activeAlert.district}]
               </span>
-              <span className="truncate">{activeAlert.title}</span>
+              <span className="truncate text-[11px] sm:text-xs">{activeAlert.title}</span>
             </div>
             <button
               onClick={() => setActiveAlert(null)}
-              className="text-white hover:text-red-200 shrink-0 p-1"
+              className="text-white hover:text-red-200 shrink-0 p-0.5"
               title="हटाएं"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
+        </div>
+      )}
+
+      {shareToast && (
+        <div className="bg-slate-900 text-white px-4 py-2 text-xs font-bold flex items-center justify-between border-b border-slate-700">
+          <span className="truncate">{shareToast}</span>
+          <button onClick={() => setShareToast(null)} className="text-slate-300 hover:text-white px-2">
+            ✕
+          </button>
         </div>
       )}
 
@@ -744,6 +1046,7 @@ export const App: React.FC = () => {
             onShareArticle={handleShareArticle}
             onRelatedArticleClick={handleArticleClick}
             onEarnCoins={handleEarnCoins}
+            onRecordRead={handleRecordArticleRead}
           />
         ) : (
           <React.Suspense
@@ -760,8 +1063,12 @@ export const App: React.FC = () => {
                 articles={articles}
                 categories={CATEGORIES}
                 districts={DISTRICTS}
+                ads={ads}
+                mandiRates={mandiRates}
                 bookmarkedIds={bookmarkedIds}
                 userCoins={userCoins}
+                initialCategoryId={initialCategoryFilter}
+                initialDistrictId={initialDistrictFilter}
                 onArticleClick={handleArticleClick}
                 onBookmarkToggle={handleBookmarkToggle}
                 onShareArticle={handleShareArticle}
@@ -822,10 +1129,15 @@ export const App: React.FC = () => {
                 reporters={reporters}
                 tickers={tickers}
                 ads={ads}
+                mandiRates={mandiRates}
                 apiPool={apiPool}
                 auditLogs={auditLogs}
                 districts={DISTRICTS}
                 categories={CATEGORIES}
+                currentRole={currentRole}
+                accountRole={accountRole}
+                onSwitchPersona={handleSwitchPersona}
+                onNavigateTab={navigateToTab}
                 onApproveArticle={handleApproveAndPublish}
                 onRequestRevision={handleRequestRevision}
                 onRejectArticle={handleRejectArticle}
@@ -834,6 +1146,11 @@ export const App: React.FC = () => {
                 onDeleteTicker={handleDeleteTicker}
                 onUpdateReporterRole={handleUpdateReporterRole}
                 onToggleAdActive={handleToggleAdActive}
+                onAddAd={handleCreateAd}
+                onDeleteAd={handleDeleteAd}
+                onAddMandiRate={handleAddMandiRate}
+                onUpdateMandiRate={handleUpdateMandiRate}
+                onDeleteMandiRate={handleDeleteMandiRate}
                 onBroadcastAlert={handleBroadcastAlert}
               />
             )}
@@ -841,7 +1158,7 @@ export const App: React.FC = () => {
             {/* Backwards Compatibility: Desk Tab */}
             {activeTab === 'desk' && (
               <>
-                {currentRole === 'ADMIN' ? (
+                {['MASTER_ADMIN', 'ADMIN', 'EDITOR'].includes(currentRole) ? (
                   <NewsroomDeskScreen
                     pendingArticles={pendingStories}
                     allArticles={articles}
@@ -892,9 +1209,21 @@ export const App: React.FC = () => {
             {activeTab === 'profile' && (
               <ProfileScreen
                 currentRole={currentRole}
+                accountRole={accountRole}
+                authUser={authUser}
                 onRoleChange={(newRole) => setCurrentRole(newRole)}
+                onSwitchPersona={handleSwitchPersona}
+                onBackendLoginSuccess={handleBackendSessionLogin}
+                onLogoutSuccess={() => {
+                  lastAuthUidRef.current = null;
+                  setAuthUser(null);
+                  setAccountRole('READER');
+                  setCurrentRole('READER');
+                }}
                 userCoins={userCoins}
                 bookmarkedArticles={bookmarkedArticlesList}
+                readingHistoryProp={readingHistory}
+                onClearReadingHistory={handleClearReadingHistory}
                 onArticleClick={handleArticleClick}
                 onRemoveBookmark={(id) => handleBookmarkToggle(id)}
                 onNavigateTab={navigateToTab}

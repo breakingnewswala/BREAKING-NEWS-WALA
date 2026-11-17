@@ -15,6 +15,7 @@ export const CANONICAL_PROJECT_ID = firebaseAppletConfig.projectId || 'breaking-
 export const MASTER_ADMIN_EMAILS = Object.freeze([
   'breakingnewswala.com@gmail.com',
   'riturajtomarorchha@gmail.com',
+  'live.bnwtv@gmail.com',
 ]);
 
 export function isMasterAdminEmail(email) {

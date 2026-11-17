@@ -17,9 +17,13 @@ import {
   MapPin,
   Calendar,
   ShieldCheck,
+  Flag,
+  Send,
+  AlertTriangle,
 } from 'lucide-react';
-import { ArticleDetail, ArticleItem } from '../types';
+import { ArticleDetail, ArticleItem, CommentRecord } from '../types';
 import { BnwAiService } from '../services/aiService';
+import { apiClient } from '../services/apiClient';
 
 interface ArticleDetailScreenProps {
   article: ArticleDetail;
@@ -30,6 +34,7 @@ interface ArticleDetailScreenProps {
   onShareArticle: (article: ArticleItem) => void;
   onRelatedArticleClick: (articleId: string) => void;
   onEarnCoins: (amount: number, reason: string) => void;
+  onRecordRead?: (article: ArticleDetail) => void;
 }
 
 export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
@@ -41,17 +46,66 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
   onShareArticle,
   onRelatedArticleClick,
   onEarnCoins,
+  onRecordRead,
 }) => {
   const [fontSizeLevel, setFontSizeLevel] = useState<'normal' | 'large' | 'xlarge'>('normal');
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioNotice, setAudioNotice] = useState<string | null>(null);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Award reading coins on mount
+  // Reader Comments & Correction States
+  const [comments, setComments] = useState<CommentRecord[]>([]);
+  const [commentAuthor, setCommentAuthor] = useState('');
+  const [commentText, setCommentText] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [commentNotice, setCommentNotice] = useState<string | null>(null);
+  const [showCorrectionBox, setShowCorrectionBox] = useState(false);
+  const [correctionText, setCorrectionText] = useState('');
+  const [correctionSent, setCorrectionSent] = useState<string | null>(null);
+
+  // Award reading coins & record reading history on mount
   useEffect(() => {
     onEarnCoins(5, `समाचार पढ़ा: "${article.title.slice(0, 25)}..."`);
+    onRecordRead?.(article);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    setAudioNotice(null);
+    setCommentNotice(null);
+    setCorrectionSent(null);
+  }, [article.id]);
+
+  // Load article comments (backend + localStorage fallback)
+  useEffect(() => {
+    let active = true;
+    const localKey = `bnw_article_comments_${article.id}`;
+    let localStored: CommentRecord[] = [];
+    try {
+      const raw = localStorage.getItem(localKey);
+      if (raw) localStored = JSON.parse(raw);
+    } catch {
+      localStored = [];
+    }
+    setComments(localStored);
+
+    apiClient.audience
+      .getComments(article.id)
+      .then((serverComments) => {
+        if (!active) return;
+        if (Array.isArray(serverComments) && serverComments.length > 0) {
+          const mergedIds = new Set(serverComments.map((c) => c.id));
+          const merged = [
+            ...serverComments,
+            ...localStored.filter((lc) => !mergedIds.has(lc.id)),
+          ];
+          setComments(merged);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
   }, [article.id]);
 
   // Clean up audio on unmount
@@ -63,25 +117,105 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
     };
   }, []);
 
-  // Text to speech toggler
+  // Text to speech toggler with smart Hindi voice detection (zero window.alert)
   const handleToggleAudio = () => {
     if (!('speechSynthesis' in window)) {
-      alert('आपके ब्राउज़र में ऑडियो वाचन समर्थित नहीं है।');
+      setAudioNotice('आपके इस ब्राउज़र/डिवाइस में ऑडियो वाचन (TTS) समर्थित नहीं है।');
       return;
     }
 
     if (isPlayingAudio) {
       window.speechSynthesis.cancel();
       setIsPlayingAudio(false);
+      setAudioNotice(null);
     } else {
-      const utterance = new SpeechSynthesisUtterance(`${article.title}। ${article.content.slice(0, 1000)}`);
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(`${article.title}। ${article.content.slice(0, 1200)}`);
+      const voices = window.speechSynthesis.getVoices?.() || [];
+      const hindiVoice = voices.find((v) => v.lang.toLowerCase().startsWith('hi'));
+      if (hindiVoice) {
+        utterance.voice = hindiVoice;
+      }
       utterance.lang = 'hi-IN';
       utterance.rate = 0.95;
       utterance.onend = () => setIsPlayingAudio(false);
-      utterance.onerror = () => setIsPlayingAudio(false);
+      utterance.onerror = () => {
+        setIsPlayingAudio(false);
+        setAudioNotice('ऑडियो प्लेबैक प्रारंभ करने में समस्या आई। कृपया पुनः प्रयास करें।');
+      };
       window.speechSynthesis.speak(utterance);
       setIsPlayingAudio(true);
+      setAudioNotice(hindiVoice ? `हिंदी वाचन सक्रिय (${hindiVoice.name})` : 'ऑडियो बुलेटिन प्रारंभ हो रहा है...');
     }
+  };
+
+  const handleAddComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentText.trim()) return;
+    setIsSubmittingComment(true);
+    setCommentNotice(null);
+    const displayAuthor = commentAuthor.trim() || 'जागरूक पाठक';
+    const localKey = `bnw_article_comments_${article.id}`;
+    try {
+      const created = await apiClient.audience.addComment(article.id, commentText.trim());
+      const next = [created, ...comments];
+      setComments(next);
+      try {
+        localStorage.setItem(localKey, JSON.stringify(next));
+      } catch {}
+      setCommentText('');
+      setCommentNotice('आपकी टिप्पणी सफलतापूर्वक प्रकाशित हो गई।');
+    } catch {
+      const localComment: CommentRecord = {
+        id: `cmt-local-${Date.now()}`,
+        articleId: article.id,
+        userId: 'guest-reader',
+        authorName: displayAuthor,
+        content: commentText.trim(),
+        status: 'approved',
+        isFlagged: false,
+        reportCount: 0,
+        likesCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const next = [localComment, ...comments];
+      setComments(next);
+      try {
+        localStorage.setItem(localKey, JSON.stringify(next));
+      } catch {}
+      setCommentText('');
+      setCommentNotice('आपकी टिप्पणी सहेज ली गई है।');
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
+
+  const handleReportComment = async (commentId: string) => {
+    try {
+      await apiClient.audience.reportComment(commentId, 'अनुचित भाषा या भ्रामक सामग्री');
+    } catch {
+      // fallback notice still shown
+    }
+    setCommentNotice('टिप्पणी समीक्षा हेतु संपादकीय मॉडरेशन टीम को रिपोर्ट कर दी गई है।');
+  };
+
+  const handleCorrectionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!correctionText.trim()) return;
+    try {
+      await apiClient.audience.submitFeedback({
+        category: 'fact_error',
+        articleId: article.id,
+        comments: `समाचार त्रुटि सुधार सुझाव (${article.title.slice(0, 60)}): ${correctionText.trim()}`,
+        suggestedCorrection: correctionText.trim(),
+      });
+    } catch {
+      // Offline / guest fallback recorded locally
+    }
+    setCorrectionSent('आपका तथ्य-सुधार सुझाव संपादकीय डेस्क को प्राप्त हो गया है। धन्यवाद!');
+    setCorrectionText('');
+    setShowCorrectionBox(false);
   };
 
   // Generate AI Summary
@@ -189,7 +323,7 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
         {/* Category & District Chips */}
         <div className="flex flex-wrap items-center gap-2 mb-2">
           {article.isBreaking && (
-            <span className="bg-[#ED1727] text-white text-xs font-extrabold px-2.5 py-0.5 rounded shadow-xs flex items-center gap-1">
+            <span className="bg-[#ED1727] text-white text-xs font-news-stylish px-2.5 py-0.5 rounded shadow-xs flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
               ब्रेकिंग न्यूज़
             </span>
@@ -210,7 +344,7 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
         </div>
 
         {/* Article Headline */}
-        <h1 className="text-xl md:text-2xl lg:text-3xl font-extrabold text-slate-900 leading-snug tracking-tight">
+        <h1 className="font-news-hero text-2xl md:text-3xl lg:text-4xl text-slate-900 leading-snug tracking-wide">
           {article.title}
         </h1>
 
@@ -275,16 +409,70 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
             <span>{isLoadingSummary ? 'AI सारांश तैयार हो रहा है...' : aiSummary ? 'सारांश छिपाएं' : 'AI 3-बिंदु त्वरित सारांश'}</span>
           </button>
+
+          {/* Report Error / Fact Correction Button */}
+          <button
+            type="button"
+            onClick={() => setShowCorrectionBox((v) => !v)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 transition-colors"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+            <span>त्रुटि सुधार भेजें</span>
+          </button>
         </div>
+
+        {/* Inline Audio Status Notice */}
+        {audioNotice && (
+          <div className="mt-2 px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-[11px] font-semibold text-slate-700 flex items-center justify-between">
+            <span>{audioNotice}</span>
+            <button onClick={() => setAudioNotice(null)} className="text-slate-500 hover:text-slate-800 font-bold">✕</button>
+          </div>
+        )}
+
+        {/* Inline Fact Correction Panel */}
+        {correctionSent && (
+          <div className="mt-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800">
+            {correctionSent}
+          </div>
+        )}
+        {showCorrectionBox && (
+          <form onSubmit={handleCorrectionSubmit} className="mt-3 p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs">
+            <label className="font-bold text-amber-950 block">
+              इस समाचार में कोई तथ्यात्मक त्रुटि या सुधार सुझाएं:
+            </label>
+            <textarea
+              value={correctionText}
+              onChange={(e) => setCorrectionText(e.target.value)}
+              rows={2}
+              placeholder="कृपया सही तथ्य, दिनांक या नाम का विवरण लिखें..."
+              className="w-full p-2 border border-amber-300 rounded-lg bg-white text-slate-900"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCorrectionBox(false)}
+                className="px-3 py-1 rounded text-slate-600 font-semibold"
+              >
+                रद्द करें
+              </button>
+              <button
+                type="submit"
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold"
+              >
+                सुझाव प्रेषित करें
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* AI Summary Box */}
         {aiSummary && (
           <div className="mt-3 p-3.5 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-xl shadow-2xs">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-900 mb-2">
+            <div className="flex items-center gap-1.5 text-xs font-news-quote font-bold text-indigo-900 mb-2">
               <Sparkles className="w-4 h-4 text-indigo-600" />
               <span>बीएनडब्ल्यू AI त्वरित बुलेटिन (मध्य प्रदेश सरोकार):</span>
             </div>
-            <div className="text-xs md:text-sm text-slate-800 whitespace-pre-line leading-relaxed font-medium">
+            <div className="font-news-body text-xs md:text-sm text-slate-800 whitespace-pre-line leading-relaxed font-medium">
               {aiSummary}
             </div>
           </div>
@@ -310,7 +498,7 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
         )}
 
         {/* Content Paragraphs */}
-        <div className={`mt-5 text-slate-800 space-y-4 ${getFontSizeClass()}`}>
+        <div className={`mt-5 text-slate-800 space-y-4 font-news-body ${getFontSizeClass()}`}>
           {article.content.split('\n\n').map((para, idx) => (
             <p key={idx} className="whitespace-pre-line leading-relaxed font-normal">
               {para}
@@ -364,7 +552,7 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
         {/* Related Articles Section */}
         {relatedArticles.length > 0 && (
           <div className="mt-8 pt-6 border-t border-slate-200">
-            <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-1.5">
+            <h3 className="text-base md:text-lg font-news-editorial font-bold text-slate-900 mb-3 flex items-center gap-1.5">
               <span className="w-1.5 h-4 bg-[#ED1727] rounded-full inline-block" />
               अन्य संबंधित खबरें (मध्य प्रदेश)
             </h3>
@@ -395,6 +583,86 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
             </div>
           </div>
         )}
+
+        {/* Reader Comments & Public Discussion Section */}
+        <div className="mt-8 pt-6 border-t border-slate-200 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base md:text-lg font-news-editorial font-bold text-slate-900 flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-[#ED1727]" />
+              <span>पाठक प्रतिक्रिया एवं चर्चा ({comments.length})</span>
+            </h3>
+            <span className="text-[11px] text-slate-500 font-semibold">संपादकीय मर्यादा लागू</span>
+          </div>
+
+          {commentNotice && (
+            <div className="px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800">
+              {commentNotice}
+            </div>
+          )}
+
+          <form onSubmit={handleAddComment} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input
+                type="text"
+                value={commentAuthor}
+                onChange={(e) => setCommentAuthor(e.target.value)}
+                placeholder="आपका नाम (वैकल्पिक)"
+                className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900"
+              />
+              <input
+                type="text"
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder="इस खबर पर अपनी सार्थक राय लिखें..."
+                className="sm:col-span-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900"
+              />
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={isSubmittingComment || !commentText.trim()}
+                className="px-4 py-1.5 bg-[#ED1727] hover:bg-red-700 disabled:bg-slate-300 text-white rounded-lg font-bold flex items-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSubmittingComment ? 'प्रकाशन जारी...' : 'टिप्पणी पोस्ट करें'}</span>
+              </button>
+            </div>
+          </form>
+
+          {comments.length === 0 ? (
+            <p className="text-xs text-slate-500 py-3 text-center bg-slate-50 rounded-lg border border-slate-100">
+              अभी कोई टिप्पणी नहीं है। इस खबर पर पहली प्रतिक्रिया साझा करें!
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              {comments.map((cmt) => (
+                <div
+                  key={cmt.id}
+                  className="p-3 bg-white border border-slate-200 rounded-xl flex items-start justify-between gap-3 text-xs"
+                >
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-900">{cmt.authorName}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {cmt.createdAt ? new Date(cmt.createdAt).toLocaleDateString('hi-IN') : 'अभी'}
+                      </span>
+                    </div>
+                    <p className="font-news-body text-slate-700 leading-relaxed">{cmt.content}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleReportComment(cmt.id)}
+                    className="text-[10px] text-slate-400 hover:text-red-600 flex items-center gap-1 shrink-0"
+                    title="टिप्पणी रिपोर्ट करें"
+                  >
+                    <Flag className="w-3 h-3" />
+                    <span>रिपोर्ट</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

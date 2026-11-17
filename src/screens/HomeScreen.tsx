@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Sparkles,
   MapPin,
@@ -17,18 +17,22 @@ import {
   Wheat,
   ShieldAlert,
 } from 'lucide-react';
-import { ArticleDetail, ArticleItem, CategoryItem, DistrictItem, MandiRateItem } from '../types';
+import { AdBannerItem, ArticleDetail, ArticleItem, CategoryItem, DistrictItem, MandiRateItem } from '../types';
 import { NewsCard } from '../components/NewsCard';
 import { BreakingNewsTicker } from '../components/BreakingNewsTicker';
 import { AscAdBanner } from '../components/AscAdBanner';
-import { MOCK_MANDI_RATES } from '../data/mockNewsData';
+import { MOCK_ADS, MOCK_MANDI_RATES } from '../data/mockNewsData';
 
 interface HomeScreenProps {
   articles: ArticleDetail[];
   categories: CategoryItem[];
   districts: DistrictItem[];
+  ads?: AdBannerItem[];
+  mandiRates?: MandiRateItem[];
   bookmarkedIds: string[];
   userCoins: number;
+  initialCategoryId?: string | null;
+  initialDistrictId?: string | null;
   onArticleClick: (articleId: string) => void;
   onBookmarkToggle: (articleId: string, e: React.MouseEvent) => void;
   onShareArticle: (article: ArticleItem, e: React.MouseEvent) => void;
@@ -40,17 +44,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   articles,
   categories,
   districts,
+  ads = MOCK_ADS,
+  mandiRates = MOCK_MANDI_RATES,
   bookmarkedIds,
   userCoins,
+  initialCategoryId = null,
+  initialDistrictId = null,
   onArticleClick,
   onBookmarkToggle,
   onShareArticle,
   onNavigateEpaper,
 }) => {
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [selectedDistrictId, setSelectedDistrictId] = useState<string | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(initialCategoryId);
+  const [selectedDistrictId, setSelectedDistrictId] = useState<string | null>(initialDistrictId);
   const [showOnlyBookmarks, setShowOnlyBookmarks] = useState(false);
   const [searchDistrictQuery, setSearchDistrictQuery] = useState('');
+
+  useEffect(() => {
+    if (initialCategoryId !== undefined && initialCategoryId !== null) {
+      setSelectedCategoryId(initialCategoryId);
+    }
+  }, [initialCategoryId]);
+
+  useEffect(() => {
+    if (initialDistrictId !== undefined && initialDistrictId !== null) {
+      setSelectedDistrictId(initialDistrictId);
+    }
+  }, [initialDistrictId]);
 
   // Top Breaking story for the ticker
   const topBreaking = useMemo(() => {
@@ -114,6 +134,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     [articles]
   );
 
+  const activeAds = useMemo(() => (ads || []).filter((a) => a.isActive !== false), [ads]);
+  const leaderboardAd = useMemo(
+    () => activeAds.find((a) => a.placement === 'top_leaderboard') || activeAds[0],
+    [activeAds]
+  );
+  const sidebarAd = useMemo(
+    () => activeAds.find((a) => a.placement === 'sidebar') || activeAds[1] || activeAds[0],
+    [activeAds]
+  );
+  const activeMandiRates = mandiRates && mandiRates.length > 0 ? mandiRates : MOCK_MANDI_RATES;
+
   return (
     <div className="pb-24 md:pb-12 bg-slate-50">
       {/* 1. Breaking News Ticker */}
@@ -125,23 +156,27 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         />
       )}
 
-      {/* 2. Top Leaderboard Banner Ad */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 pt-3">
-        <AscAdBanner
-          creativeUrl="https://images.unsplash.com/photo-1516426122078-c23e76319801?w=1200&auto=format&fit=crop&q=80"
-          headline="मध्य प्रदेश पर्यटन: पचमढ़ी, कान्हा और बांधवगढ़ में शीतकालीन सफारी बुकिंग शुरू"
-          advertiserName="मध्य प्रदेश राज्य पर्यटन विकास निगम"
-          isSponsored={true}
-        />
-      </div>
+      {/* 2. Top Leaderboard Banner Ad (compact wrapper) */}
+      {leaderboardAd && (
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 pt-1">
+          <AscAdBanner
+            adId={leaderboardAd.id}
+            creativeUrl={leaderboardAd.imageUrl}
+            headline={leaderboardAd.title}
+            advertiserName={leaderboardAd.advertiserName}
+            targetUrl={leaderboardAd.targetUrl}
+            isSponsored={true}
+          />
+        </div>
+      )}
 
-      {/* 3. Category Filter Navigation Bar */}
-      <div className="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-2xs">
+      {/* 3. Category Filter Navigation Bar (tight sticky strip) */}
+      <div className="bg-white border-b border-slate-200 sticky top-[56px] z-30 shadow-2xs">
         <div className="max-w-7xl mx-auto px-3 sm:px-4">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1.5">
             <button
               onClick={() => setSelectedCategoryId(null)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${
+              className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors ${
                 selectedCategoryId === null
                   ? 'bg-[#ED1727] text-white shadow-xs'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -155,7 +190,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategoryId(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                  className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
                     isSelected
                       ? 'bg-[#ED1727] text-white shadow-xs'
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -169,28 +204,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       </div>
 
-      {/* 4. District Selector Bar (Madhya Pradesh 55 Districts) */}
+      {/* 4. District Selector Bar (compact inline row on desktop) */}
       <div className="bg-slate-100/80 border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1.5">
-            <span className="flex items-center gap-1.5">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-1.5 flex flex-col md:flex-row md:items-center gap-1.5 md:gap-2.5">
+          <div className="flex items-center justify-between text-xs font-bold text-slate-700 shrink-0">
+            <span className="flex items-center gap-1 whitespace-nowrap">
               <MapPin className="w-3.5 h-3.5 text-red-600" />
-              <span>ज़िला चुनें (मध्य प्रदेश के 55 ज़िले):</span>
+              <span>55 ज़िले:</span>
             </span>
             {selectedDistrictId && (
               <button
                 onClick={() => setSelectedDistrictId(null)}
-                className="text-[#344FD6] text-[11px] hover:underline font-bold"
+                className="md:hidden text-[#344FD6] text-[11px] hover:underline font-bold"
               >
-                फ़िल्टर हटाएं (Reset)
+                फ़िल्टर हटाएं
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 min-w-0">
             <button
               onClick={() => setSelectedDistrictId(null)}
-              className={`px-3 py-1 rounded-md text-xs font-bold whitespace-nowrap transition-colors ${
+              className={`px-2.5 py-0.5 rounded-md text-xs font-bold whitespace-nowrap transition-colors ${
                 selectedDistrictId === null
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
@@ -199,13 +234,21 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               📍 पूरा मध्य प्रदेश
             </button>
 
-            {filteredDistrictChips.slice(0, 18).map((dist) => {
+            <input
+              type="text"
+              value={searchDistrictQuery}
+              onChange={(e) => setSearchDistrictQuery(e.target.value)}
+              placeholder="ज़िला खोजें..."
+              className="w-24 sm:w-28 px-2 py-0.5 text-[11px] bg-white border border-slate-300 rounded-md focus:outline-hidden focus:ring-1 focus:ring-blue-500 shrink-0"
+            />
+
+            {filteredDistrictChips.map((dist) => {
               const isSelected = selectedDistrictId === dist.id;
               return (
                 <button
                   key={dist.id}
                   onClick={() => setSelectedDistrictId(dist.id)}
-                  className={`px-3 py-1 rounded-md text-xs whitespace-nowrap transition-colors ${
+                  className={`px-2.5 py-0.5 rounded-md text-xs whitespace-nowrap transition-colors ${
                     isSelected
                       ? 'bg-[#344FD6] text-white font-bold shadow-xs'
                       : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'
@@ -216,13 +259,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               );
             })}
           </div>
+
+          {selectedDistrictId && (
+            <button
+              onClick={() => setSelectedDistrictId(null)}
+              className="hidden md:inline-block shrink-0 text-[#344FD6] text-[11px] hover:underline font-bold"
+            >
+              रीसेट
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 5. Sub-header: Feed Stats & Reader Coins */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between border-b border-slate-200/80">
+      {/* 5. Sub-header: Compact Feed Stats & Reader Coins */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between border-b border-slate-200/80">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+          <span className="text-xs sm:text-sm font-news-editorial font-bold text-slate-900 flex items-center gap-1.5">
             <Flame className="w-4 h-4 text-red-600" />
             {showOnlyBookmarks
               ? 'सहेजे गए समाचार (Saved)'
@@ -230,34 +282,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               ? `${districts.find((d) => d.id === selectedDistrictId)?.nameHi || ''} का ताज़ा समाचार प्रवाह`
               : 'प्रमुख डिजिटल समाचार प्रवाह'}
           </span>
-          <span className="text-xs bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
+          <span className="text-[11px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
             {filteredArticles.length}
           </span>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           {/* Reader Coins Indicator */}
           <div
             title="समाचार पढ़ने पर मिले सिक्के"
-            className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-amber-900 text-xs font-bold shadow-2xs"
+            className="flex items-center gap-1 px-2.5 py-0.5 bg-amber-50 border border-amber-200 rounded-full text-amber-900 text-xs font-bold shadow-2xs"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            <Sparkles className="w-3 h-3 text-amber-500" />
             <span>{userCoins} सिक्के</span>
           </div>
 
           {/* Bookmarks Toggle */}
           <button
             onClick={() => setShowOnlyBookmarks(!showOnlyBookmarks)}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full border transition-colors ${
+            className={`flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full border transition-colors ${
               showOnlyBookmarks
                 ? 'bg-red-50 border-red-300 text-red-700 font-bold'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 font-medium'
             }`}
           >
             {showOnlyBookmarks ? (
-              <BookmarkCheck className="w-3.5 h-3.5" />
+              <BookmarkCheck className="w-3 h-3" />
             ) : (
-              <Bookmark className="w-3.5 h-3.5" />
+              <Bookmark className="w-3 h-3" />
             )}
             <span>सहेजे गए ({bookmarkedIds.length})</span>
           </button>
@@ -265,7 +317,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </div>
 
       {/* 6. PRIMARY EDITORIAL HERO SECTION (12-Column Grid: 8-col Main + 4-col Sidebar) */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-5">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3.5">
         {filteredArticles.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border border-slate-200 my-4 p-8">
             <Layers className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -310,7 +362,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                     {/* Floating Badges */}
                     <div className="absolute top-3 left-3 flex items-center gap-2">
-                      <span className="bg-[#ED1727] text-white text-xs font-black px-2.5 py-1 rounded shadow-sm tracking-wide">
+                      <span className="bg-[#ED1727] text-white text-xs font-news-stylish px-2.5 py-1 rounded shadow-sm tracking-wide">
                         बड़ी खबर
                       </span>
                       <span className="bg-black/60 backdrop-blur-xs text-amber-300 text-xs font-bold px-2 py-0.5 rounded flex items-center gap-1">
@@ -326,11 +378,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                     {/* Overlay Text */}
                     <div className="absolute bottom-3 left-3 right-3 text-white">
-                      <h2 className="text-lg sm:text-2xl md:text-3xl font-black leading-snug drop-shadow-md group-hover:text-amber-300 transition-colors">
+                      <h2 className="font-news-hero text-xl sm:text-2xl md:text-3xl leading-snug drop-shadow-md group-hover:text-amber-300 transition-colors">
                         {leadStory.title}
                       </h2>
                       {leadStory.summary && (
-                        <p className="hidden sm:block text-xs sm:text-sm text-slate-200 mt-2 line-clamp-2 drop-shadow-xs">
+                        <p className="hidden sm:block font-news-body text-xs sm:text-sm text-slate-200 mt-1.5 line-clamp-2 drop-shadow-xs">
                           {leadStory.summary}
                         </p>
                       )}
@@ -398,13 +450,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <div className="lg:col-span-4 space-y-6">
               {/* 1. Trending Stories Box */}
               <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
-                <h3 className="text-sm font-black text-slate-900 flex items-center justify-between pb-2.5 border-b border-slate-200">
+                <h3 className="text-base font-news-editorial font-bold text-slate-900 flex items-center justify-between pb-2.5 border-b border-slate-200">
                   <span className="flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-emerald-600" />
                     सबसे ज्यादा पढ़े गए समाचार
                   </span>
-                  <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">
-                    TRENDING
+                  <span className="text-[10px] font-news-stylish bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                    ट्रेंडिंग
                   </span>
                 </h3>
 
@@ -427,7 +479,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         {idx + 1}
                       </span>
                       <div className="min-w-0">
-                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-red-600 line-clamp-2 leading-snug">
+                        <h4 className="font-news-editorial text-xs sm:text-sm font-bold text-slate-900 group-hover:text-red-600 line-clamp-2 leading-snug">
                           {story.title}
                         </h4>
                         <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-1">
@@ -444,7 +496,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               {/* 2. E-Paper Digital Edition Promotion Card */}
               <div className="bg-gradient-to-br from-slate-900 to-blue-950 text-white p-5 rounded-2xl shadow-md space-y-3 border border-slate-800">
                 <div className="flex items-center justify-between">
-                  <span className="bg-[#ED1727] text-white text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                  <span className="bg-[#ED1727] text-white text-[10px] font-news-stylish px-2 py-0.5 rounded tracking-wider">
                     दैनिक ई-पेपर
                   </span>
                   <span className="text-xs text-amber-300 font-bold">आज का डिजिटल संस्करण</span>
@@ -459,7 +511,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="font-bold text-sm text-white leading-tight">
+                    <h4 className="font-news-editorial font-bold text-sm text-white leading-tight">
                       भोपाल, इंदौर, ग्वालियर, जबलपुर व निवाड़ी संस्करण
                     </h4>
                     <p className="text-[11px] text-slate-300">
@@ -480,12 +532,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 </button>
               </div>
 
-              {/* 3. Sanchi Milk / Khadi Hyperlocal Ad Banner */}
-              <AscAdBanner
-                creativeUrl="https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=800&auto=format&fit=crop&q=80"
-                headline="मध्य प्रदेश हस्तशिल्प: चंदेरी व महेश्वरी हैंडलूम वस्त्रों पर 30% तक की छूट"
-                advertiserName="मप्र खादी एवं ग्रामोद्योग बोर्ड"
-              />
+              {/* 3. Hyperlocal Sidebar Ad Banner */}
+              {sidebarAd && (
+                <AscAdBanner
+                  adId={sidebarAd.id}
+                  creativeUrl={sidebarAd.imageUrl}
+                  headline={sidebarAd.title}
+                  advertiserName={sidebarAd.advertiserName}
+                  targetUrl={sidebarAd.targetUrl}
+                />
+              )}
             </div>
           </div>
         )}
@@ -500,25 +556,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <Wheat className="w-5 h-5 text-emerald-700" />
               </div>
               <div>
-                <h3 className="text-sm sm:text-base font-black text-slate-900">
-                  मध्य प्रदेश कृषि उपज मंडी भाव (डेमो / नमूना डेटा)
+                <h3 className="font-news-editorial text-base sm:text-lg font-bold text-slate-900">
+                  मध्य प्रदेश कृषि उपज मंडी भाव (लाइव ब्यूरो अपडेट)
                 </h3>
                 <p className="text-xs text-slate-500">
-                  सीहोर, विदिशा, नरसिंहपुर, मुरैना, मंदसौर व राजगढ़ मंडियों के सांकेतिक भाव (नमूना डेटा)
+                  मध्य प्रदेश की {activeMandiRates.length} प्रमुख कृषि मंडियों के ताज़ा जिंस भाव
                 </p>
               </div>
             </div>
 
-            <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-              डेमो बुलेटिन (Sample Rates)
+            <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+              {activeMandiRates.length} मंडियां सक्रिय
             </span>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
             <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wider border-b border-slate-200">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wider border-b border-slate-200 sticky top-0">
                 <tr>
-                  <th className="py-2.5 px-3">फसल / जिंस (Commodity)</th>
+                  <th className="py-2.5 px-3">फसल / जिंस</th>
                   <th className="py-2.5 px-3">मंडी का नाम</th>
                   <th className="py-2.5 px-3">ज़िला</th>
                   <th className="py-2.5 px-3">मॉडल भाव (औसत)</th>
@@ -527,7 +583,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {MOCK_MANDI_RATES.map((mandi) => (
+                {activeMandiRates.map((mandi) => (
                   <tr key={mandi.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="py-3 px-3 font-bold text-slate-900">{mandi.commodityName}</td>
                     <td className="py-3 px-3 text-slate-700">{mandi.mandiName}</td>
@@ -556,9 +612,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       {remainingStories.length > 0 && (
         <div className="max-w-7xl mx-auto px-3 sm:px-4 py-5 space-y-6">
           <div className="flex items-center justify-between pb-2 border-b-2 border-slate-900">
-            <h3 className="text-base sm:text-lg font-black text-slate-950 flex items-center gap-2">
+            <h3 className="font-news-hero text-lg sm:text-xl text-slate-950 flex items-center gap-2">
               <Layers className="w-5 h-5 text-red-600" />
-              ताज़ा डिजिटल ग्राउंड रिपोर्ट्स (All Stories Feed)
+              ताज़ा डिजिटल ग्राउंड रिपोर्ट्स
             </h3>
             <span className="text-xs text-slate-500 font-bold">
               कुल {filteredArticles.length} खबरें

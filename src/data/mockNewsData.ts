@@ -11,6 +11,12 @@ import {
   SystemAuditLogItem,
   BreakingTickerItem,
 } from '../types';
+import {
+  buildAllDistrictAndCategoryArticles,
+  MP_SEED_MANDI_RATES,
+  MP_SEED_PENDING_STORIES,
+  MP_SEED_REPORTERS,
+} from '../shared/mpHyperlocalSeed';
 
 export const DIVISIONS: DivisionItem[] = [
   { id: 'div-bhopal', nameHi: 'भोपाल संभाग', nameEn: 'Bhopal Division', headquarters: 'भोपाल' },
@@ -116,7 +122,7 @@ export const CATEGORIES: CategoryItem[] = [
   { id: 'cat-sports', slug: 'sports', nameEn: 'Sports', nameHi: 'खेल', sortOrder: 11 }
 ];
 
-export const INITIAL_ARTICLES: ArticleDetail[] = [
+const BASE_INITIAL_ARTICLES: ArticleDetail[] = [
   {
     id: 'art-1',
     slug: 'mp-rabi-procurement-e-uporjan-registration',
@@ -324,6 +330,11 @@ export const INITIAL_ARTICLES: ArticleDetail[] = [
   }
 ];
 
+export const INITIAL_ARTICLES: ArticleDetail[] = [
+  ...BASE_INITIAL_ARTICLES,
+  ...buildAllDistrictAndCategoryArticles(BASE_INITIAL_ARTICLES),
+];
+
 export const INITIAL_PENDING_STORIES: ArticleDetail[] = [
   {
     id: 'draft-101',
@@ -345,9 +356,9 @@ export const INITIAL_PENDING_STORIES: ArticleDetail[] = [
     districtId: 'dist-chhindwara',
     districtName: 'छिंदवाड़ा',
     divisionId: 'div-jabalpur',
-    authorId: 'rep-chhindwara-01',
-    authorName: 'सुरेश उइके',
-    authorRole: 'फील्ड संवाददाता (छिंदवाड़ा)',
+    authorId: 'rep-118',
+    authorName: 'हेमंत साहू',
+    authorRole: 'जिला संवाददाता (छिंदवाड़ा)',
     isBreaking: false,
     viewCount: 0,
     shareCount: 0,
@@ -374,15 +385,16 @@ export const INITIAL_PENDING_STORIES: ArticleDetail[] = [
     districtId: 'dist-chhatarpur',
     districtName: 'छतरपुर',
     divisionId: 'div-sagar',
-    authorId: 'rep-chhatarpur-02',
-    authorName: 'रविंद्र बुंदेला',
-    authorRole: 'फील्ड संवाददाता (छतरपुर)',
+    authorId: 'rep-niwari-01',
+    authorName: 'दीपक कुशवाहा',
+    authorRole: 'फील्ड संवाददाता (बुंदेलखंड)',
     isBreaking: true,
     viewCount: 0,
     shareCount: 0,
     createdAt: '42 मिनट पहले (16:05 IST)',
     tags: ['केन-बेतवा', 'छतरपुर', 'पन्ना', 'बुंदेलखंड', 'सिंचाई']
-  }
+  },
+  ...MP_SEED_PENDING_STORIES,
 ];
 
 export const EPAPER_EDITIONS: EpaperEdition[] = [
@@ -529,167 +541,9 @@ export const EPAPER_EDITIONS: EpaperEdition[] = [
 ];
 
 
-export const MOCK_MANDI_RATES: MandiRateItem[] = [
-  {
-    id: 'mandi-1',
-    commodityName: 'सोयाबीन (पीला)',
-    mandiName: 'सीहोर कृषि उपज मंडी',
-    districtName: 'सीहोर',
-    modalPrice: 4850,
-    minPrice: 4600,
-    maxPrice: 5120,
-    unit: '₹ / क्विंटल',
-    updatedAt: 'आज दोपहर 01:30'
-  },
-  {
-    id: 'mandi-2',
-    commodityName: 'गेहूं (शरबती)',
-    mandiName: 'विदिशा मंडी',
-    districtName: 'विदिशा',
-    modalPrice: 3450,
-    minPrice: 3100,
-    maxPrice: 3850,
-    unit: '₹ / क्विंटल',
-    updatedAt: 'आज दोपहर 01:15'
-  },
-  {
-    id: 'mandi-3',
-    commodityName: 'चना (विशाल)',
-    mandiName: 'नरसिंहपुर मंडी',
-    districtName: 'नरसिंहपुर',
-    modalPrice: 6200,
-    minPrice: 5900,
-    maxPrice: 6450,
-    unit: '₹ / क्विंटल',
-    updatedAt: 'आज दोपहर 12:45'
-  },
-  {
-    id: 'mandi-4',
-    commodityName: 'सरसों (काली)',
-    mandiName: 'मुरैना कृषि मंडी',
-    districtName: 'मुरैना',
-    modalPrice: 5650,
-    minPrice: 5400,
-    maxPrice: 5880,
-    unit: '₹ / क्विंटल',
-    updatedAt: 'आज दोपहर 02:00'
-  },
-  {
-    id: 'mandi-5',
-    commodityName: 'लहसुन (ऊटी)',
-    mandiName: 'मंदसौर मंडी',
-    districtName: 'मंदसौर',
-    modalPrice: 16500,
-    minPrice: 12000,
-    maxPrice: 21000,
-    unit: '₹ / क्विंटल',
-    updatedAt: 'आज दोपहर 12:30'
-  },
-  {
-    id: 'mandi-6',
-    commodityName: 'टमाटर (देसी)',
-    mandiName: 'राजगढ़ मंडी',
-    districtName: 'राजगढ़',
-    modalPrice: 1800,
-    minPrice: 1400,
-    maxPrice: 2200,
-    unit: '₹ / क्विंटल',
-    updatedAt: 'आज दोपहर 01:00'
-  }
-];
+export const MOCK_MANDI_RATES: MandiRateItem[] = MP_SEED_MANDI_RATES;
 
-export const MOCK_REPORTERS: ReporterProfile[] = [
-  {
-    id: 'rep-active',
-    name: 'राजेश पटेल',
-    email: 'rajesh.patel@breakingnewswala.com',
-    phone: '+91 98260 12345',
-    role: 'trusted_reporter',
-    assignedDistricts: ['भोपाल', 'सीहोर'],
-    assignedDivision: 'भोपाल संभाग',
-    totalStoriesFiled: 148,
-    totalStoriesPublished: 142,
-    badgeNumber: 'BNW-REP-0101',
-    joinedDate: '15 जनवरी 2024',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
-    status: 'ACTIVE'
-  },
-  {
-    id: 'rep-102',
-    name: 'संजय वर्मा',
-    email: 'sanjay.verma@breakingnewswala.com',
-    phone: '+91 98270 23456',
-    role: 'trusted_reporter',
-    assignedDistricts: ['इंदौर', 'धार'],
-    assignedDivision: 'इंदौर संभाग',
-    totalStoriesFiled: 215,
-    totalStoriesPublished: 208,
-    badgeNumber: 'BNW-REP-0102',
-    joinedDate: '10 मार्च 2024',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-    status: 'ACTIVE'
-  },
-  {
-    id: 'rep-103',
-    name: 'आकाश शर्मा',
-    email: 'aakash.sharma@breakingnewswala.com',
-    phone: '+91 94250 34567',
-    role: 'reporter',
-    assignedDistricts: ['ग्वालियर', 'दतिया'],
-    assignedDivision: 'ग्वालियर संभाग',
-    totalStoriesFiled: 89,
-    totalStoriesPublished: 78,
-    badgeNumber: 'BNW-REP-0103',
-    joinedDate: '01 जून 2024',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
-    status: 'ACTIVE'
-  },
-  {
-    id: 'rep-104',
-    name: 'अमित सोनी',
-    email: 'amit.soni@breakingnewswala.com',
-    phone: '+91 94251 45678',
-    role: 'reporter',
-    assignedDistricts: ['जबलपुर', 'कटनी'],
-    assignedDivision: 'जबलपुर संभाग',
-    totalStoriesFiled: 64,
-    totalStoriesPublished: 57,
-    badgeNumber: 'BNW-REP-0104',
-    joinedDate: '20 अगस्त 2024',
-    avatar: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&auto=format&fit=crop&q=80',
-    status: 'ACTIVE'
-  },
-  {
-    id: 'rep-105',
-    name: 'विवेक त्रिपाठी',
-    email: 'vivek.tripathi@breakingnewswala.com',
-    phone: '+91 98263 56789',
-    role: 'trusted_reporter',
-    assignedDistricts: ['रीवा', 'सतना'],
-    assignedDivision: 'रीवा संभाग',
-    totalStoriesFiled: 112,
-    totalStoriesPublished: 109,
-    badgeNumber: 'BNW-REP-0105',
-    joinedDate: '05 मई 2024',
-    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&auto=format&fit=crop&q=80',
-    status: 'ACTIVE'
-  },
-  {
-    id: 'rep-niwari-01',
-    name: 'दीपक कुशवाहा',
-    email: 'deepak.niwari@breakingnewswala.com',
-    phone: '+91 98275 67890',
-    role: 'reporter',
-    assignedDistricts: ['निवाड़ी', 'टीकमगढ़'],
-    assignedDivision: 'सागर संभाग',
-    totalStoriesFiled: 42,
-    totalStoriesPublished: 39,
-    badgeNumber: 'BNW-REP-0106',
-    joinedDate: '12 अक्टूबर 2024',
-    avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&auto=format&fit=crop&q=80',
-    status: 'ACTIVE'
-  }
-];
+export const MOCK_REPORTERS: ReporterProfile[] = MP_SEED_REPORTERS;
 
 export const MOCK_ADS: AdBannerItem[] = [
   {

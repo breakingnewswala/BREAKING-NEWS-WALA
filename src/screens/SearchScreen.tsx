@@ -68,7 +68,7 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
   return (
     <div className="bg-slate-50 min-h-screen pb-24">
       {/* Search Input Box */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3 sticky top-[52px] z-30 shadow-2xs">
+      <div className="bg-white border-b border-slate-200 px-4 py-2.5 sticky top-[56px] z-30 shadow-2xs">
         <div className="max-w-3xl mx-auto">
           <div className="relative flex items-center">
             <SearchIcon className="w-5 h-5 text-red-600 absolute left-3 pointer-events-none" />

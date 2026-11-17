@@ -97,8 +97,17 @@ export async function signInWithGoogle() {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
-  } catch (error) {
-    console.error('Google Sign In Error:', error);
+  } catch (error: any) {
+    const code = error?.code || '';
+    if (
+      code === 'auth/unauthorized-domain' ||
+      code === 'auth/popup-closed-by-user' ||
+      code === 'auth/cancelled-popup-request'
+    ) {
+      console.warn('Google Sign In notice:', code, error?.message);
+    } else {
+      console.error('Google Sign In Error:', error);
+    }
     throw error;
   }
 }

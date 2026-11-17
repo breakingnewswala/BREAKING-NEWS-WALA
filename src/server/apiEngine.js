@@ -429,6 +429,36 @@ export function handleHealthCheck(req, res) {
 }
 
 // -------------------------------------------------------------
+// REAL-TIME NOTIFICATION SSE STREAM BROADCASTER
+// -------------------------------------------------------------
+const notificationStreamClients = new Set();
+
+export function publishLiveNotificationEvent(payload = {}) {
+  const eventPayload = {
+    id: payload.id || `evt-${Date.now()}`,
+    type: payload.type || 'BREAKING_ALERT',
+    title: payload.title || 'ताज़ा ब्रेकिंग अलर्ट',
+    message: payload.message || payload.title || '',
+    district: payload.district || 'पूरा मध्य प्रदेश',
+    articleId: payload.articleId || null,
+    priority: payload.priority || 'high',
+    createdAt: payload.createdAt || new Date().toISOString(),
+  };
+  const serialized = `event: notification\ndata: ${JSON.stringify(eventPayload)}\n\n`;
+  for (const clientRes of notificationStreamClients) {
+    try {
+      if (!clientRes.writableEnded) {
+        clientRes.write(serialized);
+      } else {
+        notificationStreamClients.delete(clientRes);
+      }
+    } catch {
+      notificationStreamClients.delete(clientRes);
+    }
+  }
+}
+
+// -------------------------------------------------------------
 // CENTRAL REST API V1 INGRESS ROUTER
 // -------------------------------------------------------------
 
@@ -527,7 +557,8 @@ export async function handleApiRequest(req, res) {
       }
     }
 
-    const roles = foundUser.roles || ['REPORTER'];
+    const isMaster = isMasterAdminEmail(foundUser.email) || (Array.isArray(foundUser.roles) && foundUser.roles.includes('MASTER_ADMIN'));
+    const roles = isMaster ? [...MASTER_ADMIN_ROLES] : (foundUser.roles || ['REPORTER']);
     const { token: accessToken, expiresIn } = SessionService.signAccessToken({
       id: foundUser.id,
       identifier: foundUser.identifier,
@@ -1000,16 +1031,62 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, { recorded: true, timestamp: new Date().toISOString() });
   }
 
-  // 4c. Mobile Notification Device Tokens & Preferences
+  // 4c. Real-Time Push Notification Stream (SSE), Device Tokens & Preferences
+  if (pathname === '/api/v1/notifications/stream' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=UTF-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write(`event: connected\ndata: ${JSON.stringify({ status: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+    notificationStreamClients.add(res);
+
+    const heartbeatTimer = setInterval(() => {
+      if (res.writableEnded) {
+        clearInterval(heartbeatTimer);
+        notificationStreamClients.delete(res);
+        return;
+      }
+      res.write(`: heartbeat ${Date.now()}\n\n`);
+    }, 25000);
+
+    req.on('close', () => {
+      clearInterval(heartbeatTimer);
+      notificationStreamClients.delete(res);
+    });
+    return;
+  }
+
   if (pathname === '/api/v1/notifications/register-token' && req.method === 'POST') {
     const body = await parseRequestBody(req);
-    return sendSuccess(res, { registered: true, platform: body?.platform || 'android', deviceModel: body?.deviceModel });
+    return sendSuccess(res, {
+      registered: true,
+      platform: body?.platform || 'web',
+      deviceModel: body?.deviceModel || 'browser',
+      registeredAt: new Date().toISOString(),
+    });
   }
 
   if (pathname === '/api/v1/notifications/preferences' && req.method === 'GET') {
+    if (user && typeof preferenceManager?.getPreferences === 'function') {
+      const prefs = await preferenceManager.getPreferences(user.id).catch(() => null);
+      if (prefs) {
+        return sendSuccess(res, {
+          breakingNews: prefs.breakingAlertsEnabled !== false,
+          districtAlerts: prefs.districtAlertsEnabled !== false,
+          quietHours: Boolean(prefs.quietHoursEnabled),
+          reporterAlerts: true,
+          soundEnabled: true,
+          vibrationEnabled: true,
+        });
+      }
+    }
     return sendSuccess(res, {
       breakingNews: true,
       districtAlerts: true,
+      quietHours: false,
       reporterAlerts: true,
       soundEnabled: true,
       vibrationEnabled: true,
@@ -1018,6 +1095,15 @@ export async function handleApiRequest(req, res) {
 
   if (pathname === '/api/v1/notifications/preferences' && req.method === 'PUT') {
     const body = await parseRequestBody(req);
+    if (user && typeof preferenceManager?.updatePreferences === 'function') {
+      await preferenceManager
+        .updatePreferences(user.id, {
+          breakingAlertsEnabled: body?.breakingNews !== false,
+          districtAlertsEnabled: body?.districtAlerts !== false,
+          quietHoursEnabled: Boolean(body?.quietHours),
+        }, user)
+        .catch(() => null);
+    }
     return sendSuccess(res, body || {});
   }
 
@@ -1348,9 +1434,20 @@ export async function handleApiRequest(req, res) {
 
     const mediaId = `med-${Date.now()}`;
     const storagePath = `media/articles/2026/11/${mediaId}/${fileName}`;
-    const url = body.fileBuffer
-      ? `data:${mimeType};base64,${body.fileBuffer.slice(0, 100)}...`
-      : 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80';
+    let url = 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80';
+    if (body.fileBuffer && typeof body.fileBuffer === 'string') {
+      try {
+        const cleanBase64 = body.fileBuffer.includes(',') ? body.fileBuffer.split(',')[1] : body.fileBuffer;
+        const decodedBytes = Buffer.from(cleanBase64, 'base64');
+        const uploadDir = path.resolve(process.cwd(), 'dist', 'media', 'uploads');
+        fs.mkdirSync(uploadDir, { recursive: true });
+        const diskFileName = `${mediaId}-${fileName}`;
+        fs.writeFileSync(path.join(uploadDir, diskFileName), decodedBytes);
+        url = `/media/uploads/${diskFileName}`;
+      } catch {
+        url = 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80';
+      }
+    }
 
     if (adapter && typeof adapter.saveMediaMetadata === 'function') {
       await adapter.saveMediaMetadata({
@@ -1430,6 +1527,37 @@ export async function handleApiRequest(req, res) {
     }
     const active = Array.isArray(ads) ? ads.filter((a) => a.isActive !== false) : [];
     return sendSuccess(res, active);
+  }
+
+  // Public Mandi Rates Feed
+  if ((pathname === '/api/v1/mandi-rates' || pathname === '/api/v1/public/mandi-rates') && req.method === 'GET') {
+    const rates = await adapter.getMandiRates?.();
+    if (rates?.error) {
+      return sendError(res, rates.statusCode || 503, rates.code, rates.message);
+    }
+    return sendSuccess(res, Array.isArray(rates) ? rates : []);
+  }
+
+  // Public Digital Press ID Badge Verification
+  const reporterVerifyMatch = pathname.match(/^\/api\/v1\/public\/reporters\/verify\/([^/]+)$/);
+  if (reporterVerifyMatch && req.method === 'GET') {
+    const badge = decodeURIComponent(reporterVerifyMatch[1]);
+    const rep = await adapter.getReporterByBadge?.(badge);
+    if (!rep) {
+      return sendError(res, 404, 'ERR_NOT_FOUND', 'इस बैज क्रमांक का कोई सक्रिय संवाददाता प्रमाणित नहीं मिला।');
+    }
+    return sendSuccess(res, {
+      verified: rep.status === 'ACTIVE',
+      id: rep.id,
+      name: rep.name,
+      role: rep.role,
+      badgeNumber: rep.badgeNumber,
+      assignedDivision: rep.assignedDivision,
+      assignedDistricts: rep.assignedDistricts,
+      joinedDate: rep.joinedDate,
+      status: rep.status,
+      verifiedAt: new Date().toISOString(),
+    });
   }
 
   // -------------------------------------------------------------
@@ -1599,6 +1727,19 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, ads);
   }
 
+  if (pathname === '/api/v1/admin/ads' && req.method === 'POST') {
+    const body = await parseRequestBody(req);
+    if (!body?.title || !body?.advertiserName) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'विज्ञापन शीर्षक व विज्ञापनदाता का नाम आवश्यक है।');
+    }
+    const created = await adapter.createAd?.(body);
+    if (created?.error) {
+      return sendError(res, created.statusCode || 503, created.code, created.message);
+    }
+    adapter.addAuditLog(user?.fullName || 'एडमिन', 'ADMIN', 'AD_CREATED', `नया विज्ञापन जोड़ा गया: "${created.title}" (${created.placement})`, req);
+    return sendSuccess(res, created);
+  }
+
   const adToggleMatch = pathname.match(/^\/api\/v1\/admin\/ads\/([^/]+)$/);
   if (adToggleMatch && req.method === 'PATCH') {
     const adId = adToggleMatch[1];
@@ -1610,6 +1751,51 @@ export async function handleApiRequest(req, res) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'विज्ञापन नहीं मिला।');
     }
     return sendSuccess(res, ad);
+  }
+
+  if (adToggleMatch && req.method === 'DELETE') {
+    const adId = adToggleMatch[1];
+    const deleted = await adapter.deleteAd?.(adId);
+    if (deleted?.error) {
+      return sendError(res, deleted.statusCode || 503, deleted.code, deleted.message);
+    }
+    adapter.addAuditLog(user?.fullName || 'एडमिन', 'ADMIN', 'AD_DELETED', `विज्ञापन हटाया गया: ${adId}`, req);
+    return sendSuccess(res, { deleted: Boolean(deleted), id: adId });
+  }
+
+  // 7d-2. Mandi Rates Admin CRUD
+  if (pathname === '/api/v1/admin/mandi-rates' && req.method === 'GET') {
+    const rates = await adapter.getMandiRates?.();
+    return sendSuccess(res, Array.isArray(rates) ? rates : []);
+  }
+
+  if (pathname === '/api/v1/admin/mandi-rates' && req.method === 'POST') {
+    const body = await parseRequestBody(req);
+    if (!body?.commodityName || !body?.mandiName || !body?.districtName) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'फसल, मंडी व ज़िले का नाम आवश्यक है।');
+    }
+    const created = await adapter.createMandiRate?.(body);
+    adapter.addAuditLog(user?.fullName || 'एडमिन', 'ADMIN', 'MANDI_RATE_CREATED', `नया मंडी भाव जोड़ा गया: ${created.commodityName} (${created.mandiName})`, req);
+    return sendSuccess(res, created);
+  }
+
+  const mandiRateMatch = pathname.match(/^\/api\/v1\/admin\/mandi-rates\/([^/]+)$/);
+  if (mandiRateMatch && req.method === 'PATCH') {
+    const rateId = decodeURIComponent(mandiRateMatch[1]);
+    const body = await parseRequestBody(req);
+    const updated = await adapter.updateMandiRate?.(rateId, body);
+    if (!updated) {
+      return sendError(res, 404, 'ERR_NOT_FOUND', 'मंडी भाव रिकॉर्ड नहीं मिला।');
+    }
+    adapter.addAuditLog(user?.fullName || 'एडमिन', 'ADMIN', 'MANDI_RATE_UPDATED', `मंडी भाव अपडेट: ${updated.commodityName} (${updated.districtName}) ₹${updated.modalPrice}`, req);
+    return sendSuccess(res, updated);
+  }
+
+  if (mandiRateMatch && req.method === 'DELETE') {
+    const rateId = decodeURIComponent(mandiRateMatch[1]);
+    const deleted = await adapter.deleteMandiRate?.(rateId);
+    adapter.addAuditLog(user?.fullName || 'एडमिन', 'ADMIN', 'MANDI_RATE_DELETED', `मंडी भाव हटाया गया: ${rateId}`, req);
+    return sendSuccess(res, { deleted: Boolean(deleted), id: rateId });
   }
 
   // 7e. System Audit Logs
@@ -1638,6 +1824,13 @@ export async function handleApiRequest(req, res) {
       return sendError(res, alert.statusCode || 503, alert.code, alert.message);
     }
     adapter.addAuditLog(user?.fullName || 'संपादक', 'ADMIN', 'ALERT_BROADCAST', `आपात अलर्ट प्रसारित: "${alert.title}"`, req);
+    publishLiveNotificationEvent({
+      type: 'EMERGENCY_ALERT',
+      title: alert.title,
+      message: alert.title,
+      district: alert.district || 'पूरा मध्य प्रदेश',
+      priority: 'critical',
+    });
     return sendSuccess(res, alert);
   }
 
@@ -4296,14 +4489,17 @@ export async function handleApiRequest(req, res) {
     const body = await parseRequestBody(req);
     const clientIp = req.socket?.remoteAddress || '127.0.0.1';
     const userAgent = req.headers['user-agent'] || 'Mozilla/5.0';
+    const targetId = body.adId || body.campaignId;
+    const bannerUpdated = targetId ? await adapter.recordAdBannerMetric?.(targetId, 'impression') : null;
     try {
       const result = await adManager.recordImpression({
         ...body,
         userAgent,
         sessionId: body.sessionId || clientIp,
       });
-      return sendSuccess(res, result);
+      return sendSuccess(res, result || bannerUpdated || { recorded: true });
     } catch (err) {
+      if (bannerUpdated) return sendSuccess(res, { recorded: true, banner: bannerUpdated });
       return sendError(res, 400, 'ERR_VALIDATION', err.message);
     }
   }
@@ -4311,13 +4507,16 @@ export async function handleApiRequest(req, res) {
   if (pathname === '/api/v1/monetization/ads/click' && req.method === 'POST') {
     const body = await parseRequestBody(req);
     const clientIp = req.socket?.remoteAddress || '127.0.0.1';
+    const targetId = body.adId || body.campaignId;
+    const bannerUpdated = targetId ? await adapter.recordAdBannerMetric?.(targetId, 'click') : null;
     try {
       const result = await adManager.recordClick({
         ...body,
         clientIp,
       });
-      return sendSuccess(res, result);
+      return sendSuccess(res, result || bannerUpdated || { recorded: true });
     } catch (err) {
+      if (bannerUpdated) return sendSuccess(res, { recorded: true, banner: bannerUpdated });
       return sendError(res, 400, 'ERR_VALIDATION', err.message);
     }
   }
@@ -4914,6 +5113,18 @@ export async function handleApiRequest(req, res) {
     try {
       const body = await parseRequestBody(req);
       const dispatched = await notificationManager.dispatchNotification(body, user);
+      if (dispatched?.notification) {
+        publishLiveNotificationEvent({
+          id: dispatched.id,
+          type: dispatched.notification.type,
+          title: dispatched.notification.title,
+          message: dispatched.notification.message,
+          district: dispatched.notification.district,
+          articleId: dispatched.notification.articleId,
+          priority: dispatched.notification.priority,
+          createdAt: dispatched.notification.createdAt,
+        });
+      }
       return sendSuccess(res, dispatched, 201);
     } catch (err) {
       return sendError(res, err.statusCode || 400, err.code || 'ERR_NOTIFICATION_DISPATCH_FAILED', err.message);

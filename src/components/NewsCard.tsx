@@ -38,7 +38,7 @@ export const NewsCard: React.FC<NewsCardProps> = ({
 
           {/* Breaking News Ribbon */}
           {article.isBreaking && (
-            <div className="absolute top-2.5 left-2.5 bg-[#ED1727] text-white text-[11px] font-extrabold px-2.5 py-1 rounded shadow-md tracking-wider flex items-center gap-1">
+            <div className="absolute top-2.5 left-2.5 bg-[#ED1727] text-white text-[11px] font-news-stylish px-2.5 py-1 rounded shadow-md tracking-wider flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
               ब्रेकिंग न्यूज़
             </div>
@@ -69,8 +69,10 @@ export const NewsCard: React.FC<NewsCardProps> = ({
 
           {/* Title / Headline */}
           <h3
-            className={`font-bold text-slate-900 leading-snug group-hover:text-[#ED1727] transition-colors line-clamp-3 ${
-              featured ? 'text-base md:text-lg' : 'text-sm md:text-base'
+            className={`text-slate-900 leading-snug group-hover:text-[#ED1727] transition-colors line-clamp-3 ${
+              featured
+                ? 'font-news-editorial font-bold text-base md:text-lg'
+                : 'font-news-ui font-bold text-sm md:text-base'
             }`}
           >
             {article.title}
@@ -78,7 +80,7 @@ export const NewsCard: React.FC<NewsCardProps> = ({
 
           {/* Summary / Excerpt */}
           {article.summary && (
-            <p className="mt-1.5 text-xs md:text-sm text-slate-600 line-clamp-2 leading-relaxed">
+            <p className="mt-1.5 font-news-body text-xs md:text-sm text-slate-600 line-clamp-2 leading-relaxed">
               {article.summary}
             </p>
           )}

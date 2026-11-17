@@ -32,6 +32,13 @@ import {
 import {
   CANONICAL_AUDIENCE_SEGMENTS,
 } from '../audience/constants.js';
+import {
+  buildAllDistrictAndCategoryArticles,
+  MP_55_DISTRICTS,
+  MP_SEED_MANDI_RATES,
+  MP_SEED_PENDING_STORIES,
+  MP_SEED_REPORTERS,
+} from '../../shared/mpHyperlocalSeed.js';
 
 export {
   INITIAL_AI_PROMPTS,
@@ -65,109 +72,27 @@ if (!fs.existsSync(DATA_DIR)) {
 // -------------------------------------------------------------
 
 export const INITIAL_CATEGORIES = [
-  { id: 'cat-mp', slug: 'madhya-pradesh', nameHi: 'मध्य प्रदेश', nameEn: 'Madhya Pradesh', sortOrder: 1 },
-  { id: 'cat-pol', slug: 'politics', nameHi: 'राजनीति', nameEn: 'Politics', sortOrder: 2 },
-  { id: 'cat-crime', slug: 'crime', nameHi: 'अपराध', nameEn: 'Crime', sortOrder: 3 },
-  { id: 'cat-gov', slug: 'governance', nameHi: 'शासन एवं नीतियां', nameEn: 'Governance', sortOrder: 4 },
-  { id: 'cat-farm', slug: 'agriculture', nameHi: 'किसान व मंडी', nameEn: 'Agriculture & Mandi', sortOrder: 5 },
-  { id: 'cat-dev', slug: 'development', nameHi: 'विकास व इंफ्रा', nameEn: 'Development', sortOrder: 6 },
-  { id: 'cat-edu', slug: 'education-jobs', nameHi: 'शिक्षा व रोजगार', nameEn: 'Education & Jobs', sortOrder: 7 },
-  { id: 'cat-health', slug: 'health', nameHi: 'स्वास्थ्य', nameEn: 'Health', sortOrder: 8 },
-  { id: 'cat-civic', slug: 'civic-issues', nameHi: 'बिजली-पानी-सड़क', nameEn: 'Civic Issues', sortOrder: 9 },
-  { id: 'cat-env', slug: 'environment', nameHi: 'पर्यावरण व मौसम', nameEn: 'Environment & Weather', sortOrder: 10 },
-  { id: 'cat-rel', slug: 'culture-religion', nameHi: 'धर्म व संस्कृति', nameEn: 'Culture & Religion', sortOrder: 11 },
-  { id: 'cat-biz', slug: 'business', nameHi: 'व्यापार व उद्योग', nameEn: 'Business & Economy', sortOrder: 12 },
-  { id: 'cat-sports', slug: 'sports', nameHi: 'खेल जगत', nameEn: 'Sports', sortOrder: 13 },
-  { id: 'cat-women', slug: 'women-youth', nameHi: 'महिला व युवा', nameEn: 'Women & Youth', sortOrder: 14 },
-  { id: 'cat-panchayat', slug: 'panchayat-rural', nameHi: 'ग्राम पंचायत', nameEn: 'Rural & Panchayat', sortOrder: 15 },
-  { id: 'cat-fact', slug: 'fact-check', nameHi: 'फैक्ट चेक', nameEn: 'Fact Check', sortOrder: 16 },
-  { id: 'cat-nat', slug: 'national', nameHi: 'देश', nameEn: 'National', sortOrder: 17 },
-  { id: 'cat-world', slug: 'international', nameHi: 'विदेश', nameEn: 'International', sortOrder: 18 },
-  { id: 'cat-sci', slug: 'science-tech', nameHi: 'विज्ञान व तकनीक', nameEn: 'Science & Tech', sortOrder: 19 },
-  { id: 'cat-auto', slug: 'auto', nameHi: 'ऑटोमोबाइल', nameEn: 'Auto', sortOrder: 20 },
-  { id: 'cat-ent', slug: 'entertainment', nameHi: 'मनोरंजन', nameEn: 'Entertainment', sortOrder: 21 },
+  { id: 'cat-top', slug: 'top-news', nameHi: 'टॉप न्यूज़', nameEn: 'Top News', sortOrder: 1 },
+  { id: 'cat-mp', slug: 'madhya-pradesh', nameHi: 'मध्य प्रदेश', nameEn: 'Madhya Pradesh', sortOrder: 2 },
+  { id: 'cat-politics', slug: 'politics', nameHi: 'राजनीति', nameEn: 'Politics', sortOrder: 3 },
+  { id: 'cat-crime', slug: 'crime', nameHi: 'क्राइम एवं कानून', nameEn: 'Crime & Law', sortOrder: 4 },
+  { id: 'cat-agri', slug: 'agriculture', nameHi: 'कृषि एवं मंडी भाव', nameEn: 'Agriculture & Mandi', sortOrder: 5 },
+  { id: 'cat-weather', slug: 'weather', nameHi: 'मौसम एवं पर्यावरण', nameEn: 'Weather', sortOrder: 6 },
+  { id: 'cat-business', slug: 'business', nameHi: 'व्यापार एवं रोजगार', nameEn: 'Business & Jobs', sortOrder: 7 },
+  { id: 'cat-viral', slug: 'viral', nameHi: 'वायरल खबरें', nameEn: 'Viral & Social', sortOrder: 8 },
+  { id: 'cat-nat', slug: 'national', nameHi: 'देश', nameEn: 'National', sortOrder: 9 },
+  { id: 'cat-world', slug: 'international', nameHi: 'विदेश', nameEn: 'International', sortOrder: 10 },
+  { id: 'cat-sports', slug: 'sports', nameHi: 'खेल', nameEn: 'Sports', sortOrder: 11 },
+  { id: 'cat-pol', slug: 'politics-legacy', nameHi: 'राजनीति', nameEn: 'Politics', sortOrder: 12 },
+  { id: 'cat-gov', slug: 'governance', nameHi: 'शासन एवं नीतियां', nameEn: 'Governance', sortOrder: 13 },
+  { id: 'cat-farm', slug: 'agriculture-legacy', nameHi: 'किसान व मंडी', nameEn: 'Agriculture & Mandi', sortOrder: 14 },
+  { id: 'cat-dev', slug: 'development', nameHi: 'विकास व इंफ्रा', nameEn: 'Development', sortOrder: 15 },
+  { id: 'cat-rel', slug: 'culture-religion', nameHi: 'धर्म व संस्कृति', nameEn: 'Culture & Religion', sortOrder: 16 },
 ];
 
-export const INITIAL_DISTRICTS = [
-  { id: 'dist-bhopal', slug: 'bhopal', nameHi: 'भोपाल', nameEn: 'Bhopal', divisionId: 'div-bhopal', stateId: 'mp' },
-  { id: 'dist-indore', slug: 'indore', nameHi: 'इंदौर', nameEn: 'Indore', divisionId: 'div-indore', stateId: 'mp' },
-  { id: 'dist-gwalior', slug: 'gwalior', nameHi: 'ग्वालियर', nameEn: 'Gwalior', divisionId: 'div-gwalior', stateId: 'mp' },
-  { id: 'dist-jabalpur', slug: 'jabalpur', nameHi: 'जबलपुर', nameEn: 'Jabalpur', divisionId: 'div-jabalpur', stateId: 'mp' },
-  { id: 'dist-ujjain', slug: 'ujjain', nameHi: 'उज्जैन', nameEn: 'Ujjain', divisionId: 'div-ujjain', stateId: 'mp' },
-  { id: 'dist-sagar', slug: 'sagar', nameHi: 'सागर', nameEn: 'Sagar', divisionId: 'div-sagar', stateId: 'mp' },
-  { id: 'dist-rewa', slug: 'rewa', nameHi: 'रीवा', nameEn: 'Rewa', divisionId: 'div-rewa', stateId: 'mp' },
-  { id: 'dist-satna', slug: 'satna', nameHi: 'सतना', nameEn: 'Satna', divisionId: 'div-rewa', stateId: 'mp' },
-  { id: 'dist-ratlam', slug: 'ratlam', nameHi: 'रतलाम', nameEn: 'Ratlam', divisionId: 'div-ujjain', stateId: 'mp' },
-  { id: 'dist-dewas', slug: 'dewas', nameHi: 'देवास', nameEn: 'Dewas', divisionId: 'div-ujjain', stateId: 'mp' },
-  { id: 'dist-chhindwara', slug: 'chhindwara', nameHi: 'छिंदवाड़ा', nameEn: 'Chhindwara', divisionId: 'div-jabalpur', stateId: 'mp' },
-  { id: 'dist-morena', slug: 'morena', nameHi: 'मुरैना', nameEn: 'Morena', divisionId: 'div-chambal', stateId: 'mp' },
-  { id: 'dist-bhind', slug: 'bhind', nameHi: 'भिंड', nameEn: 'Bhind', divisionId: 'div-chambal', stateId: 'mp' },
-  { id: 'dist-sehore', slug: 'sehore', nameHi: 'सीहोर', nameEn: 'Sehore', divisionId: 'div-bhopal', stateId: 'mp' },
-  { id: 'dist-vidisha', slug: 'vidisha', nameHi: 'विदिशा', nameEn: 'Vidisha', divisionId: 'div-bhopal', stateId: 'mp' },
-];
+export const INITIAL_DISTRICTS = MP_55_DISTRICTS;
 
-export const INITIAL_REPORTERS = [
-  {
-    id: 'rep-001',
-    name: 'राजेश पटेल',
-    email: 'rajesh.patel@breakingnewswala.com',
-    phone: '+91 98260 11223',
-    role: 'trusted_reporter',
-    assignedDistricts: ['dist-bhopal', 'dist-sehore'],
-    assignedDivision: 'div-bhopal',
-    totalStoriesFiled: 142,
-    totalStoriesPublished: 128,
-    badgeNumber: 'BNW-REP-0101',
-    joinedDate: '15 जनवरी 2024',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
-    status: 'ACTIVE',
-  },
-  {
-    id: 'rep-002',
-    name: 'सुनीता शर्मा',
-    email: 'sunita.sharma@breakingnewswala.com',
-    phone: '+91 94250 88771',
-    role: 'trusted_reporter',
-    assignedDistricts: ['dist-indore', 'dist-dewas'],
-    assignedDivision: 'div-indore',
-    totalStoriesFiled: 98,
-    totalStoriesPublished: 91,
-    badgeNumber: 'BNW-REP-0102',
-    joinedDate: '01 मार्च 2024',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&auto=format&fit=crop&q=80',
-    status: 'ACTIVE',
-  },
-  {
-    id: 'rep-003',
-    name: 'अमित वर्मा',
-    email: 'amit.verma@breakingnewswala.com',
-    phone: '+91 97555 44332',
-    role: 'reporter',
-    assignedDistricts: ['dist-gwalior', 'dist-bhind', 'dist-morena'],
-    assignedDivision: 'div-gwalior',
-    totalStoriesFiled: 64,
-    totalStoriesPublished: 49,
-    badgeNumber: 'BNW-REP-0103',
-    joinedDate: '10 मई 2024',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
-    status: 'ACTIVE',
-  },
-  {
-    id: 'rep-004',
-    name: 'विक्रम सिंह',
-    email: 'vikram.singh@breakingnewswala.com',
-    phone: '+91 91110 33445',
-    role: 'reporter',
-    assignedDistricts: ['dist-rewa', 'dist-satna'],
-    assignedDivision: 'div-rewa',
-    totalStoriesFiled: 42,
-    totalStoriesPublished: 35,
-    badgeNumber: 'BNW-REP-0104',
-    joinedDate: '22 जुलाई 2024',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80',
-    status: 'ACTIVE',
-  },
-];
+export const INITIAL_REPORTERS = MP_SEED_REPORTERS;
 
 export const INITIAL_ARTICLES = [
   {
@@ -308,12 +233,13 @@ export const INITIAL_TICKERS = [
 ];
 
 export const INITIAL_ADS = [
-  { id: 'ad-01', placement: 'top_leaderboard', title: 'मध्य प्रदेश पर्यटन — हिंदुस्तान का दिल देखो', imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1200&auto=format&fit=crop&q=80', targetUrl: 'https://www.mptourism.com', advertiserName: 'मप्र पर्यटन विकास निगम', isActive: true },
-  { id: 'ad-02', placement: 'in_feed', title: 'कृषक उन्नति ट्रैक्टर व कृषि उपकरण विशेष छूट मेला', imageUrl: 'https://images.unsplash.com/photo-1589923188900-85dae523342b?w=800&auto=format&fit=crop&q=80', targetUrl: 'https://example.com/tractor-mela', advertiserName: 'मध्य प्रदेश कृषि उद्योग विकास निगम', isActive: true },
-  { id: 'ad-03', placement: 'sticky_bottom', title: 'भोपाल प्रॉपर्टी एक्सपो 2026 — अपने सपनों का घर पाएं', imageUrl: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&auto=format&fit=crop&q=80', targetUrl: 'https://example.com/bhopal-expo', advertiserName: 'क्रेडाई भोपाल', isActive: true },
+  { id: 'ad-01', placement: 'top_leaderboard', title: 'मध्य प्रदेश पर्यटन — हिंदुस्तान का दिल देखो (पचमढ़ी, कान्हा व ओरछा सफारी)', imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1200&auto=format&fit=crop&q=80', targetUrl: 'https://www.mptourism.com', advertiserName: 'मप्र पर्यटन विकास निगम', isActive: true, impressionsCount: 1842, clicksCount: 129 },
+  { id: 'ad-02', placement: 'in_feed', title: 'मध्य प्रदेश हस्तशिल्प: चंदेरी व महेश्वरी हैंडलूम वस्त्रों पर 30% तक की छूट', imageUrl: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=800&auto=format&fit=crop&q=80', targetUrl: 'https://khadi.mp.gov.in', advertiserName: 'मप्र खादी एवं ग्रामोद्योग बोर्ड', isActive: true, impressionsCount: 1410, clicksCount: 94 },
+  { id: 'ad-03', placement: 'sidebar', title: 'सांची दुग्ध संघ — शुद्ध घी, पनीर और दुग्ध उत्पाद अब हर ज़िले में उपलब्ध', imageUrl: 'https://images.unsplash.com/photo-1527153857715-3908f2ae5e81?w=600&auto=format&fit=crop&q=80', targetUrl: 'https://sanchidairy.com', advertiserName: 'सांची दुग्ध संघ', isActive: true, impressionsCount: 1190, clicksCount: 78 },
 ];
 
 export const INITIAL_USERS = [
+  { id: 'usr-master-1', identifier: 'master_admin', fullName: 'मास्टर एडमिन (BNW Live)', email: 'live.bnwtv@gmail.com', phoneNumber: '+919800000000', roles: ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CHIEF_EDITOR', 'EDITOR', 'REPORTER', 'READER'], badgeNumber: 'BNW-MA-001', passwordHash: '$argon2id$v=19$m=65536,t=3,p=1$M8c5YD5Xe48JKvpnM3kdAg$mxpNsuwzww6FWqXJAR5RZcSgvyGOwLS/AaDzw9OG0fI' },
   { id: 'usr-admin-1', identifier: 'admin', fullName: 'प्रधान संपादक / सिस्टम एडमिनिस्ट्रेटर', email: 'admin@breakingnewswala.com', phoneNumber: '+919800000001', roles: ['ADMIN', 'EDITOR', 'SUPER_ADMIN'], passwordHash: '$argon2id$v=19$m=65536,t=3,p=1$M8c5YD5Xe48JKvpnM3kdAg$mxpNsuwzww6FWqXJAR5RZcSgvyGOwLS/AaDzw9OG0fI' },
   { id: 'usr-editor-1', identifier: 'editor', fullName: 'दिनेश अग्निहोत्री (डेस्क संपादक)', email: 'editor@breakingnewswala.com', phoneNumber: '+919800000002', roles: ['EDITOR'], passwordHash: '$argon2id$v=19$m=65536,t=3,p=1$M8c5YD5Xe48JKvpnM3kdAg$mxpNsuwzww6FWqXJAR5RZcSgvyGOwLS/AaDzw9OG0fI' },
   { id: 'usr-editor-2', identifier: 'editor_two', fullName: 'समीक्षक संपादक (डेस्क 2)', email: 'editor2@breakingnewswala.com', phoneNumber: '+919800000003', roles: ['EDITOR'], passwordHash: '$argon2id$v=19$m=65536,t=3,p=1$M8c5YD5Xe48JKvpnM3kdAg$mxpNsuwzww6FWqXJAR5RZcSgvyGOwLS/AaDzw9OG0fI' },
@@ -1217,6 +1143,7 @@ export class LocalJsonAdapter {
       readerFeedback: [],
       comments: [],
       deletionRequests: [],
+      mandiRates: [...MP_SEED_MANDI_RATES],
     };
     this.init();
   }
@@ -1427,8 +1354,51 @@ export class LocalJsonAdapter {
           u.passwordHash = '$argon2id$v=19$m=65536,t=3,p=1$M8c5YD5Xe48JKvpnM3kdAg$mxpNsuwzww6FWqXJAR5RZcSgvyGOwLS/AaDzw9OG0fI';
         }
       }
+
+      // Sync all 55 districts and categories
+      this.data.districts = [...MP_55_DISTRICTS];
+      this.data.categories = [...INITIAL_CATEGORIES];
+
+      // Merge any missing 19-bureau reporters covering all 55 districts
+      this.data.reporters = this.data.reporters || [];
+      for (const seedRep of MP_SEED_REPORTERS) {
+        if (!this.data.reporters.some((r) => r.id === seedRep.id || r.badgeNumber === seedRep.badgeNumber)) {
+          this.data.reporters.push({ ...seedRep });
+        }
+      }
+
+      // Merge full 55-district & all-category articles + extra pending stories without overwriting existing items
+      this.data.articles = this.data.articles || [];
+      const fullSeedArticles = [
+        ...buildAllDistrictAndCategoryArticles(this.data.articles),
+        ...MP_SEED_PENDING_STORIES,
+      ];
+      for (const seedArt of fullSeedArticles) {
+        if (!this.data.articles.some((a) => a.id === seedArt.id)) {
+          this.data.articles.push({ ...seedArt });
+        }
+      }
+
+      // Merge mandi rates
+      this.data.mandiRates = Array.isArray(this.data.mandiRates) && this.data.mandiRates.length > 0
+        ? this.data.mandiRates
+        : [...MP_SEED_MANDI_RATES];
+
+      // Ensure ads have impression/click telemetry counters
+      this.data.ads = (this.data.ads && this.data.ads.length > 0 ? this.data.ads : [...INITIAL_ADS]).map((a) => ({
+        impressionsCount: 0,
+        clicksCount: 0,
+        ...a,
+      }));
     } else {
-      this.data.articles = [...INITIAL_ARTICLES, ...INITIAL_PENDING_STORIES];
+      const seedArticles = [
+        ...INITIAL_ARTICLES,
+        ...INITIAL_PENDING_STORIES,
+        ...buildAllDistrictAndCategoryArticles(INITIAL_ARTICLES),
+        ...MP_SEED_PENDING_STORIES,
+      ];
+      this.data.articles = seedArticles;
+      this.data.mandiRates = [...MP_SEED_MANDI_RATES];
       this.data.sessions = [];
       this.data.users = [...INITIAL_USERS];
       this.data.graphicTemplates = [...INITIAL_GRAPHIC_TEMPLATES];
@@ -1807,12 +1777,104 @@ export class LocalJsonAdapter {
     return this.data.ads;
   }
 
+  async createAd(payload) {
+    const newAd = {
+      id: `ad-${Date.now()}`,
+      placement: payload.placement || 'in_feed',
+      title: String(payload.title || '').trim(),
+      imageUrl: payload.imageUrl || 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=800&auto=format&fit=crop&q=80',
+      targetUrl: payload.targetUrl || 'https://breakingnewswala.com',
+      advertiserName: String(payload.advertiserName || 'प्रायोजक').trim(),
+      isActive: payload.isActive !== false,
+      impressionsCount: 0,
+      clicksCount: 0,
+    };
+    this.data.ads.unshift(newAd);
+    this.save();
+    return newAd;
+  }
+
   async toggleAd(id) {
     const ad = this.data.ads.find((a) => a.id === id);
     if (!ad) return null;
     ad.isActive = !ad.isActive;
     this.save();
     return ad;
+  }
+
+  async deleteAd(id) {
+    const before = this.data.ads.length;
+    this.data.ads = this.data.ads.filter((a) => a.id !== id);
+    if (this.data.ads.length !== before) {
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  async recordAdBannerMetric(adId, metricType) {
+    const ad = this.data.ads.find((a) => a.id === adId);
+    if (!ad) return null;
+    if (metricType === 'impression') {
+      ad.impressionsCount = (ad.impressionsCount || 0) + 1;
+    } else if (metricType === 'click') {
+      ad.clicksCount = (ad.clicksCount || 0) + 1;
+    }
+    this.save();
+    return ad;
+  }
+
+  async getMandiRates() {
+    return this.data.mandiRates || [...MP_SEED_MANDI_RATES];
+  }
+
+  async createMandiRate(payload) {
+    this.data.mandiRates = this.data.mandiRates || [];
+    const newRate = {
+      id: `mandi-${Date.now()}`,
+      commodityName: String(payload.commodityName || '').trim(),
+      mandiName: String(payload.mandiName || '').trim(),
+      districtName: String(payload.districtName || '').trim(),
+      modalPrice: Number(payload.modalPrice) || 0,
+      minPrice: Number(payload.minPrice) || 0,
+      maxPrice: Number(payload.maxPrice) || 0,
+      unit: payload.unit || '₹ / क्विंटल',
+      updatedAt: payload.updatedAt || 'अभी-अभी अपडेट',
+    };
+    this.data.mandiRates.unshift(newRate);
+    this.save();
+    return newRate;
+  }
+
+  async updateMandiRate(id, payload) {
+    this.data.mandiRates = this.data.mandiRates || [];
+    const item = this.data.mandiRates.find((m) => m.id === id);
+    if (!item) return null;
+    if (payload.commodityName !== undefined) item.commodityName = String(payload.commodityName).trim();
+    if (payload.mandiName !== undefined) item.mandiName = String(payload.mandiName).trim();
+    if (payload.districtName !== undefined) item.districtName = String(payload.districtName).trim();
+    if (payload.modalPrice !== undefined) item.modalPrice = Number(payload.modalPrice);
+    if (payload.minPrice !== undefined) item.minPrice = Number(payload.minPrice);
+    if (payload.maxPrice !== undefined) item.maxPrice = Number(payload.maxPrice);
+    item.updatedAt = payload.updatedAt || 'अभी-अभी अपडेट';
+    this.save();
+    return item;
+  }
+
+  async deleteMandiRate(id) {
+    this.data.mandiRates = this.data.mandiRates || [];
+    const before = this.data.mandiRates.length;
+    this.data.mandiRates = this.data.mandiRates.filter((m) => m.id !== id);
+    if (this.data.mandiRates.length !== before) {
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  async getReporterByBadge(badgeNumber) {
+    const clean = String(badgeNumber || '').trim().toUpperCase();
+    return (this.data.reporters || []).find((r) => String(r.badgeNumber || '').toUpperCase() === clean) || null;
   }
 
   async getAuditLogs() {
@@ -4542,8 +4604,40 @@ export class ProductionGuardAdapter {
     return this.failClosedError();
   }
 
+  async createAd() {
+    return this.failClosedError();
+  }
+
   async toggleAd() {
     return this.failClosedError();
+  }
+
+  async deleteAd() {
+    return this.failClosedError();
+  }
+
+  async recordAdBannerMetric() {
+    return null;
+  }
+
+  async getMandiRates() {
+    return this.failClosedError();
+  }
+
+  async createMandiRate() {
+    return this.failClosedError();
+  }
+
+  async updateMandiRate() {
+    return this.failClosedError();
+  }
+
+  async deleteMandiRate() {
+    return this.failClosedError();
+  }
+
+  async getReporterByBadge() {
+    return null;
   }
 
   async getAuditLogs() {

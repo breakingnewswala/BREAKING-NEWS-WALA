@@ -89,6 +89,85 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 2b. Serve uploaded media & rendered studio videos (/media/*) in both Dev & Production with Range support
+  if (pathname.startsWith('/media/') && (req.method === 'GET' || req.method === 'HEAD')) {
+    const mediaRoot = path.resolve(DIST_DIR, 'media');
+    let decodedMediaPath = '';
+    try {
+      decodedMediaPath = decodeURIComponent(pathname.replace(/^\/media\//, ''));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=UTF-8' });
+      res.end('Bad Request');
+      return;
+    }
+
+    if (decodedMediaPath.includes('..')) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=UTF-8' });
+      res.end('403 Forbidden');
+      return;
+    }
+
+    const mediaFilePath = path.resolve(mediaRoot, decodedMediaPath);
+    if (!mediaFilePath.startsWith(mediaRoot + path.sep)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=UTF-8' });
+      res.end('403 Forbidden');
+      return;
+    }
+
+    fs.stat(mediaFilePath, (err, stats) => {
+      if (err || !stats.isFile()) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=UTF-8' });
+        res.end('404 Media Not Found');
+        return;
+      }
+
+      const ext = path.extname(mediaFilePath).toLowerCase();
+      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+      const totalSize = stats.size;
+      const rangeHeader = req.headers.range;
+
+      const baseHeaders = {
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'public, max-age=3600',
+      };
+
+      if (req.method === 'HEAD') {
+        res.writeHead(200, { ...baseHeaders, 'Content-Length': totalSize });
+        res.end();
+        return;
+      }
+
+      if (rangeHeader && /^bytes=\d*-\d*$/.test(rangeHeader)) {
+        const [startStr, endStr] = rangeHeader.replace(/^bytes=/, '').split('-');
+        let start = startStr ? parseInt(startStr, 10) : 0;
+        let end = endStr ? parseInt(endStr, 10) : totalSize - 1;
+        if (Number.isNaN(start)) start = 0;
+        if (Number.isNaN(end) || end >= totalSize) end = totalSize - 1;
+
+        if (start > end || start >= totalSize) {
+          res.writeHead(416, { 'Content-Range': `bytes */${totalSize}` });
+          res.end();
+          return;
+        }
+
+        const chunkSize = end - start + 1;
+        res.writeHead(206, {
+          ...baseHeaders,
+          'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+          'Content-Length': chunkSize,
+        });
+        fs.createReadStream(mediaFilePath, { start, end }).pipe(res);
+        return;
+      }
+
+      res.writeHead(200, { ...baseHeaders, 'Content-Length': totalSize });
+      fs.createReadStream(mediaFilePath).pipe(res);
+    });
+    return;
+  }
+
   // 3. Vite dev middleware in development mode (serves React SPA + TSX/Tailwind + /public)
   if (viteServer) {
     return viteServer.middlewares(req, res);

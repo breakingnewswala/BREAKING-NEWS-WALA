@@ -3,15 +3,11 @@ import {
   Menu,
   Search,
   User,
-  Radio,
   Home,
-  Newspaper,
   PenSquare,
-  ShieldCheck,
   Building2,
   Lock,
   Flame,
-  Bookmark,
 } from 'lucide-react';
 import { AppRole } from '../types';
 import { NavTab } from './BottomNav';
@@ -23,6 +19,9 @@ interface BnwMastheadProps {
   onSearchClick: () => void;
   onProfileClick: () => void;
   currentRole: AppRole;
+  accountRole?: AppRole;
+  isAuthenticated?: boolean;
+  onQuickMasterLogin?: () => void;
   pendingQueueCount?: number;
 }
 
@@ -33,12 +32,17 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
   onSearchClick,
   onProfileClick,
   currentRole,
+  accountRole = currentRole,
+  isAuthenticated = false,
+  onQuickMasterLogin,
   pendingQueueCount = 0,
 }) => {
+  const isMasterAccount = accountRole === 'MASTER_ADMIN';
+
   const getRoleBadge = () => {
     switch (currentRole) {
       case 'MASTER_ADMIN':
-        return { label: 'मास्टर एडमिन', color: 'bg-amber-600 text-white font-bold' };
+        return { label: 'मास्टर एडमिन', color: 'bg-amber-500 text-slate-950 font-extrabold' };
       case 'ADMIN':
         return { label: 'एडमिन', color: 'bg-red-600 text-white font-bold' };
       case 'EDITOR':
@@ -46,37 +50,38 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
       case 'REPORTER':
         return { label: 'रिपोर्टर', color: 'bg-blue-600 text-white font-bold' };
       default:
-        return null;
+        return isMasterAccount
+          ? { label: 'यूजर व्यू', color: 'bg-emerald-600 text-white font-bold' }
+          : null;
     }
   };
 
   const roleBadge = getRoleBadge();
+  const isAdminActive = ['admin', 'newsroom', 'reporter', 'epaper', 'graphics', 'videos', 'ai-newsroom'].includes(activeTab);
 
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-xs">
-      {/* Top Main Navigation Bar */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-3">
+      {/* Top Main Navigation Bar: fixed crisp single-row height (53px + 3px accent = 56px) */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 h-[53px] flex items-center justify-between gap-2">
         {/* Left Section: Menu Button + Brand Logo + Live Badge */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Prominent Menu Bar Button next to Logo */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           <button
             onClick={onOpenMenu}
             aria-label="मुख्य मेन्यू खोलें"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 border border-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-all shadow-2xs group"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 border border-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 group"
           >
-            <Menu className="w-4 h-4 text-[#ED1727] group-hover:scale-110 transition-transform" />
+            <Menu className="w-4 h-4 text-[#ED1727] group-hover:scale-105 transition-transform" />
             <span className="font-extrabold tracking-wide">मेन्यू</span>
           </button>
 
-          {/* Official Brand Logo */}
           <div
             onClick={() => onTabChange('home')}
-            className="flex items-center gap-2 cursor-pointer hover:opacity-95 transition-opacity"
+            className="flex items-center gap-2 cursor-pointer hover:opacity-95 transition-opacity shrink-0"
           >
             <img
               src="/brand/logo.png"
               alt="BREAKING NEWS WALA"
-              className="h-8 md:h-10 w-auto object-contain"
+              className="h-8 md:h-9 w-auto object-contain"
               onError={(e) => {
                 const target = e.currentTarget;
                 target.style.display = 'none';
@@ -84,150 +89,131 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
                 if (sibling) (sibling as HTMLElement).style.display = 'flex';
               }}
             />
-            {/* Fallback Brand Text */}
             <div className="hidden flex-col items-start leading-none">
-              <span className="text-lg md:text-xl font-black tracking-tight text-red-600 font-serif">
+              <span className="text-base md:text-lg font-black tracking-tight text-red-600 font-news-hero whitespace-nowrap">
                 BREAKING NEWS WALA
               </span>
-              <span className="text-[10px] font-bold text-slate-700 tracking-wider">
+              <span className="text-[10px] font-news-stylish font-bold text-slate-700 tracking-wider whitespace-nowrap">
                 ब्रेकिंग न्यूज़ वाला • मध्य प्रदेश
               </span>
             </div>
           </div>
 
-          {/* Animated Blinking LIVE Badge */}
-          <div className="flex items-center gap-1.5 px-2 py-0.5 md:py-1 bg-red-50 border border-red-200 rounded-full animate-pulse shrink-0">
-            <Radio className="w-3 h-3 md:w-3.5 md:h-3.5 text-red-600 animate-spin" />
-            <span className="text-[10px] md:text-xs font-black tracking-wider text-red-600">LIVE</span>
+          <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-red-50 border border-red-200 rounded-full shrink-0 whitespace-nowrap">
+            <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+            <span className="text-[10px] font-black tracking-wider text-red-600">LIVE</span>
           </div>
         </div>
 
-        {/* Center Desktop Web Navigation Links (Standard Public Navigation + Role-Gated Desks) */}
-        <nav className="hidden lg:flex items-center gap-1 text-xs font-bold">
-          {/* 1. Home */}
+        {/* Center Desktop Web Navigation Links: Clean, Limited & Single-Line */}
+        <nav className="hidden lg:flex items-center gap-1.5 text-xs font-bold whitespace-nowrap">
           <button
             onClick={() => onTabChange('home')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
               activeTab === 'home'
                 ? 'bg-red-50 text-[#ED1727]'
                 : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            <Home className="w-3.5 h-3.5" />
+            <Home className="w-3.5 h-3.5 shrink-0" />
             <span>होम</span>
           </button>
 
-          {/* 2. Latest News */}
           <button
             onClick={() => onTabChange('home')}
-            className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors text-slate-700 hover:bg-slate-100"
+            className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors text-slate-700 hover:bg-slate-100 whitespace-nowrap"
           >
-            <Flame className="w-3.5 h-3.5 text-amber-500" />
+            <Flame className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span>ताज़ा खबरें</span>
           </button>
 
-          {/* 3. Saved News */}
-          <button
-            onClick={() => onTabChange('profile')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-              activeTab === 'profile'
-                ? 'bg-red-50 text-[#ED1727]'
-                : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Bookmark className="w-3.5 h-3.5 text-blue-600" />
-            <span>सेव्ड समाचार</span>
-          </button>
-
-          {/* 4. Search */}
           <button
             onClick={() => onTabChange('search')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
               activeTab === 'search'
                 ? 'bg-red-50 text-[#ED1727]'
                 : 'text-slate-700 hover:bg-slate-100'
             }`}
           >
-            <Search className="w-3.5 h-3.5" />
+            <Search className="w-3.5 h-3.5 shrink-0" />
             <span>खोजें</span>
           </button>
 
-          {/* E-Paper: Temporarily hidden from normal users; available for Master Admin & Admin */}
+          {/* Single Unified Role Workspace Entry (all remaining desks & studios live inside tabs) */}
           {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
             <button
-              onClick={() => onTabChange('epaper')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-                activeTab === 'epaper'
-                  ? 'bg-red-50 text-[#ED1727]'
-                  : 'text-slate-700 hover:bg-slate-100'
+              onClick={() => onTabChange('admin')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                isAdminActive
+                  ? 'bg-slate-900 text-amber-300 font-bold ring-1 ring-amber-400'
+                  : 'text-slate-800 bg-amber-50 hover:bg-amber-100 border border-amber-200'
               }`}
             >
-              <Newspaper className="w-3.5 h-3.5 text-[#344FD6]" />
-              <span>ई-पेपर (Admin)</span>
-            </button>
-          )}
-
-          {/* Reporter Portal (Restricted to Reporters, Editors, Admins) */}
-          {['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole) && (
-            <button
-              onClick={() => onTabChange('reporter')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-                activeTab === 'reporter'
-                  ? 'bg-blue-50 text-blue-700 font-bold'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <PenSquare className="w-3.5 h-3.5 text-blue-600" />
-              <span>रिपोर्टर डेस्क</span>
-            </button>
-          )}
-
-          {/* Central Newsroom Desk (Restricted to Editors and Admins) */}
-          {['MASTER_ADMIN', 'ADMIN', 'EDITOR'].includes(currentRole) && (
-            <button
-              onClick={() => onTabChange('newsroom')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-                activeTab === 'newsroom'
-                  ? 'bg-red-50 text-[#ED1727] font-bold'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5 text-red-600" />
-              <span>न्यूज़रूम डेस्क</span>
+              <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>एडमिन पैनल</span>
               {pendingQueueCount > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full">
+                <span className="px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full">
                   {pendingQueueCount}
                 </span>
               )}
             </button>
           )}
 
-          {/* Master Admin / Admin Control Panel */}
-          {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
+          {currentRole === 'EDITOR' && (
             <button
-              onClick={() => onTabChange('admin')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${
-                activeTab === 'admin'
-                  ? 'bg-slate-900 text-white font-bold ring-2 ring-amber-400'
+              onClick={() => onTabChange('newsroom')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                activeTab === 'newsroom'
+                  ? 'bg-red-50 text-[#ED1727] font-bold'
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
             >
-              <Lock className="w-3.5 h-3.5 text-amber-500" />
-              <span>{currentRole === 'MASTER_ADMIN' ? 'मास्टर एडमिन डैशबोर्ड' : 'एडमिन कंट्रोल'}</span>
+              <Building2 className="w-3.5 h-3.5 text-red-600 shrink-0" />
+              <span>न्यूज़रूम डेस्क</span>
+              {pendingQueueCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full">
+                  {pendingQueueCount}
+                </span>
+              )}
+            </button>
+          )}
+
+          {currentRole === 'REPORTER' && (
+            <button
+              onClick={() => onTabChange('reporter')}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                activeTab === 'reporter'
+                  ? 'bg-blue-50 text-blue-700 font-bold'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <PenSquare className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span>रिपोर्टर डेस्क</span>
             </button>
           )}
         </nav>
 
         {/* Right Header Controls */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Active Role Indicator */}
+          {!isAuthenticated && onQuickMasterLogin && (
+            <button
+              onClick={onQuickMasterLogin}
+              title="प्रीव्यू मोड में मास्टर एडमिन के रूप में तुरंत लॉगिन करें"
+              className="text-[10px] sm:text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap cursor-pointer bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold transition-colors shadow-2xs"
+            >
+              मास्टर लॉगिन
+            </button>
+          )}
           {roleBadge && (
-            <span className={`text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-full ${roleBadge.color}`}>
+            <button
+              onClick={onProfileClick}
+              title="मोड या प्रोफ़ाइल बदलें"
+              className={`text-[10px] sm:text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap cursor-pointer transition-opacity hover:opacity-90 ${roleBadge.color}`}
+            >
               {roleBadge.label}
-            </span>
+            </button>
           )}
 
-          {/* Quick Search Icon Button (Mobile/Tablet) */}
           <button
             onClick={onSearchClick}
             aria-label="खोजें"
@@ -236,11 +222,14 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             <Search className="w-4 h-4" />
           </button>
 
-          {/* Profile Button */}
           <button
             onClick={onProfileClick}
             aria-label="प्रोफ़ाइल"
-            className="p-1.5 sm:p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors"
+            className={`p-1.5 sm:p-2 rounded-full transition-colors ${
+              activeTab === 'profile'
+                ? 'bg-red-50 text-[#ED1727]'
+                : 'text-slate-700 hover:text-red-600 hover:bg-slate-100'
+            }`}
           >
             <User className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>

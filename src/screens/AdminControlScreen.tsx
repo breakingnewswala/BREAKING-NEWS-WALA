@@ -40,14 +40,23 @@ import {
   Receipt,
   Briefcase,
   CreditCard,
+  PenTool,
+  Building2,
+  Newspaper,
+  Palette,
+  Bot,
+  Bookmark,
+  Wheat,
 } from 'lucide-react';
 import {
+  AppRole,
   ArticleDetail,
   ReporterProfile,
   BreakingTickerItem,
   ApiPoolKeyItem,
   SystemAuditLogItem,
   AdBannerItem,
+  MandiRateItem,
   DistrictItem,
   CategoryItem,
   EditorialFactCheckResult,
@@ -74,6 +83,7 @@ import {
   ReaderFeedbackRecord,
   NotificationRecord,
 } from '../types';
+import { NavTab } from '../components/BottomNav';
 import { BnwAiService } from '../services/aiService';
 import { apiClient } from '../services/apiClient';
 
@@ -83,10 +93,15 @@ interface AdminControlScreenProps {
   reporters: ReporterProfile[];
   tickers: BreakingTickerItem[];
   ads: AdBannerItem[];
+  mandiRates?: MandiRateItem[];
   apiPool: ApiPoolKeyItem[];
   auditLogs: SystemAuditLogItem[];
   districts: DistrictItem[];
   categories: CategoryItem[];
+  currentRole?: AppRole;
+  accountRole?: AppRole;
+  onSwitchPersona?: (role: AppRole, targetTab?: NavTab) => void;
+  onNavigateTab?: (tab: NavTab) => void;
   onApproveArticle: (articleId: string) => void;
   onRequestRevision: (articleId: string, comments: string) => void;
   onRejectArticle: (articleId: string) => void;
@@ -95,6 +110,11 @@ interface AdminControlScreenProps {
   onDeleteTicker: (tickerId: string) => void;
   onUpdateReporterRole: (reporterId: string, role: 'reporter' | 'trusted_reporter') => void;
   onToggleAdActive: (adId: string) => void;
+  onAddAd?: (dto: Partial<AdBannerItem>) => Promise<void> | void;
+  onDeleteAd?: (adId: string) => void;
+  onAddMandiRate?: (dto: Partial<MandiRateItem>) => Promise<void> | void;
+  onUpdateMandiRate?: (id: string, dto: Partial<MandiRateItem>) => Promise<void> | void;
+  onDeleteMandiRate?: (id: string) => void;
   onBroadcastAlert: (title: string, district: string) => void;
 }
 
@@ -104,10 +124,15 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   reporters,
   tickers,
   ads,
+  mandiRates = [],
   apiPool,
   auditLogs,
   districts,
   categories,
+  currentRole = 'MASTER_ADMIN',
+  accountRole = currentRole,
+  onSwitchPersona,
+  onNavigateTab,
   onApproveArticle,
   onRequestRevision,
   onRejectArticle,
@@ -116,10 +141,15 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   onDeleteTicker,
   onUpdateReporterRole,
   onToggleAdActive,
+  onAddAd,
+  onDeleteAd,
+  onAddMandiRate,
+  onUpdateMandiRate,
+  onDeleteMandiRate,
   onBroadcastAlert,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs'
+    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs'
   >('overview');
 
   // Review Queue state
@@ -141,6 +171,28 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   const [broadcastHeadline, setBroadcastHeadline] = useState('');
   const [broadcastDistrict, setBroadcastDistrict] = useState('पूरा मध्य प्रदेश');
   const [broadcastToast, setBroadcastToast] = useState<string | null>(null);
+  const [adminNotice, setAdminNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+
+  // New Ad Banner Form State
+  const [newAdTitle, setNewAdTitle] = useState('');
+  const [newAdAdvertiser, setNewAdAdvertiser] = useState('');
+  const [newAdPlacement, setNewAdPlacement] = useState<'top_leaderboard' | 'sidebar' | 'in_feed' | 'sticky_bottom'>('top_leaderboard');
+  const [newAdImageUrl, setNewAdImageUrl] = useState(
+    'https://images.unsplash.com/photo-1516426122078-c23e76319801?w=1200&auto=format&fit=crop&q=80'
+  );
+  const [newAdTargetUrl, setNewAdTargetUrl] = useState('https://breakingnewswala.com');
+
+  // Mandi Rates CRUD State
+  const [newMandiCommodity, setNewMandiCommodity] = useState('');
+  const [newMandiName, setNewMandiName] = useState('');
+  const [newMandiDistrict, setNewMandiDistrict] = useState('भोपाल');
+  const [newMandiModalPrice, setNewMandiModalPrice] = useState('');
+  const [newMandiMinPrice, setNewMandiMinPrice] = useState('');
+  const [newMandiMaxPrice, setNewMandiMaxPrice] = useState('');
+  const [editingMandiId, setEditingMandiId] = useState<string | null>(null);
+  const [editMandiModal, setEditMandiModal] = useState('');
+  const [editMandiMin, setEditMandiMin] = useState('');
+  const [editMandiMax, setEditMandiMax] = useState('');
 
   // Reporter Search / Filter
   const [reporterSearch, setReporterSearch] = useState('');
@@ -523,7 +575,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
       );
       setAuditResult(res);
     } catch {
-      alert('AI तथ्य-जांच विश्लेषण में समस्या हुई।');
+      setAdminNotice({ type: 'error', text: 'AI तथ्य-जांच विश्लेषण में समस्या हुई।' });
     } finally {
       setIsAuditing(false);
     }
@@ -544,16 +596,61 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
     onAddTicker(newTicker);
     setNewTickerText('');
+    setAdminNotice({ type: 'success', text: 'नया ब्रेकिंग टिकर लाइव किया गया।' });
+  };
+
+  const handleCreateAdSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdTitle.trim() || !newAdAdvertiser.trim()) {
+      setAdminNotice({ type: 'error', text: 'कृपया विज्ञापन शीर्षक व विज्ञापनदाता का नाम भरें।' });
+      return;
+    }
+    await onAddAd?.({
+      title: newAdTitle.trim(),
+      advertiserName: newAdAdvertiser.trim(),
+      placement: newAdPlacement,
+      imageUrl: newAdImageUrl.trim() || 'https://images.unsplash.com/photo-1516426122078-c23e76319801?w=1200&auto=format&fit=crop&q=80',
+      targetUrl: newAdTargetUrl.trim() || 'https://breakingnewswala.com',
+      isActive: true,
+    });
+    setNewAdTitle('');
+    setNewAdAdvertiser('');
+    setAdminNotice({ type: 'success', text: 'नया विज्ञापन स्लॉट सफलतापूर्वक जोड़ा गया।' });
+  };
+
+  const handleCreateMandiSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMandiCommodity.trim() || !newMandiName.trim() || !newMandiModalPrice) {
+      setAdminNotice({ type: 'error', text: 'कृपया फसल, मंडी व मॉडल भाव अवश्य दर्ज करें।' });
+      return;
+    }
+    const modal = Number(newMandiModalPrice);
+    const min = Number(newMandiMinPrice) || Math.round(modal * 0.9);
+    const max = Number(newMandiMaxPrice) || Math.round(modal * 1.1);
+    await onAddMandiRate?.({
+      commodityName: newMandiCommodity.trim(),
+      mandiName: newMandiName.trim(),
+      districtName: newMandiDistrict.trim() || 'भोपाल',
+      modalPrice: modal,
+      minPrice: min,
+      maxPrice: max,
+    });
+    setNewMandiCommodity('');
+    setNewMandiName('');
+    setNewMandiModalPrice('');
+    setNewMandiMinPrice('');
+    setNewMandiMaxPrice('');
+    setAdminNotice({ type: 'success', text: 'नया मंडी भाव सफलतापूर्वक अपडेट किया गया।' });
   };
 
   const handleSendBroadcast = () => {
     if (!broadcastHeadline.trim()) {
-      alert('कृपया अलर्ट शीर्षक दर्ज करें।');
+      setAdminNotice({ type: 'error', text: 'कृपया अलर्ट शीर्षक दर्ज करें।' });
       return;
     }
     onBroadcastAlert(broadcastHeadline.trim(), broadcastDistrict);
     setShowBroadcastModal(false);
-    setBroadcastToast(`🚨 [डेमो] सिम्युलेटेड राज्यव्यापी अलर्ट जारी (स्थानीय पूर्वावलोकन)`);
+    setBroadcastToast(`🚨 राज्यव्यापी अलर्ट जारी किया गया: ${broadcastHeadline.trim()}`);
     setBroadcastHeadline('');
     setTimeout(() => setBroadcastToast(null), 4000);
   };
@@ -570,48 +667,44 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
   return (
     <div className="bg-slate-100 min-h-screen pb-24 font-sans">
-      {/* 1. Header Bar */}
-      <div className="bg-slate-900 text-white px-4 py-5 border-b border-slate-800 shadow-md">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-red-600/20 border border-red-500/40 rounded-xl text-red-400">
-              <ShieldCheck className="w-6 h-6 text-red-500" />
+      {/* 1. Compact Header Bar + 3-Tab Persona Switcher */}
+      <div className="bg-slate-900 text-white px-4 py-3 border-b border-slate-800 shadow-sm">
+        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-red-600/20 border border-red-500/40 rounded-lg text-red-400 shrink-0">
+              <ShieldCheck className="w-5 h-5 text-red-500" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg md:text-xl font-black tracking-tight font-serif">
-                  एडमिनिस्ट्रेटिव कंट्रोल रूम (Admin Newsroom Console)
+                <h1 className="text-base md:text-lg font-black tracking-tight font-serif">
+                  एडमिनिस्ट्रेटिव कंट्रोल रूम
                 </h1>
                 <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-black rounded-full uppercase tracking-wider">
                   MASTER SUITE
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-[11px] text-slate-400">
                 55 जिलों का केंद्रीय संपादकीय, संवाददाता मान्यता, विज्ञापन एवं सिस्टम मॉनिटर
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowBroadcastModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors whitespace-nowrap"
             >
-              <Radio className="w-4 h-4 animate-pulse text-white" />
+              <Radio className="w-3.5 h-3.5 animate-pulse text-white" />
               <span>राज्यव्यापी ब्रेकिंग अलर्ट</span>
             </button>
-            <div className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs font-bold text-amber-400 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              <span>सिस्टम स्थिति: डेमो पूर्वावलोकन (In-Memory)</span>
-            </div>
           </div>
         </div>
       </div>
 
       {/* Broadcast Toast Notification */}
       {broadcastToast && (
-        <div className="max-w-7xl mx-auto mt-3 px-4">
-          <div className="bg-red-600 text-white p-3 rounded-xl shadow-lg text-xs font-bold flex items-center justify-between">
+        <div className="max-w-7xl mx-auto mt-2.5 px-4">
+          <div className="bg-red-600 text-white p-2.5 rounded-xl shadow-lg text-xs font-bold flex items-center justify-between">
             <span>{broadcastToast}</span>
             <button onClick={() => setBroadcastToast(null)} className="text-white hover:text-slate-200">
               ✕
@@ -620,28 +713,45 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
         </div>
       )}
 
-      {/* 2. Horizontal Navigation Tabs */}
-      <div className="bg-white border-b border-slate-200 sticky top-[57px] z-30 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-4 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs font-bold">
+      {adminNotice && (
+        <div className="max-w-7xl mx-auto mt-2.5 px-4">
+          <div
+            className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between ${
+              adminNotice.type === 'error'
+                ? 'bg-rose-50 border-rose-300 text-rose-800'
+                : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+            }`}
+          >
+            <span>{adminNotice.text}</span>
+            <button onClick={() => setAdminNotice(null)} className="px-2 font-bold">
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Sticky Admin Navigation + Remaining Header Desks/Studios Inside Tabs */}
+      <div className="bg-white border-b border-slate-200 sticky top-[56px] z-30 shadow-2xs">
+        <div className="max-w-7xl mx-auto px-4 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-bold">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'overview'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'overview'
               ? 'border-red-600 text-red-600'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <Activity className="w-4 h-4" />
+            <Activity className="w-3.5 h-3.5" />
             <span>सिस्टम ओवरव्यू</span>
           </button>
 
           <button
             onClick={() => setActiveTab('review_queue')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'review_queue'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'review_queue'
               ? 'border-red-600 text-red-600'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <FileText className="w-4 h-4" />
+            <FileText className="w-3.5 h-3.5" />
             <span>समीक्षा कतार</span>
             {pendingArticles.length > 0 && (
               <span className="px-1.5 py-0.2 bg-red-600 text-white rounded-full text-[10px]">
@@ -652,85 +762,161 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
           <button
             onClick={() => setActiveTab('reporters')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'reporters'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'reporters'
               ? 'border-red-600 text-red-600'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <Users className="w-4 h-4" />
+            <Users className="w-3.5 h-3.5" />
             <span>संवाददाता मान्यता ({reporters.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('tickers')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'tickers'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'tickers'
               ? 'border-red-600 text-red-600'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <Radio className="w-4 h-4" />
+            <Radio className="w-3.5 h-3.5" />
             <span>ब्रेकिंग टिकर ({tickers.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('ads')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'ads'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'ads'
               ? 'border-red-600 text-red-600'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <Zap className="w-4 h-4 text-amber-500" />
-            <span>विज्ञापन प्रबंधन</span>
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span>विज्ञापन ({ads.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('mandi')}
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'mandi'
+              ? 'border-emerald-600 text-emerald-700 font-bold'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <Wheat className="w-3.5 h-3.5 text-emerald-600" />
+            <span>मंडी भाव ({mandiRates.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('monetization')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'monetization'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'monetization'
               ? 'border-emerald-600 text-emerald-600 font-bold'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <DollarSign className="w-4 h-4 text-emerald-600" />
+            <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
             <span>बिजनेस व मुद्रीकरण</span>
           </button>
 
           <button
             onClick={() => setActiveTab('audience')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audience'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audience'
               ? 'border-indigo-600 text-indigo-600 font-bold'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <Users className="w-4 h-4 text-indigo-600" />
+            <Users className="w-3.5 h-3.5 text-indigo-600" />
             <span>दर्शक व सहभागिता</span>
           </button>
 
           <button
             onClick={() => setActiveTab('api_pool')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'api_pool'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'api_pool'
               ? 'border-red-600 text-red-600'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <Server className="w-4 h-4 text-indigo-500" />
-            <span>AI API Pool स्वास्थ्य</span>
+            <Server className="w-3.5 h-3.5 text-indigo-500" />
+            <span>AI API Pool</span>
           </button>
 
           <button
             onClick={() => setActiveTab('audit_logs')}
-            className={`py-3.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audit_logs'
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audit_logs'
               ? 'border-red-600 text-red-600'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
-            <ShieldCheck className="w-4 h-4 text-emerald-500" />
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
             <span>ऑडिट लॉग्स</span>
           </button>
         </div>
+
+        {/* Remaining Workspaces & Studios Bar (moved cleanly out of top header into tabs) */}
+        {onNavigateTab && (
+          <div className="bg-slate-50 border-t border-slate-100">
+            <div className="max-w-7xl mx-auto px-4 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-[11px] font-bold">
+              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+                डेस्क व स्टूडियो:
+              </span>
+              <button
+                onClick={() => onNavigateTab('newsroom')}
+                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-red-300 hover:text-red-600 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
+              >
+                <Building2 className="w-3 h-3 text-red-600" />
+                <span>न्यूज़रूम डेस्क</span>
+                {pendingArticles.length > 0 && (
+                  <span className="px-1 bg-red-600 text-white rounded-full text-[9px]">
+                    {pendingArticles.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => onNavigateTab('reporter')}
+                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-blue-300 hover:text-blue-700 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
+              >
+                <PenTool className="w-3 h-3 text-blue-600" />
+                <span>रिपोर्टर डेस्क</span>
+              </button>
+              <button
+                onClick={() => onNavigateTab('epaper')}
+                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-blue-300 hover:text-[#344FD6] text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
+              >
+                <Newspaper className="w-3 h-3 text-[#344FD6]" />
+                <span>ई-पेपर (Admin)</span>
+              </button>
+              <button
+                onClick={() => onNavigateTab('graphics')}
+                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-orange-300 hover:text-orange-700 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
+              >
+                <Palette className="w-3 h-3 text-orange-500" />
+                <span>ग्राफ़िक्स स्टूडियो</span>
+              </button>
+              <button
+                onClick={() => onNavigateTab('videos')}
+                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-red-300 hover:text-[#ED1727] text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
+              >
+                <Video className="w-3 h-3 text-[#ED1727]" />
+                <span>वीडियो स्टूडियो</span>
+              </button>
+              <button
+                onClick={() => onNavigateTab('ai-newsroom')}
+                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-amber-300 hover:text-amber-700 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
+              >
+                <Bot className="w-3 h-3 text-amber-500" />
+                <span>AI न्यूज़ रूम</span>
+              </button>
+              <button
+                onClick={() => onNavigateTab('profile')}
+                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-slate-300 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
+              >
+                <Bookmark className="w-3 h-3 text-slate-600" />
+                <span>सेव्ड समाचार व मोड</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 3. Tab Body Container */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-4 py-4">
         {/* TAB 1: OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
@@ -1057,7 +1243,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                             type="button"
                             onClick={() => {
                               if (!revisionComments.trim()) {
-                                alert('कृपया संशोधन निर्देश लिखें।');
+                                setAdminNotice({ type: 'error', text: 'कृपया संशोधन निर्देश लिखें।' });
                                 return;
                               }
                               onRequestRevision(selectedReviewArticle.id, revisionComments);
@@ -1345,59 +1531,349 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
         {/* TAB 5: ADS */}
         {activeTab === 'ads' && (
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
-            <div className="border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">
-                हाइपरलोकल विज्ञापन अभियान प्रबंधन (AscAdBanner Slots)
+          <div className="space-y-6">
+            {/* Create Ad Slot Form */}
+            <form
+              onSubmit={handleCreateAdSubmit}
+              className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3 text-xs"
+            >
+              <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
+                <Plus className="w-4 h-4 text-red-600" />
+                नया हाइपरलोकल विज्ञापन स्लॉट जोड़ें (AscAdBanner Slot)
               </h3>
-              <p className="text-xs text-slate-500">
-                मध्य प्रदेश के प्रमुख विभागों व ब्रांड्स के प्रायोजित प्रचार स्लॉट्स
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {ads.map((ad) => (
-                <div
-                  key={ad.id}
-                  className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-2.5 text-xs"
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <input
+                  type="text"
+                  value={newAdTitle}
+                  onChange={(e) => setNewAdTitle(e.target.value)}
+                  placeholder="विज्ञापन शीर्षक *"
+                  className="p-2 border border-slate-300 rounded-lg md:col-span-2"
+                  required
+                />
+                <input
+                  type="text"
+                  value={newAdAdvertiser}
+                  onChange={(e) => setNewAdAdvertiser(e.target.value)}
+                  placeholder="विज्ञापनदाता नाम *"
+                  className="p-2 border border-slate-300 rounded-lg"
+                  required
+                />
+                <select
+                  value={newAdPlacement}
+                  onChange={(e) => setNewAdPlacement(e.target.value as any)}
+                  className="p-2 border border-slate-300 rounded-lg bg-white"
                 >
-                  <div className="relative aspect-video rounded-lg overflow-hidden border border-slate-300">
-                    <img src={ad.imageUrl} alt={ad.title} className="w-full h-full object-cover" />
-                    <span className="absolute top-1 right-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded uppercase font-bold">
-                      {ad.placement}
-                    </span>
-                  </div>
+                  <option value="top_leaderboard">Top Leaderboard (शीर्ष)</option>
+                  <option value="sidebar">Sidebar Box (साइडबार)</option>
+                  <option value="in_feed">In-Feed (फीड के बीच)</option>
+                  <option value="sticky_bottom">Sticky Bottom (निचला पट्टी)</option>
+                </select>
+                <button
+                  type="submit"
+                  className="py-2 px-3 bg-[#ED1727] hover:bg-red-700 text-white font-bold rounded-lg shadow-xs"
+                >
+                  + स्लॉट जोड़ें
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={newAdImageUrl}
+                  onChange={(e) => setNewAdImageUrl(e.target.value)}
+                  placeholder="बैनर इमेज URL (https://...)"
+                  className="p-2 border border-slate-300 rounded-lg"
+                />
+                <input
+                  type="text"
+                  value={newAdTargetUrl}
+                  onChange={(e) => setNewAdTargetUrl(e.target.value)}
+                  placeholder="टार्गेट लिंक URL (https://...)"
+                  className="p-2 border border-slate-300 rounded-lg"
+                />
+              </div>
+            </form>
 
+            {/* Ad Slots Grid with Live Telemetry */}
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-base font-bold text-slate-900">
+                  हाइपरलोकल विज्ञापन अभियान एवं लाइव प्रदर्शन ({ads.length})
+                </h3>
+                <p className="text-xs text-slate-500">
+                  रीयल-टाइम इंप्रेशन व क्लिक टेलीमेट्री सहित मध्य प्रदेश के प्रायोजित प्रचार स्लॉट्स
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {ads.map((ad) => (
+                  <div
+                    key={ad.id}
+                    className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 space-y-2.5 text-xs"
+                  >
+                    <div className="relative aspect-video rounded-lg overflow-hidden border border-slate-300">
+                      <img src={ad.imageUrl} alt={ad.title} className="w-full h-full object-cover" />
+                      <span className="absolute top-1 right-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded uppercase font-bold">
+                        {ad.placement}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-blue-600 font-bold block">
+                        विज्ञापनदाता: {ad.advertiserName}
+                      </span>
+                      <h4 className="font-bold text-slate-900 line-clamp-2 mt-0.5">{ad.title}</h4>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[10px] font-bold">
+                      <span className="px-2 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded">
+                        👁 इंप्रेशन: {ad.impressionsCount ?? 0}
+                      </span>
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded">
+                        👆 क्लिक्स: {ad.clicksCount ?? 0}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => onToggleAdActive(ad.id)}
+                        className={`px-2.5 py-1 rounded text-[11px] font-bold ${ad.isActive
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-200 text-slate-700'
+                          }`}
+                      >
+                        {ad.isActive ? 'सक्रिय (Live)' : 'बंद (Paused)'}
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={ad.targetUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-[11px]"
+                        >
+                          <span>लिंक</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                        {onDeleteAd && (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteAd(ad.id)}
+                            className="p-1 text-slate-400 hover:text-red-600 rounded"
+                            title="विज्ञापन हटाएं"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5B: MANDI RATES CRUD */}
+        {activeTab === 'mandi' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+              <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
+                <Wheat className="w-4 h-4 text-emerald-600" />
+                नया कृषि उपज मंडी भाव दर्ज करें
+              </h3>
+              <form onSubmit={handleCreateMandiSubmit} className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">फसल / जिंस *</label>
+                  <input
+                    type="text"
+                    value={newMandiCommodity}
+                    onChange={(e) => setNewMandiCommodity(e.target.value)}
+                    placeholder="उदा. सोयाबीन (पीला) / शरबती गेहूं"
+                    className="w-full p-2 border border-slate-300 rounded-lg"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">मंडी का नाम *</label>
+                  <input
+                    type="text"
+                    value={newMandiName}
+                    onChange={(e) => setNewMandiName(e.target.value)}
+                    placeholder="उदा. सीहोर कृषि उपज मंडी"
+                    className="w-full p-2 border border-slate-300 rounded-lg"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">ज़िला *</label>
+                  <select
+                    value={newMandiDistrict}
+                    onChange={(e) => setNewMandiDistrict(e.target.value)}
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                  >
+                    {districts.map((d) => (
+                      <option key={d.id} value={d.nameHi}>
+                        {d.nameHi}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <span className="text-[10px] text-blue-600 font-bold block">
-                      विज्ञापनदाता: {ad.advertiserName}
-                    </span>
-                    <h4 className="font-bold text-slate-900 line-clamp-2 mt-0.5">{ad.title}</h4>
+                    <label className="block font-bold text-slate-700 mb-1">न्यूनतम ₹</label>
+                    <input
+                      type="number"
+                      value={newMandiMinPrice}
+                      onChange={(e) => setNewMandiMinPrice(e.target.value)}
+                      placeholder="4200"
+                      className="w-full p-2 border border-slate-300 rounded-lg"
+                    />
                   </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                    <button
-                      onClick={() => onToggleAdActive(ad.id)}
-                      className={`px-2.5 py-1 rounded text-[11px] font-bold ${ad.isActive
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-200 text-slate-700'
-                        }`}
-                    >
-                      {ad.isActive ? 'सक्रिय (Live)' : 'बंद (Paused)'}
-                    </button>
-
-                    <a
-                      href={ad.targetUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-slate-500 hover:text-slate-800 flex items-center gap-1 text-[11px]"
-                    >
-                      <span>लिंक देखें</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">मॉडल ₹ *</label>
+                    <input
+                      type="number"
+                      value={newMandiModalPrice}
+                      onChange={(e) => setNewMandiModalPrice(e.target.value)}
+                      placeholder="4750"
+                      className="w-full p-2 border border-slate-300 rounded-lg"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">अधिकतम ₹</label>
+                    <input
+                      type="number"
+                      value={newMandiMaxPrice}
+                      onChange={(e) => setNewMandiMaxPrice(e.target.value)}
+                      placeholder="5100"
+                      className="w-full p-2 border border-slate-300 rounded-lg"
+                    />
                   </div>
                 </div>
-              ))}
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs"
+                >
+                  मंडी भाव लाइव प्रकाशित करें
+                </button>
+              </form>
+            </div>
+
+            <div className="lg:col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-sm font-bold text-slate-900">
+                  मध्य प्रदेश मंडी भाव सूची ({mandiRates.length} मंडियां)
+                </h3>
+                <span className="text-[11px] text-emerald-700 font-semibold">होमपेज से रीयल-टाइम सिंक</span>
+              </div>
+
+              <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] border-b border-slate-200 sticky top-0">
+                    <tr>
+                      <th className="py-2 px-2.5">जिंस व मंडी</th>
+                      <th className="py-2 px-2.5">ज़िला</th>
+                      <th className="py-2 px-2.5">मॉडल भाव (₹/क्विंटल)</th>
+                      <th className="py-2 px-2.5">रेंज</th>
+                      <th className="py-2 px-2.5 text-right">कार्रवाई</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {mandiRates.map((m) => {
+                      const isRowEditing = editingMandiId === m.id;
+                      return (
+                        <tr key={m.id} className="hover:bg-slate-50">
+                          <td className="py-2.5 px-2.5">
+                            <span className="font-bold text-slate-900 block">{m.commodityName}</span>
+                            <span className="text-[11px] text-slate-500">{m.mandiName}</span>
+                          </td>
+                          <td className="py-2.5 px-2.5 font-semibold text-blue-700">{m.districtName}</td>
+                          <td className="py-2.5 px-2.5">
+                            {isRowEditing ? (
+                              <input
+                                type="number"
+                                value={editMandiModal}
+                                onChange={(e) => setEditMandiModal(e.target.value)}
+                                className="w-20 p-1 border border-emerald-400 rounded text-xs font-bold"
+                              />
+                            ) : (
+                              <span className="font-extrabold text-emerald-700">
+                                ₹ {m.modalPrice.toLocaleString('hi-IN')}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-2.5 text-slate-600">
+                            {isRowEditing ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  value={editMandiMin}
+                                  onChange={(e) => setEditMandiMin(e.target.value)}
+                                  className="w-16 p-1 border border-slate-300 rounded text-xs"
+                                />
+                                <span>-</span>
+                                <input
+                                  type="number"
+                                  value={editMandiMax}
+                                  onChange={(e) => setEditMandiMax(e.target.value)}
+                                  className="w-16 p-1 border border-slate-300 rounded text-xs"
+                                />
+                              </div>
+                            ) : (
+                              `₹ ${m.minPrice} - ₹ ${m.maxPrice}`
+                            )}
+                          </td>
+                          <td className="py-2.5 px-2.5 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              {isRowEditing ? (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await onUpdateMandiRate?.(m.id, {
+                                      modalPrice: Number(editMandiModal) || m.modalPrice,
+                                      minPrice: Number(editMandiMin) || m.minPrice,
+                                      maxPrice: Number(editMandiMax) || m.maxPrice,
+                                    });
+                                    setEditingMandiId(null);
+                                    setAdminNotice({ type: 'success', text: `${m.commodityName} का भाव अपडेट हुआ।` });
+                                  }}
+                                  className="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] font-bold"
+                                >
+                                  सेव
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingMandiId(m.id);
+                                    setEditMandiModal(String(m.modalPrice));
+                                    setEditMandiMin(String(m.minPrice));
+                                    setEditMandiMax(String(m.maxPrice));
+                                  }}
+                                  className="p-1 text-slate-500 hover:text-blue-600 rounded"
+                                  title="संपादित करें"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => onDeleteMandiRate?.(m.id)}
+                                className="p-1 text-slate-400 hover:text-red-600 rounded"
+                                title="हटाएं"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
