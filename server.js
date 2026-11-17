@@ -32,8 +32,19 @@ const MIME_TYPES = {
   '.wav': 'audio/wav',
 };
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const portArgIdx = process.argv.indexOf('--port');
+const cliPort = portArgIdx !== -1 ? parseInt(process.argv[portArgIdx + 1], 10) : NaN;
+const envPort = (process.env.NGINX_PORT && process.env.PORT === process.env.NGINX_PORT)
+  ? process.env.DEFAULT_APP_PORT
+  : process.env.PORT;
+const PORT = !Number.isNaN(cliPort)
+  ? cliPort
+  : parseInt(envPort || process.env.DEFAULT_APP_PORT || '3000', 10);
 const HOST = '0.0.0.0';
+
+const isProduction = process.env.NODE_ENV === 'production';
+const isDevMode = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test';
+let viteServer = null;
 
 const server = http.createServer((req, res) => {
   let parsedUrl;
@@ -78,7 +89,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 3. Static asset and SPA HTML serving
+  // 3. Vite dev middleware in development mode (serves React SPA + TSX/Tailwind + /public)
+  if (viteServer) {
+    return viteServer.middlewares(req, res);
+  }
+
+  // 4. Static asset and SPA HTML serving (production / test)
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { 'Content-Type': 'text/plain; charset=UTF-8' });
     res.end('Method Not Allowed');
@@ -171,7 +187,6 @@ const server = http.createServer((req, res) => {
 });
 
 // Production startup validation guards
-const isProduction = process.env.NODE_ENV === 'production';
 if (isProduction && !fs.existsSync(INDEX_HTML)) {
   console.error(`[FATAL] Production build directory or index.html missing at ${INDEX_HTML}. Run 'npm run build' before starting production server.`);
   process.exit(1);
@@ -181,23 +196,42 @@ if (isProduction && !fs.existsSync(INDEX_HTML)) {
 if (typeof adapter?.init === 'function') {
   try {
     await adapter.init();
-    console.log(`[production] Persistence adapter initialized: ${adapter.getHealth?.().adapterType} (${adapter.getHealth?.().status})`);
+    console.log(`[server] Persistence adapter initialized: ${adapter.getHealth?.().adapterType} (${adapter.getHealth?.().status})`);
   } catch (err) {
-    console.warn('[production] Persistence adapter initialization deferred:', err.message);
+    console.warn('[server] Persistence adapter initialization deferred:', err.message);
   }
 }
 
+// Initialize Vite middleware in development mode before listening
+if (isDevMode) {
+  const { createServer: createViteServer } = await import('vite');
+  viteServer = await createViteServer({
+    server: {
+      middlewareMode: true,
+      allowedHosts: true,
+      hmr: false,
+    },
+    appType: 'spa',
+  });
+  console.log('[server] Vite development middleware initialized');
+}
+
 server.listen(PORT, HOST, () => {
-  console.log(`[production] Server (PID: ${process.pid}) listening on http://${HOST}:${PORT}`);
-  console.log(`[production] Serving static directory: ${DIST_DIR}`);
+  console.log(`[server] Server (PID: ${process.pid}) listening on http://${HOST}:${PORT}`);
+  console.log(`[server] Serving static directory: ${DIST_DIR}`);
 });
 
-process.on('SIGTERM', () => {
-  console.log('[production] Received SIGTERM, shutting down gracefully');
+const shutdown = async (signal) => {
+  console.log(`[server] Received ${signal}, shutting down gracefully`);
+  if (viteServer) {
+    try {
+      await viteServer.close();
+    } catch {
+      // ignore
+    }
+  }
   server.close(() => process.exit(0));
-});
+};
 
-process.on('SIGINT', () => {
-  console.log('[production] Received SIGINT, shutting down gracefully');
-  server.close(() => process.exit(0));
-});
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
