@@ -2,10 +2,12 @@ package com.breakingnewswala.data.repository
 
 import com.breakingnewswala.data.model.ArticleStatus
 import com.breakingnewswala.data.model.BookmarkItem
+import com.breakingnewswala.data.model.EpaperEdition
 import com.breakingnewswala.data.model.NewsArticle
 import com.breakingnewswala.data.model.NewsTaxonomy
 import com.breakingnewswala.data.model.UserProfile
 import com.breakingnewswala.data.model.UserRole
+import com.breakingnewswala.data.SeedNewsData
 import com.breakingnewswala.firebase.OperationType
 import com.breakingnewswala.firebase.handleFirestoreError
 import com.google.firebase.auth.FirebaseAuth
@@ -138,6 +140,50 @@ class NewsRepository(
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
                     )
                 }.sortedByDescending { it.createdAt?.seconds ?: 0L }
+            }
+
+    fun observePublishedEpaperEditions(): Flow<List<EpaperEdition>> =
+        db.collection("epaper_editions")
+            .whereEqualTo("status", "PUBLISHED")
+            .snapshots()
+            .map { querySnapshot ->
+                val list = querySnapshot.documents.mapNotNull { doc ->
+                    try {
+                        val id = doc.id
+                        val city = doc.getString("cityOrEdition") ?: doc.getString("title") ?: "दैनिक ई-पेपर"
+                        val state = doc.getString("state") ?: "मध्य प्रदेश"
+                        val date = doc.getString("editionDate") ?: doc.getString("publicationDate") ?: ""
+                        val pages = (doc.getLong("pagesCount") ?: doc.getLong("totalPages") ?: 12L).toInt()
+                        val lead = doc.getString("leadHeadline") ?: doc.getString("title") ?: ""
+                        val summary = doc.getString("leadSummary") ?: ""
+                        val sec = doc.getString("secondHeadline") ?: ""
+                        val third = doc.getString("thirdHeadline") ?: ""
+                        val pdf = doc.getString("pdfUrl")
+                        val thumb = doc.getString("thumbnailUrl")
+                        EpaperEdition(
+                            id = id,
+                            cityOrEdition = city,
+                            state = state,
+                            editionDate = date,
+                            pagesCount = pages,
+                            leadHeadline = lead,
+                            leadSummary = summary,
+                            secondHeadline = sec,
+                            thirdHeadline = third,
+                            pdfUrl = pdf,
+                            thumbnailUrl = thumb,
+                            totalPages = pages,
+                            status = "PUBLISHED"
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                if (list.isEmpty()) {
+                    SeedNewsData.epaperEditions
+                } else {
+                    list
+                }
             }
 
     fun observeMyArticles(uid: String): Flow<List<NewsArticle>> =

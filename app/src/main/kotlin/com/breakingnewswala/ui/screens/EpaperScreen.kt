@@ -1,5 +1,11 @@
 package com.breakingnewswala.ui.screens
 
+import android.app.DownloadManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +36,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,17 +55,49 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil.compose.SubcomposeAsyncImage
 import com.breakingnewswala.data.model.EpaperEdition
 import com.breakingnewswala.ui.theme.BrandBlue
 import com.breakingnewswala.ui.theme.BrandRed
 import com.breakingnewswala.ui.theme.BrandYellow
 import com.breakingnewswala.ui.theme.RozhaDisplayFont
+
+private const val BASE_BACKEND_URL = "https://breakingnewswala.com"
+
+private fun triggerDownloadOrOpen(context: Context, url: String, filename: String) {
+    try {
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+        if (dm != null && (url.startsWith("http://") || url.startsWith("https://"))) {
+            val request = DownloadManager.Request(Uri.parse(url))
+                .setTitle(filename)
+                .setDescription("ब्रेकिंग न्यूज़ वाला ई-पेपर")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+            dm.enqueue(request)
+            Toast.makeText(context, "$filename डाउनलोड प्रारंभ हुआ", Toast.LENGTH_SHORT).show()
+        } else {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+    } catch (_: Exception) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(context, "डाउनलोड लिंक खोलने में समस्या आई।", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
 
 @Composable
 fun EpaperScreen(
@@ -92,6 +131,44 @@ fun EpaperScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        if (editions.isEmpty()) {
+            item(key = "empty_epaper") {
+                Surface(
+                    modifier = Modifier
+                        .widthIn(max = 680.dp)
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = null,
+                            tint = BrandRed,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "कोई प्रकाशित ई-पेपर उपलब्ध नहीं है",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "संपादकीय डेस्क द्वारा नया 12-पृष्ठीय संस्करण प्रकाशित होते ही यहाँ प्रदर्शित होगा।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
         }
 
@@ -240,9 +317,17 @@ fun EpaperBroadsheetViewerDialog(
     edition: EpaperEdition,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val totalPages = if (edition.pagesCount > 0) edition.pagesCount else 12
     var selectedPage by remember { mutableIntStateOf(1) }
     var zoomScale by remember { mutableFloatStateOf(1.0f) }
+
+    val pagePngUrl = remember(edition.id, selectedPage) {
+        "$BASE_BACKEND_URL/api/v1/epaper/editions/${edition.id}/pages/$selectedPage/export/png"
+    }
+    val pdfDownloadUrl = remember(edition.id) {
+        edition.pdfUrl ?: "$BASE_BACKEND_URL/api/v1/epaper/editions/${edition.id}/export/pdf"
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -342,72 +427,31 @@ fun EpaperBroadsheetViewerDialog(
                         shape = RoundedCornerShape(4.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            // Newspaper Masthead
-                            Text(
-                                text = "ब्रेकिंग न्यूज़ वाला",
-                                fontFamily = RozhaDisplayFont,
-                                style = MaterialTheme.typography.headlineMedium,
-                                color = BrandRed
-                            )
-                            Text(
-                                text = "मध्य प्रदेश का प्रमुख डिजिटल एवं ब्रॉडशीट दैनिक • पृष्ठ $selectedPage / $totalPages",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.DarkGray
-                            )
-                            HorizontalDivider(
-                                color = BrandYellow,
-                                thickness = 2.dp,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-
-                            // Page Content Summary
-                            Text(
-                                text = if (selectedPage == 1) edition.leadHeadline else "पृष्ठ $selectedPage: जिला एवं संभागीय विशेष समाचार",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = if (selectedPage == 1) edition.leadSummary else "इस पृष्ठ पर मध्य प्रदेश के संबंधित जिले के प्रशासनिक, विकास व अपराध संबंधी सत्यापित समाचार प्रस्तुत हैं। 10-पॉइंट फैक्ट-चेकिंग द्वारा अधिकृत।",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray,
-                                textAlign = TextAlign.Justify
-                            )
-
-                            Spacer(modifier = Modifier.weight(1f))
-
-                            // Print Quality Banner
-                            Surface(
-                                color = Color(0xFFF3F4F6),
-                                shape = RoundedCornerShape(4.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                        SubcomposeAsyncImage(
+                            model = pagePngUrl,
+                            contentDescription = "${edition.cityOrEdition} पृष्ठ $selectedPage",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize(),
+                            loading = {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        text = "मुद्रण मानक: 300 DPI ब्रॉडशीट",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.DarkGray
-                                    )
-                                    Text(
-                                        text = "3886 × 6142 px",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color.DarkGray
-                                    )
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        CircularProgressIndicator(color = BrandRed)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "पृष्ठ $selectedPage लोड हो रहा है...",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.DarkGray
+                                        )
+                                    }
                                 }
+                            },
+                            error = {
+                                BroadsheetPageFallback(edition, selectedPage, totalPages)
                             }
-                        }
+                        )
                     }
                 }
 
@@ -419,7 +463,10 @@ fun EpaperBroadsheetViewerDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { /* In Android runtime, launches PDF download or Intent */ },
+                        onClick = {
+                            val filename = "${edition.cityOrEdition}_12Pages.pdf".replace(" ", "_")
+                            triggerDownloadOrOpen(context, pdfDownloadUrl, filename)
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
                         shape = RoundedCornerShape(8.dp)
@@ -430,13 +477,90 @@ fun EpaperBroadsheetViewerDialog(
                     }
 
                     OutlinedButton(
-                        onClick = { /* Export current page PNG */ },
+                        onClick = {
+                            val filename = "${edition.cityOrEdition}_Page${selectedPage}_300DPI.png".replace(" ", "_")
+                            triggerDownloadOrOpen(context, pagePngUrl, filename)
+                        },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text("पृष्ठ $selectedPage डाउनलोड")
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BroadsheetPageFallback(
+    edition: EpaperEdition,
+    selectedPage: Int,
+    totalPages: Int
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Newspaper Masthead
+        Text(
+            text = "ब्रेकिंग न्यूज़ वाला",
+            fontFamily = RozhaDisplayFont,
+            style = MaterialTheme.typography.headlineMedium,
+            color = BrandRed
+        )
+        Text(
+            text = "मध्य प्रदेश का प्रमुख डिजिटल एवं ब्रॉडशीट दैनिक • पृष्ठ $selectedPage / $totalPages",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.DarkGray
+        )
+        HorizontalDivider(
+            color = BrandYellow,
+            thickness = 2.dp,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        // Page Content Summary
+        Text(
+            text = if (selectedPage == 1) edition.leadHeadline else "पृष्ठ $selectedPage: जिला एवं संभागीय विशेष समाचार",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.Black,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = if (selectedPage == 1) edition.leadSummary else "इस पृष्ठ पर मध्य प्रदेश के संबंधित जिले के प्रशासनिक, विकास व अपराध संबंधी सत्यापित समाचार प्रस्तुत हैं। 10-पॉइंट फैक्ट-चेकिंग द्वारा अधिकृत।",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.Gray,
+            textAlign = TextAlign.Justify
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // Print Quality Banner
+        Surface(
+            color = Color(0xFFF3F4F6),
+            shape = RoundedCornerShape(4.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "मुद्रण मानक: 300 DPI ब्रॉडशीट",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.DarkGray
+                )
+                Text(
+                    text = "3886 × 6142 px",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.DarkGray
+                )
             }
         }
     }

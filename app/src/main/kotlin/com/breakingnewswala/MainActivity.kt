@@ -325,7 +325,9 @@ private fun MainAuthenticatedApp(
                 }
 
                 composable<EpaperRoute> {
-                    EpaperScreen(editions = mainViewModel.epaperEditions)
+                    val epaperUiState by mainViewModel.epaperEditionsState.collectAsStateWithLifecycle()
+                    val editions = (epaperUiState as? UiState.Success)?.data ?: mainViewModel.epaperEditions
+                    EpaperScreen(editions = editions)
                 }
 
                 composable<DeskRoute> {

@@ -53,7 +53,20 @@ class MainViewModel(
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
-    val epaperEditions: List<EpaperEdition> = SeedNewsData.epaperEditions
+    val epaperEditionsState: StateFlow<UiState<List<EpaperEdition>>> =
+        repository.observePublishedEpaperEditions()
+            .map<List<EpaperEdition>, UiState<List<EpaperEdition>>> { UiState.Success(it) }
+            .catch {
+                emit(UiState.Success(SeedNewsData.epaperEditions))
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = UiState.Success(SeedNewsData.epaperEditions)
+            )
+
+    val epaperEditions: List<EpaperEdition>
+        get() = (epaperEditionsState.value as? UiState.Success)?.data ?: SeedNewsData.epaperEditions
 
     init {
         viewModelScope.launch {

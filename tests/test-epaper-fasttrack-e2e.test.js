@@ -440,4 +440,92 @@ test('E-Paper Fast-Track Completion & Security Hardening Test Suite', async (t) 
     const pdfHeader = pdfBuffer.slice(0, 8).toString('utf8');
     assert.ok(pdfHeader.startsWith('%PDF-1.4'), 'PDF buffer must start with %PDF-1.4');
   });
+
+  // --------------------------------------------------------------------------
+  // TEST 9: Complete 12-Page Safe Test Edition Editorial Lifecycle
+  // --------------------------------------------------------------------------
+  await t.test('9. Safe Test Edition 12-page editorial flow with assignments and preflight scan', async () => {
+    // 9a. Create safe test edition
+    const createRes = await mockServer.request('POST', '/api/v1/epaper/editions', {
+      title: 'सुरक्षित परीक्षण 12-पृष्ठीय दैनिक अंक',
+      publicationDate: '2026-11-28',
+      districtId: 'dist-bhopal',
+      editionType: 'DAILY',
+    }, { Authorization: `Bearer ${editorToken}` });
+
+    assert.strictEqual(createRes.statusCode, 201);
+    const edition = createRes.data.data.edition;
+    const editionId = edition.id;
+    const pages = createRes.data.data.pages;
+    assert.strictEqual(pages.length, 12, 'Must contain all 12 canonical pages');
+
+    // 9b. Assign verified news story and ASCI-compliant ad to Page 1
+    const page1 = pages[0];
+    page1.elements = [
+      {
+        id: 'story-lead-01',
+        elementType: 'STORY',
+        headline: 'मध्य प्रदेश में नवीकरणीय ऊर्जा विकास योजना का विस्तार',
+        customBodyText: 'सौर ऊर्जा संयंत्रों की स्थापना से 500 मेगावॉट अतिरिक्त बिजली उत्पादन का लक्ष्य तय।',
+        byline: 'अनिल शर्मा, विशेष संवाददाता',
+        bounds: { x: 40, y: 80, width: 700, height: 300 },
+      },
+      {
+        id: 'ad-commercial-01',
+        elementType: 'AD',
+        adTitle: 'मध्य प्रदेश पर्यटन विकास निगम',
+        asciBadge: true,
+        adStatus: 'APPROVED',
+        bounds: { x: 40, y: 400, width: 350, height: 180 },
+      },
+    ];
+    await adapter.saveEpaperPage(page1);
+
+    // 9c. Run Quality Preflight Scanner
+    const allPages = await adapter.getEpaperPagesByEditionId(editionId);
+    const preflight = QualityPreflightScanner.evaluate(edition, allPages);
+    assert.strictEqual(preflight.canPublish, true, 'Fully configured 12-page edition must pass preflight');
+    assert.strictEqual(preflight.blockers.length, 0, 'Must have zero blockers');
+
+    // 9d. Publish the test edition via API
+    const pubRes = await mockServer.request('POST', `/api/v1/epaper/editions/${editionId}/publish`, {}, {
+      Authorization: `Bearer ${editorToken}`,
+    });
+    assert.strictEqual(pubRes.statusCode, 200);
+    assert.strictEqual(pubRes.data.data.status, 'PUBLISHED');
+    assert.ok(pubRes.data.snapshot, 'Immutable snapshot must be created');
+
+    // 9e. Reader access verified
+    const readerRes = await mockServer.request('GET', `/api/v1/epaper/editions/${editionId}`);
+    assert.strictEqual(readerRes.statusCode, 200);
+    assert.strictEqual(readerRes.data.data.status, 'PUBLISHED');
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST 10: Production GCS Fail-Closed Policy Enforcement
+  // --------------------------------------------------------------------------
+  await t.test('10. Production GCS upload strictly fails closed when bucket credentials unavailable', async () => {
+    const prevEnv = process.env.NODE_ENV;
+    try {
+      // Simulate production environment
+      process.env.NODE_ENV = 'production';
+
+      let failedClosed = false;
+      try {
+        await defaultCloudStorageService.uploadFile({
+          buffer: Buffer.from('TEST_PAYLOAD'),
+          storagePath: 'media/test/fail_closed_probe.jpg',
+          mimeType: 'image/jpeg',
+          isPublic: true,
+        });
+      } catch (err) {
+        failedClosed = true;
+        assert.match(err.message, /Production GCS/i, 'Error message must reflect production GCS failure');
+      }
+
+      assert.strictEqual(failedClosed, true, 'Must throw error and fail closed in production when GCS credentials missing');
+    } finally {
+      process.env.NODE_ENV = prevEnv;
+    }
+  });
 });

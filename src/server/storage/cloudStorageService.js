@@ -103,9 +103,27 @@ export class CloudStorageService {
   }
 
   /**
-   * Uploads binary buffer to Cloud Storage or local disk fallback
+   * Probes live GCS bucket connectivity
+   */
+  async checkConnectivity() {
+    const bucket = this.getBucket();
+    if (!bucket) {
+      return { connected: false, reason: 'Bucket not initialized (credentials unavailable)' };
+    }
+    try {
+      const [exists] = await bucket.exists();
+      return { connected: exists, bucket: this.bucketName };
+    } catch (err) {
+      return { connected: false, error: err.message, code: err.code };
+    }
+  }
+
+  /**
+   * Uploads binary buffer to Cloud Storage or local disk fallback.
+   * In production (NODE_ENV === 'production'), enforces strict fail-closed policy.
    */
   async uploadFile({ buffer, storagePath, mimeType, isPublic = false }) {
+    const isProduction = process.env.NODE_ENV === 'production';
     const bucket = this.getBucket();
 
     // 1. Attempt Cloud Storage Bucket upload if available
@@ -138,8 +156,13 @@ export class CloudStorageService {
           bucket: this.bucketName,
         };
       } catch (gcsErr) {
+        if (isProduction) {
+          throw new Error(`[CloudStorageService] Production GCS upload failed (fail-closed enforced): ${gcsErr.message}`);
+        }
         // Fall back to local storage if bucket upload encounters auth/network issue in dev
       }
+    } else if (isProduction) {
+      throw new Error(`[CloudStorageService] Production GCS bucket unavailable (fail-closed enforced). Check service account credentials and bucket "${this.bucketName}".`);
     }
 
     // 2. Safe local disk fallback (retaining full dev & test compatibility)
