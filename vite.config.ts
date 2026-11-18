@@ -19,6 +19,26 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
     allowedHosts: true,
+    watch: {
+      ignored: [
+        '**/app/**',
+        '**/.gradle/**',
+        '**/.kotlin/**',
+        '**/.build-outputs/**',
+        '**/gradle/**',
+        '**/.data/**',
+        '**/docs/**',
+        '**/dist/**',
+        '**/tests/**',
+        '**/.aistudio/**',
+      ],
+    },
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
+  },
+  optimizeDeps: {
+    entries: ['index.html', 'src/main.tsx'],
   },
   build: {
     rollupOptions: {

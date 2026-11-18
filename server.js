@@ -176,6 +176,7 @@ const server = http.createServer((req, res) => {
 
   // 3. Vite dev middleware in development mode (serves React SPA + TSX/Tailwind + /public)
   if (viteServer) {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
     return viteServer.middlewares(req, res);
   }
 
@@ -241,6 +242,7 @@ const server = http.createServer((req, res) => {
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     };
@@ -289,17 +291,49 @@ if (typeof adapter?.init === 'function') {
 
 // Initialize Vite middleware in development mode before listening
 if (isDevMode) {
+  if (!fs.existsSync(path.join(__dirname, 'node_modules', 'vite'))) {
+    console.log('[server] node_modules/vite missing; running npm install...');
+    const { execSync } = await import('node:child_process');
+    execSync('npm install --no-audit --no-fund', { cwd: __dirname, stdio: 'inherit' });
+  }
   const { createServer: createViteServer } = await import('vite');
   viteServer = await createViteServer({
     server: {
       middlewareMode: true,
       allowedHosts: true,
       hmr: false,
+      watch: {
+        ignored: [
+          '**/app/**',
+          '**/.gradle/**',
+          '**/.kotlin/**',
+          '**/.build-outputs/**',
+          '**/gradle/**',
+          '**/.data/**',
+          '**/docs/**',
+          '**/dist/**',
+          '**/tests/**',
+          '**/.aistudio/**',
+        ],
+      },
+    },
+    optimizeDeps: {
+      entries: ['index.html', 'src/main.tsx'],
     },
     appType: 'spa',
   });
+  viteServer.watcher?.on?.('error', (err) => {
+    console.warn('[server] Vite watcher warning (ignored):', err?.message || err);
+  });
   console.log('[server] Vite development middleware initialized');
 }
+
+server.on('error', (err) => {
+  console.error('[server] HTTP server error:', err?.message || err);
+  if (err?.code === 'EADDRINUSE' || err?.code === 'EACCES') {
+    process.exit(1);
+  }
+});
 
 server.listen(PORT, HOST, () => {
   console.log(`[server] Server (PID: ${process.pid}) listening on http://${HOST}:${PORT}`);

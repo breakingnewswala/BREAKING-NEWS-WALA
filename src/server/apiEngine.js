@@ -21,6 +21,7 @@ import {
   isMasterAdminEmail,
   MASTER_ADMIN_ROLES,
 } from './auth/firebaseAuthService.js';
+import firebaseAppletConfig from '../../firebase-applet-config.json' with { type: 'json' };
 import {
   getPersistenceAdapter,
   LocalJsonAdapter,
@@ -432,6 +433,17 @@ export function handleHealthCheck(req, res) {
               : 'DATABASE_URL not provisioned. Local atomic file storage active in non-production mode.',
       },
       persistence: healthMeta,
+      firebase: {
+        status: firebaseAppletConfig.projectId && firebaseAppletConfig.projectId !== 'remixed-project-id'
+          ? 'connected'
+          : 'unconfigured',
+        projectId: firebaseAppletConfig.projectId || null,
+        authDomain: firebaseAppletConfig.authDomain || null,
+        firestoreDatabaseId: firebaseAppletConfig.firestoreDatabaseId || '(default)',
+        storageBucket: firebaseAppletConfig.storageBucket || null,
+        authEnabled: Boolean(firebaseAppletConfig.apiKey && firebaseAppletConfig.authDomain),
+        clientSdkConfigured: Boolean(firebaseAppletConfig.apiKey && firebaseAppletConfig.appId),
+      },
       queue: {
         status: 'ready',
         type: 'in-process',
