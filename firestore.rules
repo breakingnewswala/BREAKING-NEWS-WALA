@@ -2,100 +2,227 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAuthenticated() {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPERS ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isMasterAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == 'breakingnewswala.com@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isMasterAdmin()
+        || (isSignedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN');
+    }
+
+    function isReporterOrAdmin() {
+      return isMasterAdmin()
+        || (isSignedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['REPORTER', 'ADMIN']);
     }
 
     function isValidTimestamp(val) {
       return val is timestamp && val <= request.time;
     }
 
-    function isValidUser(data) {
-      return data.id is string
-        && data.id == request.auth.uid
+    // --- ENTITY VALIDATION HELPERS ---
+    function isValidUserProfile(data, userId) {
+      return data.uid is string
+        && data.uid == userId
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.email is string
+        && data.email.size() <= 200
         && data.displayName is string
-        && data.displayName.size() > 0
+        && data.displayName.size() >= 1
         && data.displayName.size() <= 100
+        && (!('photoUrl' in data) || data.photoUrl == null || (data.photoUrl is string && data.photoUrl.size() <= 1000))
         && data.role in ['READER', 'REPORTER', 'ADMIN']
-        && (!('email' in data) || (data.email is string && data.email.size() <= 200))
-        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1000))
         && (!('district' in data) || (data.district is string && data.district.size() <= 100))
-        && (!('division' in data) || (data.division is string && data.division.size() <= 100))
-        && (!('state' in data) || (data.state is string && data.state.size() <= 100))
-        && (!('createdAt' in data) || isValidTimestamp(data.createdAt))
-        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+        && data.coins is int
+        && data.coins >= 0
+        && data.coins <= 1000000
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidBookmark(data, userId) {
+      return data.userId is string
+        && data.userId == userId
+        && data.articleId is string
+        && data.articleId.size() >= 1
+        && data.articleId.size() <= 128
+        && data.articleTitle is string
+        && data.articleTitle.size() >= 1
+        && data.articleTitle.size() <= 300
+        && (!('articleCategory' in data) || (data.articleCategory is string && data.articleCategory.size() <= 50))
+        && (!('articleDistrict' in data) || (data.articleDistrict is string && data.articleDistrict.size() <= 100))
+        && (!('articleImageUrl' in data) || data.articleImageUrl == null || (data.articleImageUrl is string && data.articleImageUrl.size() <= 1000))
+        && isValidTimestamp(data.createdAt);
     }
 
     function isValidArticle(data) {
       return data.title is string
-        && data.title.size() > 0
+        && data.title.size() >= 5
         && data.title.size() <= 300
+        && data.summary is string
+        && data.summary.size() <= 1000
+        && data.content is string
+        && data.content.size() >= 10
+        && data.content.size() <= 50000
         && data.category is string
-        && data.category.size() > 0
+        && data.category.size() >= 1
         && data.category.size() <= 50
         && data.district is string
-        && data.district.size() > 0
+        && data.district.size() >= 1
         && data.district.size() <= 100
+        && data.state is string
+        && data.state.size() >= 1
+        && data.state.size() <= 100
         && data.authorId is string
-        && data.authorId == request.auth.uid
+        && data.authorId.size() >= 1
+        && data.authorId.size() <= 128
+        && data.authorName is string
+        && data.authorName.size() >= 1
+        && data.authorName.size() <= 100
+        && data.authorRole in ['REPORTER', 'ADMIN']
         && data.status in ['DRAFT', 'PENDING_VERIFICATION', 'PUBLISHED', 'REJECTED']
-        && (!('excerpt' in data) || (data.excerpt is string && data.excerpt.size() <= 1000))
-        && (!('content' in data) || (data.content is string && data.content.size() <= 50000))
-        && (!('division' in data) || (data.division is string && data.division.size() <= 100))
-        && (!('state' in data) || (data.state is string && data.state.size() <= 100))
-        && (!('authorName' in data) || (data.authorName is string && data.authorName.size() <= 100))
-        && (!('authorRole' in data) || (data.authorRole is string && data.authorRole.size() <= 50))
-        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 1000))
-        && (!('isBreaking' in data) || data.isBreaking is bool)
-        && (!('isLive' in data) || data.isLive is bool)
-        && (!('viewCount' in data) || data.viewCount is int)
-        && (!('createdAt' in data) || isValidTimestamp(data.createdAt))
-        && (!('updatedAt' in data) || isValidTimestamp(data.updatedAt));
+        && (!('imageUrl' in data) || data.imageUrl == null || (data.imageUrl is string && data.imageUrl.size() <= 1000))
+        && data.breaking is bool
+        && data.live is bool
+        && data.viewCount is int
+        && data.viewCount >= 0
+        && data.viewCount <= 100000000
+        && (!('editorialNote' in data) || data.editorialNote == null || (data.editorialNote is string && data.editorialNote.size() <= 1000))
+        && (!('aiScore' in data) || data.aiScore == null || (data.aiScore is int && data.aiScore >= 0 && data.aiScore <= 100))
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
     }
 
-    function isValidBookmark(data) {
-      return data.userId is string
-        && data.userId == request.auth.uid
-        && data.articleId is string
-        && data.articleId.size() > 0
-        && data.articleTitle is string
-        && data.articleTitle.size() > 0
-        && (!('articleCategory' in data) || (data.articleCategory is string && data.articleCategory.size() <= 50))
-        && (!('articleDistrict' in data) || (data.articleDistrict is string && data.articleDistrict.size() <= 100))
-        && (!('articleImageUrl' in data) || (data.articleImageUrl is string && data.articleImageUrl.size() <= 1000))
-        && (!('savedAt' in data) || isValidTimestamp(data.savedAt));
-    }
-
-    // User profiles
+    // --- COLLECTION RULES ---
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isMasterAdmin();
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && incoming().keys().hasAll(['uid', 'email', 'displayName', 'role', 'coins', 'createdAt', 'updatedAt'])
+        && incoming().keys().hasOnly(['uid', 'email', 'displayName', 'photoUrl', 'role', 'district', 'coins', 'createdAt', 'updatedAt'])
+        && isValidUserProfile(incoming(), userId)
+        && incoming().coins == 0
+        && (incoming().role == 'READER' || (incoming().role == 'ADMIN' && isMasterAdmin()));
+
+      allow update: if isValidId(userId)
+        && isSignedIn()
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Action 1: Owner updates their own profile details without escalating role or coins
+          (isOwner(userId)
+            && incoming().role == existing().role
+            && incoming().coins == existing().coins
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'district', 'email', 'updatedAt']))
+          ||
+          // Action 2: Admin assigns role / district / coins
+          (isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['role', 'district', 'coins', 'updatedAt']))
+        );
+
       allow delete: if false;
 
-      // User bookmarks subcollection
       match /bookmarks/{bookmarkId} {
-        allow read: if isOwner(userId);
-        allow create, update: if isOwner(userId) && isValidBookmark(request.resource.data);
-        allow delete: if isOwner(userId);
+        allow get: if isValidId(userId) && isValidId(bookmarkId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+
+        allow create: if isValidId(userId)
+          && isValidId(bookmarkId)
+          && isOwner(userId)
+          && incoming().keys().hasAll(['userId', 'articleId', 'articleTitle', 'createdAt'])
+          && incoming().keys().hasOnly(['userId', 'articleId', 'articleTitle', 'articleCategory', 'articleDistrict', 'articleImageUrl', 'createdAt'])
+          && isValidBookmark(incoming(), userId);
+
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(bookmarkId) && isOwner(userId);
       }
     }
 
-    // Articles collection
     match /articles/{articleId} {
-      allow read: if resource.data.status == 'PUBLISHED'
-        || (isAuthenticated() && resource.data.authorId == request.auth.uid);
-      allow create: if isAuthenticated()
-        && request.resource.data.authorId == request.auth.uid
-        && isValidArticle(request.resource.data);
-      allow update: if isAuthenticated()
-        && (resource.data.authorId == request.auth.uid)
-        && isValidArticle(request.resource.data);
-      allow delete: if isAuthenticated()
-        && resource.data.authorId == request.auth.uid;
+      allow get: if isValidId(articleId)
+        && isSignedIn()
+        && (existing().status == 'PUBLISHED' || existing().authorId == request.auth.uid || isAdmin());
+
+      allow list: if isSignedIn()
+        && (existing().status == 'PUBLISHED' || existing().authorId == request.auth.uid || isMasterAdmin());
+
+      allow create: if isValidId(articleId)
+        && isSignedIn()
+        && isValidArticle(incoming())
+        && incoming().authorId == request.auth.uid
+        && incoming().viewCount == 0
+        && incoming().keys().hasAll(['title', 'summary', 'content', 'category', 'district', 'state', 'authorId', 'authorName', 'authorRole', 'status', 'breaking', 'live', 'viewCount', 'createdAt', 'updatedAt'])
+        && incoming().keys().hasOnly(['title', 'summary', 'content', 'category', 'district', 'state', 'authorId', 'authorName', 'authorRole', 'status', 'imageUrl', 'breaking', 'live', 'viewCount', 'editorialNote', 'aiScore', 'createdAt', 'updatedAt'])
+        && isReporterOrAdmin()
+        && (
+          (incoming().status in ['DRAFT', 'PENDING_VERIFICATION'] && !incoming().breaking && !incoming().live)
+          || isAdmin()
+        );
+
+      allow update: if isValidId(articleId)
+        && isSignedIn()
+        && isValidArticle(incoming())
+        && incoming().authorId == existing().authorId
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Action 1: Author edits non-published draft/pending/rejected article
+          (existing().authorId == request.auth.uid
+            && existing().status in ['DRAFT', 'PENDING_VERIFICATION', 'REJECTED']
+            && incoming().status in ['DRAFT', 'PENDING_VERIFICATION']
+            && !incoming().breaking
+            && !incoming().live
+            && incoming().viewCount == existing().viewCount
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'summary', 'content', 'category', 'district', 'state', 'status', 'imageUrl', 'aiScore', 'updatedAt']))
+          ||
+          // Action 2: Authenticated reader view counter (+1) on published articles
+          (existing().status == 'PUBLISHED'
+            && incoming().viewCount == existing().viewCount + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly(['viewCount']))
+          ||
+          // Action 3: Admin editorial review / publish / reject / breaking / live flags
+          (isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'summary', 'content', 'category', 'district', 'state', 'status', 'imageUrl', 'breaking', 'live', 'editorialNote', 'aiScore', 'updatedAt']))
+        );
+
+      allow delete: if isValidId(articleId)
+        && isSignedIn()
+        && ((existing().authorId == request.auth.uid && existing().status in ['DRAFT', 'REJECTED']) || isAdmin());
     }
   }
 }

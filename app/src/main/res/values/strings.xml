@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Breaking News Wala</string>
+    <string name="app_tagline">भारत के जिलों से, आपके दिलों तक</string>
+    <string name="live_badge">LIVE</string>
+    <string name="sign_in_google">Google से साइन इन करें</string>
+    <string name="sign_out_label">साइन आउट करें</string>
+    <string name="tab_home">होम</string>
+    <string name="tab_search">खोज</string>
+    <string name="tab_epaper">ई-पेपर</string>
+    <string name="tab_desk">डेस्क</string>
+    <string name="tab_profile">प्रोफ़ाइल</string>
+</resources>
