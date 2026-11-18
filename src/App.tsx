@@ -46,7 +46,15 @@ const VideoStudioScreen = React.lazy(() => import('./screens/VideoStudioScreen')
 const AiNewsroomScreen = React.lazy(() => import('./screens/AiNewsroomScreen').then((m) => ({ default: m.AiNewsroomScreen })));
 import { Radio, X } from 'lucide-react';
 import { apiClient, AuthUser, getStoredAccessToken } from './services/apiClient';
-import { auth, onAuthStateChanged, FirebaseUser } from './firebase';
+import {
+  auth,
+  onAuthStateChanged,
+  FirebaseUser,
+  syncUserProfileToFirestore,
+  fetchUserBookmarksFromFirestore,
+  saveBookmarkToFirestore,
+  removeBookmarkFromFirestore,
+} from './firebase';
 
 export const App: React.FC = () => {
   // Navigation & View States
@@ -174,8 +182,15 @@ export const App: React.FC = () => {
       setIsAuthChecking(true);
       try {
         // Authenticated with Firebase: obtain fresh ID token and exchange with backend
-        const idToken = await firebaseUser.getIdToken();
-        const authUserRecord = await apiClient.auth.loginWithFirebase(idToken);
+        let idToken = await firebaseUser.getIdToken();
+        let authUserRecord: AuthUser | null = null;
+        try {
+          authUserRecord = await apiClient.auth.loginWithFirebase(idToken);
+        } catch {
+          // Retry once with forced fresh ID token in case signing keys rotated or token just hydrated
+          idToken = await firebaseUser.getIdToken(true);
+          authUserRecord = await apiClient.auth.loginWithFirebase(idToken);
+        }
         if (!isMounted) return;
 
         if (authUserRecord && authUserRecord.roles && authUserRecord.roles.length > 0) {
@@ -187,6 +202,15 @@ export const App: React.FC = () => {
           if (isNewUserSession) {
             setCurrentRole(resolvedRole);
           }
+          // Sync user profile & bookmarks with live Cloud Firestore
+          syncUserProfileToFirestore(firebaseUser, resolvedRole).catch(() => {});
+          fetchUserBookmarksFromFirestore(firebaseUser.uid)
+            .then((remoteIds) => {
+              if (isMounted && remoteIds.length > 0) {
+                setBookmarkedIds((prev) => Array.from(new Set([...prev, ...remoteIds])));
+              }
+            })
+            .catch(() => {});
         } else {
           lastAuthUidRef.current = null;
           setAuthUser(null);
@@ -206,16 +230,24 @@ export const App: React.FC = () => {
             if (isNewUserSession) {
               setCurrentRole(resolvedRole);
             }
+            syncUserProfileToFirestore(firebaseUser, resolvedRole).catch(() => {});
             return;
           }
         } catch {
           // ignore fallback error
         }
         if (isMounted) {
-          lastAuthUidRef.current = null;
-          setAuthUser(null);
+          // Preserve basic Reader UI identity from verified Firebase Auth without granting elevated roles
+          lastAuthUidRef.current = firebaseUser.uid;
+          setAuthUser({
+            id: firebaseUser.uid,
+            fullName: firebaseUser.displayName || firebaseUser.email || 'पाठक',
+            email: firebaseUser.email || undefined,
+            roles: ['READER'],
+          });
           setAccountRole('READER');
           setCurrentRole('READER');
+          syncUserProfileToFirestore(firebaseUser, 'READER').catch(() => {});
         }
       } finally {
         if (isMounted) {
@@ -431,12 +463,24 @@ export const App: React.FC = () => {
     setUserCoins((prev) => prev + amount);
   };
 
-  // Toggle bookmark
+  // Toggle bookmark (local state + live Cloud Firestore sync when signed in)
   const handleBookmarkToggle = (articleId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    const isCurrentlyBookmarked = bookmarkedIds.includes(articleId);
     setBookmarkedIds((prev) =>
-      prev.includes(articleId) ? prev.filter((id) => id !== articleId) : [...prev, articleId]
+      isCurrentlyBookmarked ? prev.filter((id) => id !== articleId) : [...prev, articleId]
     );
+    const fbUser = auth.currentUser;
+    if (fbUser?.uid) {
+      if (isCurrentlyBookmarked) {
+        removeBookmarkFromFirestore(fbUser.uid, articleId).catch(() => {});
+      } else {
+        const targetArticle = articles.find((a) => a.id === articleId);
+        if (targetArticle) {
+          saveBookmarkToFirestore(fbUser.uid, targetArticle).catch(() => {});
+        }
+      }
+    }
   };
 
   // Share article helper (iFrame-safe: Web Share API + Clipboard toast, never window.open)

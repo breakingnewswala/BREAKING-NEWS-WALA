@@ -142,9 +142,14 @@ export class FirebaseAuthService {
 
     // 8. Cryptographic RSA-SHA256 signature verification with Google Public Keys
     try {
-      const publicKeys = await this.fetchGooglePublicKeys();
+      let publicKeys = await this.fetchGooglePublicKeys();
       const kid = header.kid;
-      const cert = publicKeys[kid];
+      let cert = publicKeys[kid];
+      if (!cert && kid) {
+        // Key may have rotated recently; force-refresh Google certs once
+        publicKeys = await this.fetchGooglePublicKeys(true);
+        cert = publicKeys[kid];
+      }
       if (!cert) {
         throw new Error(`ERR_UNKNOWN_KID: No public key matching kid "${kid}".`);
       }
@@ -175,14 +180,16 @@ export class FirebaseAuthService {
   /**
    * Fetch and cache Google OAuth2 public certificates
    */
-  async fetchGooglePublicKeys() {
+  async fetchGooglePublicKeys(forceRefresh = false) {
     const now = Date.now();
-    if (this.publicKeyCache.size > 0 && now < this.publicKeyCacheExpiry) {
+    if (!forceRefresh && this.publicKeyCache.size > 0 && now < this.publicKeyCacheExpiry) {
       return Object.fromEntries(this.publicKeyCache);
     }
 
     const certUrl = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
-    const response = await fetch(certUrl);
+    const response = await fetch(certUrl, {
+      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(10000) : undefined,
+    });
     if (!response.ok) {
       throw new Error(`Failed to fetch Google public keys: HTTP ${response.status}`);
     }

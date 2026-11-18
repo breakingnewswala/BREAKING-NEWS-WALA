@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Public read for published article media; authenticated upload with strict size and MIME bounds
+    match /media/articles/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+        && (
+          (request.resource.contentType.matches('image/(jpeg|png|webp)') && request.resource.size <= 10 * 1024 * 1024)
+          || (request.resource.contentType.matches('video/mp4') && request.resource.size <= 100 * 1024 * 1024)
+        );
+    }
+
+    // Reporter verification credentials strictly private to owner
+    match /reporters/{reporterId}/credentials/{allPaths=**} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == reporterId
+        && request.resource.size <= 10 * 1024 * 1024;
+    }
+
+    // Default deny for all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

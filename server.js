@@ -170,6 +170,7 @@ const server = http.createServer((req, res) => {
 
   // 3. Vite dev middleware in development mode (serves React SPA + TSX/Tailwind + /public)
   if (viteServer) {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
     return viteServer.middlewares(req, res);
   }
 
@@ -235,6 +236,7 @@ const server = http.createServer((req, res) => {
       'Content-Type': contentType,
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     };

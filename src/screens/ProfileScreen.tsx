@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { AppRole, ArticleDetail, ReadingHistoryRecord } from '../types';
 import { NavTab } from '../components/BottomNav';
-import { auth, signInWithGoogle, logOut } from '../firebase';
+import { auth, signInWithGoogle, logOut, getFirebaseAuthErrorMessage } from '../firebase';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import { apiClient, AuthUser } from '../services/apiClient';
 
@@ -135,27 +135,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
   }, [authUser]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChanged(auth, (user: FirebaseUser | null) => {
       setCurrentUser(user);
       if (user) {
-        apiClient.audience.getReadingHistory(20).then(setReadingHistory).catch(() => {});
-        apiClient.audience
-          .getUserPreferences()
-          .then((p) => {
-            if (p.breakingAlertsEnabled !== undefined) setBreakingAlerts(p.breakingAlertsEnabled);
-            if (p.districtAlertsEnabled !== undefined) setDistrictAlerts(p.districtAlertsEnabled);
-            if (p.quietHoursEnabled !== undefined) setQuietHours(p.quietHoursEnabled);
-          })
-          .catch(() => {});
-        try {
-          const idToken = await user.getIdToken();
-          const authRes = await apiClient.auth.loginWithFirebase(idToken);
-          if (authRes && authRes.roles) {
-            onBackendLoginSuccess?.(authRes);
-          }
-        } catch (err) {
-          console.warn('[ProfileScreen] Session sync notice:', err);
-        }
+        setAuthError(null);
       }
     });
     return () => unsubscribe();
@@ -241,42 +224,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
     try {
       const user = await signInWithGoogle();
       if (user) {
-        try {
-          const idToken = await user.getIdToken();
-          const authRes = await apiClient.auth.loginWithFirebase(idToken);
-          if (authRes && authRes.roles) {
-            const upperRoles = authRes.roles.map((r) => String(r).toUpperCase());
-            if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
-              onRoleChange('MASTER_ADMIN');
-            } else if (upperRoles.includes('ADMIN')) {
-              onRoleChange('ADMIN');
-            } else if (upperRoles.includes('CHIEF_EDITOR') || upperRoles.includes('EDITOR')) {
-              onRoleChange('EDITOR');
-            } else if (upperRoles.includes('REPORTER')) {
-              onRoleChange('REPORTER');
-            } else {
-              onRoleChange('READER');
-            }
-          }
-        } catch (apiErr) {
-          console.warn('Backend session exchange notice:', apiErr);
-        }
+        setCurrentUser(user);
       }
     } catch (error: any) {
-      const code = error?.code || '';
-      if (code === 'auth/unauthorized-domain') {
-        const host = typeof window !== 'undefined' ? window.location.hostname : '';
-        setAuthError(
-          `डोमेन अधिकृत नहीं है (auth/unauthorized-domain): Firebase Console → Authentication → Settings → Authorized domains में "${host}" जोड़ें।`
-        );
-      } else if (code === 'auth/popup-closed-by-user') {
-        setAuthError('Google साइन-इन पॉपअप बंद कर दिया गया। कृपया पुनः प्रयास करें।');
-      } else if (code === 'auth/popup-blocked') {
-        setAuthError('ब्राउज़र ने साइन-इन पॉपअप ब्लॉक कर दिया है। कृपया पॉपअप अनुमति दें।');
-      } else {
-        console.warn('Firebase Auth Sign In notice:', error);
-        setAuthError('Google साइन-इन में समस्या आई। कृपया पुनः प्रयास करें।');
-      }
+      setAuthError(getFirebaseAuthErrorMessage(error));
     } finally {
       setIsAuthLoading(false);
     }
