@@ -89,16 +89,22 @@ data class NewsArticle(
         get() = id.startsWith("seed_")
 }
 
+@Keep
+@IgnoreExtraProperties
 data class EpaperEdition(
-    val id: String,
-    val cityOrEdition: String,
-    val state: String,
-    val editionDate: String,
-    val pagesCount: Int,
-    val leadHeadline: String,
-    val leadSummary: String,
-    val secondHeadline: String,
-    val thirdHeadline: String
+    val id: String = "",
+    val cityOrEdition: String = "",
+    val state: String = "मध्य प्रदेश",
+    val editionDate: String = "",
+    val pagesCount: Int = 12,
+    val leadHeadline: String = "",
+    val leadSummary: String = "",
+    val secondHeadline: String = "",
+    val thirdHeadline: String = "",
+    val pdfUrl: String? = null,
+    val thumbnailUrl: String? = null,
+    val totalPages: Int = 12,
+    val status: String = "PUBLISHED"
 )
 
 object NewsTaxonomy {

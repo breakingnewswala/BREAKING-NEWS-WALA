@@ -91,6 +91,7 @@ import {
   SUPPORTED_ASPECT_RATIOS,
 } from './monetization/epaperAds.js';
 import { QualityPreflightScanner, SEVERITY } from './epaper/preflightScanner.js';
+import { defaultCloudStorageService } from './storage/cloudStorageService.js';
 import { HighResExportEngine, BROADSHEET_CONSTANTS } from './epaper/exportEngine.js';
 
 // Initialize the active persistence adapter
@@ -1649,6 +1650,11 @@ export async function handleApiRequest(req, res) {
     if (!user) {
       return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
     }
+    // Security Enforcement: Require authorized REPORTER or privileged staff roles (Editor/Admin/MasterAdmin)
+    const isReporterOrStaff = isReporterUser(user) || isEditorUser(user) || isAdminUser(user) || isMasterAdminUser(user);
+    if (!isReporterOrStaff) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल अधिकृत संवाददाता अथवा संपादकीय कर्मचारी ही व्हाट्सएप क्लिपिंग कार्ड बना सकते हैं।');
+    }
     const body = await parseRequestBody(req);
 
     // Validate format strictly '1:1' or '4:5'
@@ -2338,17 +2344,20 @@ export async function handleApiRequest(req, res) {
       try {
         const cleanBase64 = body.fileBuffer.includes(',') ? body.fileBuffer.split(',')[1] : body.fileBuffer;
         const decodedBytes = Buffer.from(cleanBase64, 'base64');
-        const uploadDir = path.resolve(process.cwd(), 'dist', 'media', 'uploads');
-        fs.mkdirSync(uploadDir, { recursive: true });
-        const diskFileName = `${mediaId}-${fileName}`;
-        writtenFilePath = path.join(uploadDir, diskFileName);
-        fs.writeFileSync(writtenFilePath, decodedBytes);
-        url = `/media/uploads/${diskFileName}`;
+        const isPublic = category === 'article' || category === 'ads' || category === 'avatar';
+        const uploadResult = await defaultCloudStorageService.uploadFile({
+          buffer: decodedBytes,
+          storagePath,
+          mimeType,
+          isPublic,
+        });
+        url = uploadResult.url;
+        writtenFilePath = uploadResult.localPath || null;
       } catch (writeErr) {
         if (writtenFilePath && fs.existsSync(writtenFilePath)) {
           try { fs.unlinkSync(writtenFilePath); } catch {}
         }
-        return sendError(res, 500, 'ERR_UPLOAD_WRITE_FAILED', 'फ़ाइल डिस्क पर लिखने में त्रुटि।');
+        return sendError(res, 500, 'ERR_UPLOAD_WRITE_FAILED', 'फ़ाइल अपलोड सुरक्षित करने में त्रुटि: ' + writeErr.message);
       }
     }
 
@@ -2389,19 +2398,53 @@ export async function handleApiRequest(req, res) {
 
   // 6b. Mobile Media Presigned Upload & Confirmation (docs/16-Storage.md)
   if (pathname === '/api/v1/media/presigned-upload' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है। केवल अधिकृत उपयोगकर्ता मीडिया अपलोड कर सकते हैं।');
+    }
+
     const body = await parseRequestBody(req);
-    const assetId = `asset-${Date.now()}`;
-    const storageKey = `media/${new Date().toISOString().slice(0, 10)}/${assetId}-${body?.fileName || 'upload.jpg'}`;
-    const presignedData = {
+    const category = String(body?.category || 'article').toLowerCase();
+    const isReporterOrStaff = isReporterUser(user) || isEditorUser(user) || isAdminUser(user) || isMasterAdminUser(user);
+
+    if (category === 'avatar') {
+      // Authenticated users can upload avatars
+    } else if (category === 'credentials') {
+      if (!isReporterOrStaff) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल संवाददाता अथवा व्यवस्थापक ही साख पत्र अपलोड कर सकते हैं।');
+      }
+    } else {
+      if (!isReporterOrStaff) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल अधिकृत संवाददाता अथवा संपादक ही समाचार मीडिया अपलोड कर सकते हैं।');
+      }
+    }
+
+    const rawFileName = String(body?.fileName || `upload_${Date.now()}.jpg`);
+    const mimeType = String(body?.mimeType || 'image/jpeg').toLowerCase();
+    if (mimeType === 'image/svg+xml' || rawFileName.toLowerCase().endsWith('.svg')) {
+      return sendError(res, 400, 'ERR_UNSUPPORTED_MIME_TYPE', 'SVG प्रारूप सुरक्षा कारणों (Script Injection Risks) से प्रतिबंधित है।');
+    }
+
+    const { assetId, fileName, storagePath } = defaultCloudStorageService.generateStoragePath({
+      category,
+      userId: user.id,
+      editionId: body?.editionId,
+      fileName: rawFileName,
+    });
+
+    const presignedData = await defaultCloudStorageService.generatePresignedUploadUrl({
+      storagePath,
+      mimeType,
+      expiresInMinutes: 60,
+    });
+
+    return sendSuccess(res, {
       assetId,
-      storageKey,
-      uploadUrl: `https://storage.breakingnewswala.com/${storageKey}`,
-      headers: {
-        'Content-Type': body?.mimeType || 'image/jpeg',
-      },
-      expiresInSeconds: 3600,
-    };
-    return sendSuccess(res, presignedData);
+      fileName,
+      storageKey: storagePath,
+      storagePath,
+      category,
+      ...presignedData,
+    });
   }
 
   if (pathname === '/api/v1/media/confirm-upload' && req.method === 'POST') {
@@ -2417,6 +2460,54 @@ export async function handleApiRequest(req, res) {
       createdAt: new Date().toISOString(),
     };
     return sendSuccess(res, mediaAsset);
+  }
+
+  // 6c. Authorized Media File Download & Retrieval (docs/16-Storage.md)
+  if (pathname.startsWith('/api/v1/media/file/') && req.method === 'GET') {
+    const rawStoragePath = decodeURIComponent(pathname.replace('/api/v1/media/file/', ''));
+    if (!rawStoragePath || rawStoragePath.includes('..')) {
+      return sendError(res, 400, 'ERR_INVALID_PATH', 'अमान्य स्टोरेज पाथ।');
+    }
+
+    // Role and Ownership Authorization Check for Private Paths
+    const isPublic = rawStoragePath.startsWith('media/articles/') || rawStoragePath.startsWith('ads/') || rawStoragePath.startsWith('avatars/');
+    if (!isPublic) {
+      if (!user) {
+        return sendError(res, 401, 'ERR_UNAUTHORIZED', 'यह फ़ाइल निजी है। प्रमाणीकरण आवश्यक है।');
+      }
+      const isPrivileged = isEditorUser(user) || isAdminUser(user) || isMasterAdminUser(user);
+
+      // Check owner if under reporters/{uid} or whatsapp/{uid}
+      const reporterMatch = rawStoragePath.match(/^reporters\/([^/]+)\//);
+      const whatsappMatch = rawStoragePath.match(/^whatsapp\/([^/]+)\//);
+      const ownerUid = reporterMatch?.[1] || whatsappMatch?.[1];
+
+      if (ownerUid) {
+        const isOwner = user.id === ownerUid;
+        if (!isOwner && !isPrivileged) {
+          return sendError(res, 403, 'ERR_FORBIDDEN', 'इस निजी फ़ाइल को देखने का अधिकार नहीं है।');
+        }
+      } else if (rawStoragePath.startsWith('epaper/')) {
+        if (!isPrivileged) {
+          return sendError(res, 403, 'ERR_FORBIDDEN', 'अप्रकाशित ई-पेपर फ़ाइलें केवल संपादकीय टीम के लिए उपलब्ध हैं।');
+        }
+      } else if (!isPrivileged) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'अनधिकृत फ़ाइल एक्सेस।');
+      }
+    }
+
+    const fileResult = await defaultCloudStorageService.getFileBuffer(rawStoragePath);
+    if (!fileResult) {
+      return sendError(res, 404, 'ERR_NOT_FOUND', 'फ़ाइल नहीं मिली।');
+    }
+
+    res.writeHead(200, {
+      'Content-Type': fileResult.contentType,
+      'Content-Length': fileResult.size,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': isPublic ? 'public, max-age=86400' : 'private, no-cache',
+    });
+    return res.end(fileResult.buffer);
   }
 
   // -------------------------------------------------------------
