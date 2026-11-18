@@ -1184,6 +1184,9 @@ export async function handleApiRequest(req, res) {
     if (!edition) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
     }
+    if (edition.status !== 'PUBLISHED' && !isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
+    }
     const versions = await adapter.getEpaperEditionVersions(editionId);
     return sendSuccess(res, versions);
   }
@@ -1205,6 +1208,7 @@ export async function handleApiRequest(req, res) {
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="${edition.editionCode || edition.id}.pdf"`,
+      'X-Content-Type-Options': 'nosniff',
       'X-Epaper-DPI': '300',
       'X-Epaper-Width-Px': '3886',
       'X-Epaper-Height-Px': '6142',
@@ -1237,6 +1241,7 @@ export async function handleApiRequest(req, res) {
     res.writeHead(200, {
       'Content-Type': 'image/png',
       'Content-Disposition': `inline; filename="${edition.editionCode || edition.id}_p${pageNum}.png"`,
+      'X-Content-Type-Options': 'nosniff',
       'X-Epaper-DPI': '300',
       'X-Epaper-Width-Px': '3886',
       'X-Epaper-Height-Px': '6142',
@@ -1253,6 +1258,9 @@ export async function handleApiRequest(req, res) {
     const edition = await adapter.getEpaperEditionById(editionId);
     if (!edition) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
+    }
+    if (edition.status !== 'PUBLISHED' && !isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
     }
     const pages = await adapter.getEpaperPagesByEditionId(editionId);
     const metadata = HighResExportEngine.generate300DpiPdfMetadata(edition, pages);
@@ -2208,6 +2216,11 @@ export async function handleApiRequest(req, res) {
 
   // 6. Media Ingestion Domain (/api/v1/media/upload)
   if (pathname === '/api/v1/media/upload' && req.method === 'POST') {
+    // Step 25 Remediation: Enforce authentication on media upload
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है। केवल अधिकृत उपयोगकर्ता मीडिया अपलोड कर सकते हैं।');
+    }
+
     const body = await parseRequestBody(req);
     const rawFileName = String(body.fileName || `media_${Date.now()}.jpg`);
 
@@ -2217,26 +2230,67 @@ export async function handleApiRequest(req, res) {
     }
     const fileName = path.basename(rawFileName).replace(/[^a-zA-Z0-9._-]/g, '_');
 
-    // Defensive Security: MIME-type whitelist validation
-    const ALLOWED_MIME_TYPES = new Set([
-      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
-      'video/mp4', 'video/webm', 'audio/mpeg', 'audio/wav', 'application/pdf',
-    ]);
+    // Category and Server-Side Role Authorization
+    const category = String(body.category || 'article').toLowerCase();
+    const isReporterOrStaff = isReporterUser(user) || isEditorUser(user) || isAdminUser(user) || isMasterAdminUser(user);
+
+    if (category === 'avatar') {
+      // Any authenticated user can upload their own profile avatar
+    } else if (category === 'credentials') {
+      if (!isReporterOrStaff) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल संवाददाता अथवा व्यवस्थापक ही साख पत्र अपलोड कर सकते हैं।');
+      }
+    } else {
+      // General news/article media requires reporter or editorial staff permissions
+      if (!isReporterOrStaff) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल अधिकृत संवाददाता अथवा संपादक ही समाचार मीडिया अपलोड कर सकते हैं।');
+      }
+    }
+
+    // Step 25 Remediation: Strict MIME validation and SVG rejection
     const mimeType = String(body.mimeType || 'image/jpeg').toLowerCase();
+    if (mimeType === 'image/svg+xml' || rawFileName.toLowerCase().endsWith('.svg')) {
+      return sendError(res, 400, 'ERR_UNSUPPORTED_MIME_TYPE', 'SVG प्रारूप सुरक्षा कारणों (Script Injection Risks) से प्रतिबंधित है। केवल JPEG, PNG, WebP, MP4, MP3 या PDF मान्य हैं।');
+    }
+
+    const ALLOWED_MIME_TYPES = new Set([
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+      'video/mp4', 'video/webm',
+      'audio/mpeg', 'audio/wav',
+      'application/pdf',
+    ]);
     if (!ALLOWED_MIME_TYPES.has(mimeType)) {
       return sendError(res, 400, 'ERR_INVALID_MIME_TYPE', `अमान्य MIME प्रारूप (${mimeType})। केवल स्वीकृत मीडिया फ़ाइलें मान्य हैं।`);
     }
 
-    const fileSizeBytes = body.fileBuffer ? Buffer.from(body.fileBuffer, 'base64').length : 1024;
-    // Defensive Security: File size boundary enforcement (50MB)
-    if (fileSizeBytes > 50 * 1024 * 1024) {
-      return sendError(res, 413, 'ERR_FILE_TOO_LARGE', 'फ़ाइल का आकार 50MB की सीमा से अधिक है।');
+    // Step 25 Remediation: Configurable per-category size limits
+    const fileSizeBytes = body.fileBuffer
+      ? Buffer.from(body.fileBuffer.includes(',') ? body.fileBuffer.split(',')[1] : body.fileBuffer, 'base64').length
+      : (Number(body.fileSizeBytes) || 1024);
+
+    let maxAllowedBytes = 10 * 1024 * 1024; // 10MB default for images
+    if (category === 'avatar') {
+      maxAllowedBytes = 2 * 1024 * 1024; // 2MB for avatar
+    } else if (mimeType.startsWith('video/')) {
+      maxAllowedBytes = 100 * 1024 * 1024; // 100MB for video
+    } else if (mimeType.startsWith('audio/')) {
+      maxAllowedBytes = 25 * 1024 * 1024; // 25MB for audio
+    } else if (mimeType === 'application/pdf') {
+      maxAllowedBytes = 25 * 1024 * 1024; // 25MB for PDF
+    } else {
+      maxAllowedBytes = 10 * 1024 * 1024; // 10MB for photos
+    }
+
+    if (fileSizeBytes > maxAllowedBytes) {
+      const limitMb = Math.round(maxAllowedBytes / (1024 * 1024));
+      return sendError(res, 413, 'ERR_FILE_TOO_LARGE', `फ़ाइल का आकार इस श्रेणी की सीमा (${limitMb}MB) से अधिक है।`);
     }
 
     // Defensive Security: Malicious payload / script injection detection
     if (body.fileBuffer) {
       try {
-        const sampleBuf = Buffer.from(body.fileBuffer.slice(0, 512), 'base64');
+        const rawBufStr = body.fileBuffer.includes(',') ? body.fileBuffer.split(',')[1] : body.fileBuffer;
+        const sampleBuf = Buffer.from(rawBufStr.slice(0, 512), 'base64');
         const headerSample = sampleBuf.toString('utf8');
         if (
           sampleBuf[0] === 0x4D && sampleBuf[1] === 0x5A || // MZ DOS/PE Executable
@@ -2252,9 +2306,22 @@ export async function handleApiRequest(req, res) {
       }
     }
 
-    const mediaId = `med-${Date.now()}`;
-    const storagePath = `media/articles/2026/11/${mediaId}/${fileName}`;
+    const mediaId = `med-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+    let storagePath;
+    if (category === 'avatar') {
+      storagePath = `avatars/${user.id}/${mediaId}-${fileName}`;
+    } else if (category === 'credentials') {
+      storagePath = `reporters/${user.id}/credentials/${mediaId}-${fileName}`;
+    } else {
+      const now = new Date();
+      const year = now.getUTCFullYear();
+      const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+      storagePath = `media/articles/${year}/${month}/${mediaId}/${fileName}`;
+    }
+
     let url = 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80';
+    let writtenFilePath = null;
+
     if (body.fileBuffer && typeof body.fileBuffer === 'string') {
       try {
         const cleanBase64 = body.fileBuffer.includes(',') ? body.fileBuffer.split(',')[1] : body.fileBuffer;
@@ -2262,23 +2329,36 @@ export async function handleApiRequest(req, res) {
         const uploadDir = path.resolve(process.cwd(), 'dist', 'media', 'uploads');
         fs.mkdirSync(uploadDir, { recursive: true });
         const diskFileName = `${mediaId}-${fileName}`;
-        fs.writeFileSync(path.join(uploadDir, diskFileName), decodedBytes);
+        writtenFilePath = path.join(uploadDir, diskFileName);
+        fs.writeFileSync(writtenFilePath, decodedBytes);
         url = `/media/uploads/${diskFileName}`;
-      } catch {
-        url = 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80';
+      } catch (writeErr) {
+        if (writtenFilePath && fs.existsSync(writtenFilePath)) {
+          try { fs.unlinkSync(writtenFilePath); } catch {}
+        }
+        return sendError(res, 500, 'ERR_UPLOAD_WRITE_FAILED', 'फ़ाइल डिस्क पर लिखने में त्रुटि।');
       }
     }
 
-    if (adapter && typeof adapter.saveMediaMetadata === 'function') {
-      await adapter.saveMediaMetadata({
-        id: mediaId,
-        fileName,
-        mimeType,
-        fileSizeBytes,
-        storagePath,
-        downloadUrl: url,
-        uploaderId: user?.id || 'anonymous',
-      });
+    try {
+      if (adapter && typeof adapter.saveMediaMetadata === 'function') {
+        await adapter.saveMediaMetadata({
+          id: mediaId,
+          fileName,
+          mimeType,
+          fileSizeBytes,
+          storagePath,
+          downloadUrl: url,
+          uploaderId: user.id,
+          uploaderRole: user.roles?.[0] || 'REPORTER',
+          category,
+        });
+      }
+    } catch (metaErr) {
+      if (writtenFilePath && fs.existsSync(writtenFilePath)) {
+        try { fs.unlinkSync(writtenFilePath); } catch {}
+      }
+      return sendError(res, 500, 'ERR_METADATA_SAVE_FAILED', 'मीडिया मेटाडेटा सहेजने में विफल।');
     }
 
     return sendSuccess(res, {
@@ -2290,6 +2370,8 @@ export async function handleApiRequest(req, res) {
       fileName,
       storagePath,
       fileSizeBytes,
+      uploaderId: user.id,
+      category,
     });
   }
 
