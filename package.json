@@ -4,8 +4,8 @@
   "private": true,
   "description": "BREAKING NEWS WALA — Integrated Hyperlocal Digital News Platform (Madhya Pradesh)",
   "type": "module",
+  "main": "server.js",
   "scripts": {
-    "predev": "test -d node_modules/vite || npm install --no-audit --no-fund",
     "dev": "node server.js",
     "build": "tsc && vite build",
     "start": "node server.js",

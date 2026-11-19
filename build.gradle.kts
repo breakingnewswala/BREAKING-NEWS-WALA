@@ -1,11 +1,4 @@
-plugins {
-    alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.compose.compiler) apply false
-    alias(libs.plugins.kotlin.serialization) apply false
-    alias(libs.plugins.google.services) apply false
-}
-
-// Fallback tasks for Cloud Build / Web CI environments without Android SDK
+// Web CI and Cloud Buildpack compatibility tasks
 tasks.register("assembleDebug") {
     doLast {
         println("BREAKING NEWS WALA Web application compiled successfully.")
