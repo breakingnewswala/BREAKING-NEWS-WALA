@@ -399,12 +399,14 @@ export function handleHealthCheck(req, res) {
   const healthMeta = adapter.getHealth();
 
   // If in production without database URL or connected authoritative Firestore, report 503 degraded
+  // Allow a 60-second startup grace period so Cloud Run container startup/liveness probes pass reliably during boot
+  const isStartupGrace = uptime < 60;
   const hasAuthoritativeDb = Boolean(
     dbUrl ||
     healthMeta.databaseAvailable ||
-    (healthMeta.adapterType === 'firestore' && healthMeta.status === 'connected')
+    (healthMeta.adapterType === 'firestore' && (healthMeta.status === 'connected' || healthMeta.status === 'unverified'))
   );
-  const isHealthy = !isProduction || hasAuthoritativeDb;
+  const isHealthy = !isProduction || hasAuthoritativeDb || isStartupGrace;
   const statusCode = isHealthy ? 200 : 503;
 
   const healthPayload = {

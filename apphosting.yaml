@@ -1,6 +1,15 @@
 # Firebase App Hosting Configuration for BREAKING NEWS WALA (React + Vite + Node.js API Engine)
 # Backend: breakingnewswala (asia-southeast1)
 
+scripts:
+  buildCommand: npm run build
+  runCommand: node server.js
+
+outputFiles:
+  serverApp:
+    include:
+      - .
+
 runConfig:
   cpu: 1
   memoryMiB: 512

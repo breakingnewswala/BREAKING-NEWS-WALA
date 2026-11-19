@@ -86,6 +86,8 @@ import {
 import { NavTab } from '../components/BottomNav';
 import { BnwAiService } from '../services/aiService';
 import { apiClient } from '../services/apiClient';
+import { DIVISIONS } from '../data/mockNewsData';
+import { EpaperStudioTab } from '../components/epaper/EpaperStudioTab';
 
 interface AdminControlScreenProps {
   articles: ArticleDetail[];
@@ -149,7 +151,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   onBroadcastAlert,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs'
+    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio'
   >('overview');
 
   // Review Queue state
@@ -196,6 +198,71 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
   // Reporter Search / Filter
   const [reporterSearch, setReporterSearch] = useState('');
+
+  // Master Admin Reporter WhatsApp Quota State (Step 16 / FINDING-15-03)
+  const [reporterQuotas, setReporterQuotas] = useState<Record<string, { used: number; maxDaily: number; remaining: number }>>({});
+  const [editingQuotaReporterId, setEditingQuotaReporterId] = useState<string | null>(null);
+  const [editingQuotaValue, setEditingQuotaValue] = useState<number>(20);
+  const [isUpdatingQuota, setIsUpdatingQuota] = useState<boolean>(false);
+  const [quotaFeedback, setQuotaFeedback] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [loadingQuotas, setLoadingQuotas] = useState<boolean>(false);
+
+  const fetchReporterQuotas = async () => {
+    setLoadingQuotas(true);
+    const quotas: Record<string, { used: number; maxDaily: number; remaining: number }> = {};
+    try {
+      await Promise.all(
+        reporters.map(async (rep) => {
+          try {
+            const q = await apiClient.epaper.getReporterWhatsAppQuota(rep.id);
+            quotas[rep.id] = { used: q.used, maxDaily: q.maxDaily, remaining: q.remaining };
+          } catch {
+            quotas[rep.id] = { used: 0, maxDaily: 20, remaining: 20 };
+          }
+        })
+      );
+      setReporterQuotas(quotas);
+    } catch {
+      // Fallback
+    } finally {
+      setLoadingQuotas(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'reporters') {
+      fetchReporterQuotas();
+    }
+  }, [activeTab]);
+
+  const handleSaveReporterQuota = async (reporterId: string) => {
+    if (editingQuotaValue < 0 || isNaN(editingQuotaValue)) {
+      setQuotaFeedback({ text: 'कोटा एक मान्य गैर-ऋणात्मक संख्या होनी चाहिए', isError: true });
+      return;
+    }
+    setIsUpdatingQuota(true);
+    setQuotaFeedback(null);
+    try {
+      const res = await apiClient.epaper.updateReporterWhatsAppQuota(reporterId, editingQuotaValue);
+      setReporterQuotas((prev) => {
+        const existing = prev[reporterId] || { used: 0, maxDaily: 20, remaining: 20 };
+        return {
+          ...prev,
+          [reporterId]: {
+            ...existing,
+            maxDaily: res.maxDaily,
+            remaining: Math.max(0, res.maxDaily - existing.used),
+          },
+        };
+      });
+      setQuotaFeedback({ text: `संवाददाता कोटा सफलतापूर्वक अपडेट हुआ: ${res.maxDaily} जनरेशन/दिन`, isError: false });
+      setEditingQuotaReporterId(null);
+    } catch (err: any) {
+      setQuotaFeedback({ text: err.message || 'कोटा अपडेट करने में त्रुटि', isError: true });
+    } finally {
+      setIsUpdatingQuota(false);
+    }
+  };
 
   // =========================================================================
   // MASTER EXECUTION 024: INTEGRATION & API POOL DASHBOARD STATE
@@ -840,12 +907,23 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
           <button
             onClick={() => setActiveTab('audit_logs')}
             className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audit_logs'
-              ? 'border-red-600 text-red-600'
+              ? 'border-red-600 text-red-600 font-bold'
               : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
             <span>ऑडिट लॉग्स</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('epaper_studio')}
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'epaper_studio'
+              ? 'border-red-600 text-red-600 font-bold'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+          >
+            <Newspaper className="w-3.5 h-3.5 text-blue-600" />
+            <span>ई-पेपर स्टूडियो</span>
           </button>
         </div>
 
@@ -1302,21 +1380,59 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                   मान्यता प्राप्त संवाददाता एवं बीट प्रबंधन
                 </h3>
                 <p className="text-xs text-slate-500">
-                  मध्य प्रदेश के 55 जिलों के संवाददाताओं की मान्यता, डिजिटल प्रेस कार्ड व अधिकार क्षेत्र
+                  मध्य प्रदेश के 55 जिलों के संवाददाताओं की मान्यता, डिजिटल प्रेस कार्ड, दैनिक व्हाट्सएप कोटा व अधिकार क्षेत्र
                 </p>
               </div>
 
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
-                <input
-                  type="text"
-                  value={reporterSearch}
-                  onChange={(e) => setReporterSearch(e.target.value)}
-                  placeholder="नाम, जिला या बैज नंबर से खोजें..."
-                  className="pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs w-64 bg-slate-50 focus:bg-white"
-                />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchReporterQuotas}
+                  disabled={loadingQuotas}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  title="दैनिक व्हाट्सएप कोटा स्थिति पुनः लोड करें"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingQuotas ? 'animate-spin text-emerald-600' : 'text-slate-500'}`} />
+                  <span>कोटा रीफ्रेश करें</span>
+                </button>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    value={reporterSearch}
+                    onChange={(e) => setReporterSearch(e.target.value)}
+                    placeholder="नाम, जिला या बैज नंबर से खोजें..."
+                    className="pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs w-64 bg-slate-50 focus:bg-white"
+                  />
+                </div>
               </div>
             </div>
+
+            {quotaFeedback && (
+              <div
+                className={`p-3 rounded-lg text-xs flex items-center justify-between ${
+                  quotaFeedback.isError
+                    ? 'bg-rose-50 border border-rose-200 text-rose-700'
+                    : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {quotaFeedback.isError ? (
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  )}
+                  <span>{quotaFeedback.text}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuotaFeedback(null)}
+                  className="text-xs underline ml-4 hover:opacity-75"
+                >
+                  बंद करें
+                </button>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left">
@@ -1326,75 +1442,138 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                     <th className="py-2.5 px-3">प्रेस बैज ID</th>
                     <th className="py-2.5 px-3">आवंटित संभाग / जिले</th>
                     <th className="py-2.5 px-3">कवरेज आँकड़े</th>
+                    <th className="py-2.5 px-3">दैनिक व्हाट्सएप कोटा</th>
                     <th className="py-2.5 px-3">भूमिका स्थिति</th>
                     <th className="py-2.5 px-3 text-right">कार्रवाई</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredReporters.map((rep) => (
-                    <tr key={rep.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-2.5">
-                          <img
-                            src={rep.avatar}
-                            alt={rep.name}
-                            className="w-8 h-8 rounded-full object-cover border border-slate-300"
-                          />
-                          <div>
-                            <span className="font-bold text-slate-900 block">{rep.name}</span>
-                            <span className="text-[11px] text-slate-500">{rep.phone}</span>
+                  {filteredReporters.map((rep) => {
+                    const quotaInfo = reporterQuotas[rep.id] || { used: 0, maxDaily: 20, remaining: 20 };
+                    const isEditingThisQuota = editingQuotaReporterId === rep.id;
+
+                    return (
+                      <tr key={rep.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2.5">
+                            <img
+                              src={rep.avatar}
+                              alt={rep.name}
+                              className="w-8 h-8 rounded-full object-cover border border-slate-300"
+                            />
+                            <div>
+                              <span className="font-bold text-slate-900 block">{rep.name}</span>
+                              <span className="text-[11px] text-slate-500">{rep.phone}</span>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td className="py-3 px-3">
-                        <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
-                          {rep.badgeNumber}
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-3">
-                        <div>
-                          <span className="font-bold text-slate-800 block">
-                            {rep.assignedDivision || 'मध्य प्रदेश'}
+                        <td className="py-3 px-3">
+                          <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                            {rep.badgeNumber}
                           </span>
-                          <span className="text-[11px] text-slate-500">
-                            {rep.assignedDistricts.join(', ')}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <div>
+                            <span className="font-bold text-slate-800 block">
+                              {rep.assignedDivision || 'मध्य प्रदेश'}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              {rep.assignedDistricts.join(', ')}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <span className="font-bold text-emerald-700">{rep.totalStoriesPublished}</span>
+                          <span className="text-slate-400"> / {rep.totalStoriesFiled} खबरें</span>
+                        </td>
+
+                        <td className="py-3 px-3">
+                          {isEditingThisQuota ? (
+                            <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded border border-emerald-300">
+                              <input
+                                type="number"
+                                min="0"
+                                max="500"
+                                value={editingQuotaValue}
+                                onChange={(e) => setEditingQuotaValue(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                className="w-16 px-1.5 py-0.5 border border-slate-300 rounded text-xs font-mono font-bold bg-white text-center focus:outline-hidden focus:border-emerald-600"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveReporterQuota(rep.id)}
+                                disabled={isUpdatingQuota}
+                                className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {isUpdatingQuota ? '...' : 'सेव'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingQuotaReporterId(null)}
+                                disabled={isUpdatingQuota}
+                                className="px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] hover:bg-slate-300"
+                              >
+                                रद्द
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <div>
+                                <span className="font-bold text-slate-900 block text-xs">
+                                  {quotaInfo.maxDaily} जनरेशन / दिन
+                                </span>
+                                <span className="text-[10px] text-slate-500 block">
+                                  प्रयुक्त: <strong className="text-slate-700">{quotaInfo.used}</strong> | शेष:{' '}
+                                  <strong className={quotaInfo.remaining === 0 ? 'text-rose-600' : 'text-emerald-700'}>
+                                    {quotaInfo.remaining}
+                                  </strong>
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingQuotaReporterId(rep.id);
+                                  setEditingQuotaValue(quotaInfo.maxDaily);
+                                  setQuotaFeedback(null);
+                                }}
+                                className="p-1 text-slate-400 hover:text-emerald-700 rounded hover:bg-slate-100 transition-colors"
+                                title="दैनिक कोटा संशोधित करें"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rep.role === 'trusted_reporter'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : 'bg-blue-100 text-blue-800 border border-blue-300'
+                              }`}
+                          >
+                            {rep.role === 'trusted_reporter' ? 'वरिष्ठ संवाददाता' : 'जिला संवाददाता'}
                           </span>
-                        </div>
-                      </td>
+                        </td>
 
-                      <td className="py-3 px-3">
-                        <span className="font-bold text-emerald-700">{rep.totalStoriesPublished}</span>
-                        <span className="text-slate-400"> / {rep.totalStoriesFiled} खबरें</span>
-                      </td>
-
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rep.role === 'trusted_reporter'
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                            : 'bg-blue-100 text-blue-800 border border-blue-300'
-                            }`}
-                        >
-                          {rep.role === 'trusted_reporter' ? 'वरिष्ठ संवाददाता' : 'जिला संवाददाता'}
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-3 text-right">
-                        <button
-                          onClick={() =>
-                            onUpdateReporterRole(
-                              rep.id,
-                              rep.role === 'trusted_reporter' ? 'reporter' : 'trusted_reporter'
-                            )
-                          }
-                          className="px-2.5 py-1 text-[11px] font-bold rounded border border-slate-300 hover:bg-slate-100 text-slate-700 transition-colors"
-                        >
-                          {rep.role === 'trusted_reporter' ? 'मान्यता संशोधित करें' : 'वरिष्ठता प्रदान करें'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            onClick={() =>
+                              onUpdateReporterRole(
+                                rep.id,
+                                rep.role === 'trusted_reporter' ? 'reporter' : 'trusted_reporter'
+                              )
+                            }
+                            className="px-2.5 py-1 text-[11px] font-bold rounded border border-slate-300 hover:bg-slate-100 text-slate-700 transition-colors"
+                          >
+                            {rep.role === 'trusted_reporter' ? 'मान्यता संशोधित करें' : 'वरिष्ठता प्रदान करें'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -3815,6 +3994,19 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB 9: EPAPER STUDIO & NEWS SELECTION DESK */}
+        {activeTab === 'epaper_studio' && (
+          <div className="space-y-6">
+            <EpaperStudioTab
+              districts={districts}
+              divisions={DIVISIONS}
+              articles={articles}
+              pendingArticles={pendingArticles}
+              currentRole={currentRole}
+            />
           </div>
         )}
       </div>

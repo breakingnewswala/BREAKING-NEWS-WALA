@@ -39,6 +39,7 @@ import {
   MP_SEED_PENDING_STORIES,
   MP_SEED_REPORTERS,
 } from '../../shared/mpHyperlocalSeed.js';
+import { INITIAL_EPAPER_TEMPLATES } from './defaultEpaperTemplates.js';
 
 export {
   INITIAL_AI_PROMPTS,
@@ -51,6 +52,7 @@ export {
   CANONICAL_SEED_ADVERTISERS,
   CANONICAL_SEED_CAMPAIGNS,
   CANONICAL_AUDIENCE_SEGMENTS,
+  INITIAL_EPAPER_TEMPLATES,
 };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1144,6 +1146,12 @@ export class LocalJsonAdapter {
       comments: [],
       deletionRequests: [],
       mandiRates: [...MP_SEED_MANDI_RATES],
+      epaperEditions: [],
+      epaperPages: [],
+      epaperTemplates: [...INITIAL_EPAPER_TEMPLATES],
+      epaperWhatsAppGenerations: [],
+      epaperAdSubmissions: [],
+      epaperEditionVersions: [],
     };
     this.init();
   }
@@ -1390,6 +1398,21 @@ export class LocalJsonAdapter {
         clicksCount: 0,
         ...a,
       }));
+
+      // Initialize E-Paper Studio collections
+      this.data.epaperEditions = this.data.epaperEditions || [];
+      this.data.epaperPages = this.data.epaperPages || [];
+      this.data.epaperTemplates = Array.isArray(this.data.epaperTemplates) && this.data.epaperTemplates.length > 0
+        ? this.data.epaperTemplates
+        : [...INITIAL_EPAPER_TEMPLATES];
+      for (const initTpl of INITIAL_EPAPER_TEMPLATES) {
+        if (!this.data.epaperTemplates.some((t) => t.id === initTpl.id)) {
+          this.data.epaperTemplates.push({ ...initTpl });
+        }
+      }
+      this.data.epaperWhatsAppGenerations = this.data.epaperWhatsAppGenerations || [];
+      this.data.epaperAdSubmissions = this.data.epaperAdSubmissions || [];
+      this.data.epaperEditionVersions = this.data.epaperEditionVersions || [];
     } else {
       const seedArticles = [
         ...INITIAL_ARTICLES,
@@ -1419,6 +1442,12 @@ export class LocalJsonAdapter {
       this.data.whatsappSubscribers = [...INITIAL_WHATSAPP_SUBSCRIBERS];
       this.data.webhooks = [];
       this.data.webhookLogs = [];
+      this.data.epaperEditions = [];
+      this.data.epaperPages = [];
+      this.data.epaperTemplates = [...INITIAL_EPAPER_TEMPLATES];
+      this.data.epaperWhatsAppGenerations = [];
+      this.data.epaperAdSubmissions = [];
+      this.data.epaperEditionVersions = [];
       this.storage.write(this.data);
     }
   }
@@ -4499,6 +4528,864 @@ export class LocalJsonAdapter {
     return list.slice(0, filters.limit || 500);
   }
 
+  // =============================================================
+  // E-PAPER MANAGEMENT SYSTEM PERSISTENCE METHODS (Step 2 - 12)
+  // =============================================================
+
+  async getEpaperEditions(params = {}) {
+    let list = [...(this.data.epaperEditions || [])];
+
+    if (params.status && params.status !== 'all') {
+      const norm = String(params.status).toUpperCase();
+      list = list.filter((e) => String(e.status).toUpperCase() === norm);
+    }
+    if (params.date || params.publicationDate) {
+      const d = params.date || params.publicationDate;
+      list = list.filter((e) => e.publicationDate === d);
+    }
+    if (params.editionType && params.editionType !== 'all') {
+      const t = String(params.editionType).toUpperCase();
+      list = list.filter((e) => String(e.editionType).toUpperCase() === t);
+    }
+    if (params.divisionId && params.divisionId !== 'all') {
+      list = list.filter((e) => e.divisionId === params.divisionId);
+    }
+    if (params.districtId && params.districtId !== 'all') {
+      list = list.filter((e) => e.districtId === params.districtId);
+    }
+    if (params.search) {
+      const q = String(params.search).toLowerCase().trim();
+      list = list.filter((e) =>
+        (e.title && e.title.toLowerCase().includes(q)) ||
+        (e.editionCode && e.editionCode.toLowerCase().includes(q)) ||
+        (e.districtName && e.districtName.toLowerCase().includes(q))
+      );
+    }
+
+    list.sort((a, b) => {
+      const dateA = new Date(a.publicationDate || a.createdAt || 0).getTime();
+      const dateB = new Date(b.publicationDate || b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
+
+    const page = Math.max(1, parseInt(params.page || '1', 10));
+    const limit = Math.max(1, parseInt(params.limit || '20', 10));
+    const total = list.length;
+    const startIndex = (page - 1) * limit;
+    const paged = list.slice(startIndex, startIndex + limit);
+
+    return {
+      editions: paged,
+      items: paged,
+      total,
+      count: paged.length,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  async getEpaperEditionById(id) {
+    const list = this.data.epaperEditions || [];
+    return list.find((e) => e.id === id) || null;
+  }
+
+  async getEpaperEditionByCode(editionCode) {
+    const list = this.data.epaperEditions || [];
+    return list.find((e) => e.editionCode === editionCode) || null;
+  }
+
+  async getLatestEpaperEdition(districtId = null) {
+    let list = (this.data.epaperEditions || []).filter((e) => e.status === 'PUBLISHED');
+    if (districtId) {
+      const districtSpecific = list.filter((e) => e.districtId === districtId);
+      if (districtSpecific.length > 0) list = districtSpecific;
+    }
+    list.sort((a, b) => new Date(b.publicationDate || b.createdAt || 0).getTime() - new Date(a.publicationDate || a.createdAt || 0).getTime());
+    return list[0] || null;
+  }
+
+  async createEpaperEditionWithPages(editionData, user = null) {
+    this.data.epaperEditions = this.data.epaperEditions || [];
+    this.data.epaperPages = this.data.epaperPages || [];
+
+    const publicationDate = editionData.publicationDate || new Date().toISOString().split('T')[0];
+    const editionType = editionData.editionType || 'DAILY';
+    const totalPages = editionType === 'DAILY' ? 12 : Math.min(48, Math.max(1, parseInt(editionData.totalPages || '4', 10)));
+    const districtId = editionData.districtId || 'dist-bhopal';
+    const distSlug = districtId.replace(/^dist-/, '').toUpperCase();
+    const cleanDate = publicationDate.replace(/-/g, '');
+    const seq = String(this.data.epaperEditions.filter((e) => e.publicationDate === publicationDate && e.districtId === districtId).length + 1).padStart(2, '0');
+    const editionCode = editionData.editionCode || `EP-${cleanDate}-${distSlug}-${seq}`;
+    const id = editionData.id || `ep-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    const pageCanonicalSections = [
+      { pageNumber: 1, sectionType: 'FRONT_PAGE', pageTitle: 'प्रथम पृष्ठ (मुख्य समाचार)', gridColumns: 8, templateId: 'tpl-epaper-01-front' },
+      { pageNumber: 2, sectionType: 'STATE', pageTitle: 'मध्य प्रदेश प्रादेशिक (भाग 1)', gridColumns: 8, templateId: 'tpl-epaper-02-state' },
+      { pageNumber: 3, sectionType: 'STATE', pageTitle: 'मध्य प्रदेश प्रादेशिक (भाग 2)', gridColumns: 8, templateId: 'tpl-epaper-03-bhopal' },
+      { pageNumber: 4, sectionType: 'EDITORIAL', pageTitle: 'संपादकीय एवं विचार (Op-Ed)', gridColumns: 6, templateId: 'tpl-epaper-04-editorial' },
+      { pageNumber: 5, sectionType: 'DISTRICT_FOCUS', pageTitle: 'जिला समाचार - फोकस', gridColumns: 8, templateId: 'tpl-epaper-05-district' },
+      { pageNumber: 6, sectionType: 'NATIONAL', pageTitle: 'राष्ट्रीय एवं अंतरराष्ट्रीय समाचार', gridColumns: 8, templateId: 'tpl-epaper-06-national' },
+      { pageNumber: 7, sectionType: 'BUSINESS', pageTitle: 'व्यापार, अर्थव्यवस्था एवं मंडी भाव', gridColumns: 8, templateId: 'tpl-epaper-08-business' },
+      { pageNumber: 8, sectionType: 'DISTRICT_FOCUS', pageTitle: 'किसान एवं ग्रामीण विकास', gridColumns: 8, templateId: 'tpl-epaper-07-agri' },
+      { pageNumber: 9, sectionType: 'STATE', pageTitle: 'शिक्षा, रोजगार एवं करियर', gridColumns: 8, templateId: 'tpl-epaper-10-education' },
+      { pageNumber: 10, sectionType: 'SPORTS', pageTitle: 'खेल जगत (Sports)', gridColumns: 8, templateId: 'tpl-epaper-09-sports' },
+      { pageNumber: 11, sectionType: 'ENTERTAINMENT', pageTitle: 'मनोरंजन, कला एवं संस्कृति', gridColumns: 8, templateId: 'tpl-epaper-11-features' },
+      { pageNumber: 12, sectionType: 'FRONT_PAGE', pageTitle: 'अंतिम पृष्ठ / विशेष परिशिष्ट', gridColumns: 8, templateId: 'tpl-epaper-12-back' },
+    ];
+
+    const createdPages = [];
+    for (let i = 1; i <= totalPages; i++) {
+      const preset = pageCanonicalSections[i - 1] || {
+        pageNumber: i,
+        sectionType: 'SPECIAL',
+        pageTitle: `पृष्ठ ${i} (विशेष)`,
+        gridColumns: 8,
+        templateId: undefined,
+      };
+      const pageId = `page-${id}-${i}`;
+      const pageRecord = {
+        id: pageId,
+        editionId: id,
+        pageNumber: i,
+        pageTitle: preset.pageTitle,
+        sectionType: preset.sectionType,
+        templateId: preset.templateId,
+        gridColumns: preset.gridColumns,
+        elements: [],
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      createdPages.push(pageRecord);
+      this.data.epaperPages.push(pageRecord);
+    }
+
+    const editionRecord = {
+      id,
+      editionCode,
+      title: editionData.title || `${distSlug} दैनिक ई-पेपर`,
+      publicationDate,
+      editionType,
+      status: 'DRAFT',
+      totalPages,
+      pages: createdPages.map((p) => p.id),
+      divisionId: editionData.divisionId,
+      divisionName: editionData.divisionName,
+      districtId,
+      districtName: editionData.districtName,
+      thumbnailUrl: editionData.thumbnailUrl,
+      pdfUrl: editionData.pdfUrl,
+      createdBy: user?.id || 'usr-desk',
+      createdByName: user?.fullName || 'संपादकीय डेस्क',
+      createdByRole: user?.roles?.[0] || 'EDITOR',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.data.epaperEditions.unshift(editionRecord);
+    this.save();
+    return { edition: editionRecord, pages: createdPages };
+  }
+
+  async saveEpaperEdition(editionData, user = null, options = {}) {
+    this.data.epaperEditions = this.data.epaperEditions || [];
+    const id = editionData.id || `ep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const existingIndex = this.data.epaperEditions.findIndex((e) => e.id === id);
+
+    // OCC Check
+    const expected = editionData.expectedVersion !== undefined 
+      ? editionData.expectedVersion 
+      : (options?.expectedVersion !== undefined ? options.expectedVersion : (editionData.version !== undefined ? editionData.version : undefined));
+
+    if (existingIndex >= 0 && expected !== undefined) {
+      const curVersion = this.data.epaperEditions[existingIndex].version || 1;
+      if (curVersion !== Number(expected)) {
+        const conflictRes = {
+          error: true,
+          statusCode: 409,
+          code: 'ERR_VERSION_CONFLICT',
+          message: `संस्करण विरोध (OCC Conflict): वर्तमान संस्करण ${curVersion} है, प्राप्त संस्करण ${expected} है।`,
+          currentVersion: curVersion,
+          expectedVersion: expected,
+        };
+        if (options?.throwOnError) {
+          const err = new Error(conflictRes.message);
+          err.statusCode = 409;
+          err.code = 'ERR_VERSION_CONFLICT';
+          throw err;
+        }
+        return conflictRes;
+      }
+    }
+
+    const existing = existingIndex >= 0 ? this.data.epaperEditions[existingIndex] : null;
+    const record = {
+      ...(existing || {}),
+      ...editionData,
+      id,
+      version: existing ? (existing.version || 1) + 1 : 1,
+      updatedAt: new Date().toISOString(),
+      createdAt: existing ? existing.createdAt : new Date().toISOString(),
+      createdBy: existing ? existing.createdBy : (user?.id || 'usr-desk'),
+      createdByName: existing ? existing.createdByName : (user?.fullName || 'संपादकीय डेस्क'),
+      createdByRole: existing ? existing.createdByRole : (user?.roles?.[0] || 'EDITOR'),
+    };
+
+    if (existingIndex >= 0) {
+      this.data.epaperEditions[existingIndex] = record;
+    } else {
+      this.data.epaperEditions.unshift(record);
+    }
+    this.save();
+    return record;
+  }
+
+  async updateEpaperEditionStatus(editionId, targetStatus, user = null, expectedVersion = undefined, remarks = '') {
+    const existing = await this.getEpaperEditionById(editionId);
+    if (!existing) {
+      return {
+        error: true,
+        statusCode: 404,
+        code: 'ERR_NOT_FOUND',
+        message: 'ई-पेपर संस्करण नहीं मिला।',
+      };
+    }
+
+    const updates = { status: targetStatus };
+    if (remarks) updates.remarks = remarks;
+    if (targetStatus === 'PUBLISHED') {
+      updates.publishedAt = new Date().toISOString();
+      updates.publishedBy = user?.fullName || 'संपादक';
+    } else if (targetStatus === 'ARCHIVED') {
+      updates.archivedAt = new Date().toISOString();
+    }
+
+    return this.saveEpaperEdition({ ...existing, ...updates, expectedVersion }, user);
+  }
+
+  async deleteEpaperEdition(id, user = null) {
+    if (!this.data.epaperEditions) return false;
+    const idx = this.data.epaperEditions.findIndex((e) => e.id === id);
+    if (idx < 0) return false;
+
+    this.data.epaperEditions.splice(idx, 1);
+    if (this.data.epaperPages) {
+      this.data.epaperPages = this.data.epaperPages.filter((p) => p.editionId !== id);
+    }
+    this.save();
+    return true;
+  }
+
+  async getEpaperPagesByEditionId(editionId) {
+    const list = (this.data.epaperPages || []).filter((p) => p.editionId === editionId);
+    list.sort((a, b) => (a.pageNumber || 0) - (b.pageNumber || 0));
+    return list;
+  }
+
+  async getEpaperPages(editionId) {
+    return this.getEpaperPagesByEditionId(editionId);
+  }
+
+  async getEpaperPageById(id) {
+    const list = this.data.epaperPages || [];
+    return list.find((p) => p.id === id) || null;
+  }
+
+  async getEpaperPageByNumber(editionId, pageNumber) {
+    const list = this.data.epaperPages || [];
+    return list.find((p) => p.editionId === editionId && p.pageNumber === Number(pageNumber)) || null;
+  }
+
+  async saveEpaperPage(pageData, user = null, options = {}) {
+    this.data.epaperPages = this.data.epaperPages || [];
+    const id = pageData.id || `page-${pageData.editionId || 'ep'}-${pageData.pageNumber || Date.now()}`;
+    const existingIndex = this.data.epaperPages.findIndex((p) => p.id === id);
+
+    // OCC Check
+    const expected = pageData.expectedVersion !== undefined 
+      ? pageData.expectedVersion 
+      : (options?.expectedVersion !== undefined ? options.expectedVersion : (pageData.version !== undefined ? pageData.version : undefined));
+
+    if (existingIndex >= 0 && expected !== undefined) {
+      const curVersion = this.data.epaperPages[existingIndex].version || 1;
+      if (curVersion !== Number(expected)) {
+        const conflictRes = {
+          error: true,
+          statusCode: 409,
+          code: 'ERR_VERSION_CONFLICT',
+          message: `संस्करण विरोध (OCC Conflict): पृष्ठ का वर्तमान संस्करण ${curVersion} है, प्राप्त संस्करण ${expected} है।`,
+          currentVersion: curVersion,
+          expectedVersion: expected,
+        };
+        if (options?.throwOnError) {
+          const err = new Error(conflictRes.message);
+          err.statusCode = 409;
+          err.code = 'ERR_VERSION_CONFLICT';
+          throw err;
+        }
+        return conflictRes;
+      }
+    }
+
+    const existing = existingIndex >= 0 ? this.data.epaperPages[existingIndex] : null;
+    const record = {
+      ...(existing || {}),
+      ...pageData,
+      id,
+      elements: Array.isArray(pageData.elements) ? pageData.elements : (existing?.elements || []),
+      version: existing ? (existing.version || 1) + 1 : 1,
+      updatedAt: new Date().toISOString(),
+      createdAt: existing ? existing.createdAt : new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      this.data.epaperPages[existingIndex] = record;
+    } else {
+      this.data.epaperPages.push(record);
+      if (record.editionId && this.data.epaperEditions) {
+        const parentEdition = this.data.epaperEditions.find((e) => e.id === record.editionId);
+        if (parentEdition) {
+          parentEdition.pages = parentEdition.pages || [];
+          if (!parentEdition.pages.includes(id)) {
+            parentEdition.pages.push(id);
+            parentEdition.totalPages = parentEdition.pages.length;
+          }
+        }
+      }
+    }
+    this.save();
+    return record;
+  }
+
+  async deleteEpaperPage(id, user = null) {
+    if (!this.data.epaperPages) return false;
+    const idx = this.data.epaperPages.findIndex((p) => p.id === id);
+    if (idx < 0) return false;
+
+    const removed = this.data.epaperPages.splice(idx, 1)[0];
+    if (removed?.editionId && this.data.epaperEditions) {
+      const parent = this.data.epaperEditions.find((e) => e.id === removed.editionId);
+      if (parent && parent.pages) {
+        parent.pages = parent.pages.filter((pid) => pid !== id);
+        parent.totalPages = parent.pages.length;
+      }
+    }
+    this.save();
+    return true;
+  }
+
+  async checkArticleInEdition(editionId, articleId) {
+    const pages = await this.getEpaperPagesByEditionId(editionId);
+    for (const page of pages) {
+      const elements = page.elements || [];
+      const match = elements.find((el) => el.articleId === articleId);
+      if (match) {
+        return {
+          placed: true,
+          pageNumber: page.pageNumber,
+          pageId: page.id,
+          pageTitle: page.pageTitle,
+          elementId: match.id,
+          articleId,
+        };
+      }
+    }
+    return {
+      placed: false,
+      pageNumber: null,
+      pageId: null,
+      pageTitle: null,
+      elementId: null,
+      articleId,
+    };
+  }
+
+  async checkArticlePlacement(editionId, articleId) {
+    return this.checkArticleInEdition(editionId, articleId);
+  }
+
+  async getEpaperTemplates(params = {}) {
+    let list = [...(this.data.epaperTemplates || [])];
+    if (params.category && params.category !== 'all') {
+      const c = String(params.category).toUpperCase();
+      list = list.filter((t) => String(t.category).toUpperCase() === c);
+    }
+    if (params.gridColumns) {
+      list = list.filter((t) => t.gridColumns === Number(params.gridColumns));
+    }
+    if (params.isSystem !== undefined) {
+      const sys = String(params.isSystem) === 'true';
+      list = list.filter((t) => t.isSystem === sys);
+    }
+    if (params.search) {
+      const q = String(params.search).toLowerCase();
+      list = list.filter((t) =>
+        (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.nameHi && t.nameHi.toLowerCase().includes(q)) ||
+        (t.description && t.description.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }
+
+  async getEpaperTemplateById(id) {
+    const list = this.data.epaperTemplates || [];
+    return list.find((t) => t.id === id) || null;
+  }
+
+  async saveEpaperTemplate(templateData, user = null, options = {}) {
+    this.data.epaperTemplates = this.data.epaperTemplates || [];
+    const id = templateData.id || `tpl-custom-${Date.now()}`;
+    const existingIndex = this.data.epaperTemplates.findIndex((t) => t.id === id);
+
+    // Duplicate name collision check (T2.4.5)
+    const duplicate = this.data.epaperTemplates.find(
+      (t) => t.id !== id && ((templateData.name && t.name === templateData.name) || (templateData.nameHi && t.nameHi === templateData.nameHi))
+    );
+    if (duplicate) {
+      const errRes = {
+        error: true,
+        statusCode: 409,
+        code: 'ERR_TEMPLATE_NAME_COLLISION',
+        message: `ERR_TEMPLATE_NAME_COLLISION: टेम्पलेट नाम "${templateData.name || templateData.nameHi}" पहले से मौजूद है।`,
+      };
+      if (options?.throwOnError) {
+        const err = new Error(errRes.message);
+        err.statusCode = 409;
+        err.code = 'ERR_TEMPLATE_NAME_COLLISION';
+        throw err;
+      }
+      return errRes;
+    }
+
+    const expected = templateData.expectedVersion !== undefined 
+      ? templateData.expectedVersion 
+      : (options?.expectedVersion !== undefined ? options.expectedVersion : (templateData.version !== undefined ? templateData.version : undefined));
+
+    if (existingIndex >= 0 && expected !== undefined) {
+      const curVersion = this.data.epaperTemplates[existingIndex].version || 1;
+      if (curVersion !== Number(expected)) {
+        return {
+          error: true,
+          statusCode: 409,
+          code: 'ERR_VERSION_CONFLICT',
+          message: `संस्करण विरोध (OCC Conflict): टेम्पलेट का वर्तमान संस्करण ${curVersion} है, प्राप्त संस्करण ${expected} है।`,
+        };
+      }
+    }
+
+    const existing = existingIndex >= 0 ? this.data.epaperTemplates[existingIndex] : null;
+    const record = {
+      ...(existing || {}),
+      ...templateData,
+      id,
+      version: existing ? (existing.version || 1) + 1 : 1,
+      updatedAt: new Date().toISOString(),
+      createdAt: existing ? existing.createdAt : new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      this.data.epaperTemplates[existingIndex] = record;
+    } else {
+      this.data.epaperTemplates.push(record);
+    }
+    this.save();
+    return record;
+  }
+
+  async deleteEpaperTemplate(id, user = null) {
+    if (!this.data.epaperTemplates) return false;
+    const idx = this.data.epaperTemplates.findIndex((t) => t.id === id);
+    if (idx < 0) return false;
+    if (this.data.epaperTemplates[idx].isSystem) {
+      return {
+        error: true,
+        statusCode: 400,
+        code: 'ERR_CANNOT_DELETE_SYSTEM_TEMPLATE',
+        message: 'सिस्टम टेम्पलेट हटाया नहीं जा सकता।',
+      };
+    }
+    this.data.epaperTemplates.splice(idx, 1);
+    this.save();
+    return true;
+  }
+
+  async saveEpaperWhatsAppGeneration(data, user = null) {
+    this.data.epaperWhatsAppGenerations = this.data.epaperWhatsAppGenerations || [];
+    const id = data.id || `wa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const record = {
+      id,
+      idempotencyKey: data.idempotencyKey || null,
+      editionId: data.editionId,
+      pageNumber: data.pageNumber,
+      articleId: data.articleId,
+      reporterId: data.reporterId || user?.id || 'usr-reporter',
+      reporterName: data.reporterName || user?.fullName || 'संवाददाता',
+      reporterBadge: data.reporterBadge || user?.badgeNumber || 'BNW-STRINGER',
+      format: data.format || '4:5',
+      headline: data.headline || '',
+      body: data.body || '',
+      imageUrl: data.imageUrl,
+      storagePath: data.storagePath || `whatsapp/${data.reporterId || 'usr'}/${Date.now()}.png`,
+      isPrivate: true,
+      districtName: data.districtName,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.data.epaperWhatsAppGenerations.unshift(record);
+    this.save();
+    return record;
+  }
+
+  async _acquireReporterLock(reporterId) {
+    if (!this._reporterLocks) {
+      this._reporterLocks = new Map();
+    }
+    let releaseLock;
+    const prevLock = this._reporterLocks.get(reporterId) || Promise.resolve();
+    const nextLock = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+    this._reporterLocks.set(reporterId, prevLock.then(() => nextLock));
+    await prevLock;
+    return () => releaseLock();
+  }
+
+  async atomicSaveEpaperWhatsAppGeneration(data, user = null) {
+    const reporterId = user?.id || data.reporterId || 'usr-reporter';
+    const idempotencyKey = data.idempotencyKey || data.id || null;
+    const release = await this._acquireReporterLock(reporterId);
+    try {
+      this.data.epaperWhatsAppGenerations = this.data.epaperWhatsAppGenerations || [];
+      if (idempotencyKey) {
+        const existing = this.data.epaperWhatsAppGenerations.find(
+          (g) => g.idempotencyKey === idempotencyKey && g.reporterId === reporterId
+        );
+        if (existing) {
+          return existing; // Idempotent return without consuming quota
+        }
+      }
+
+      const today = this._getIndiaDateString();
+      const quota = await this.getReporterWhatsAppQuota(reporterId, today);
+      if (quota.quotaExceeded || quota.remaining <= 0) {
+        const err = new Error(`दैनिक व्हाट्सएप कार्ड निर्माण सीमा (${quota.maxDaily} कार्ड/दिन) समाप्त हो चुकी है।`);
+        err.statusCode = 429;
+        err.code = 'ERR_QUOTA_EXHAUSTED';
+        err.details = quota;
+        throw err;
+      }
+      return await this.saveEpaperWhatsAppGeneration({
+        ...data,
+        idempotencyKey,
+        reporterId,
+        reporterName: user?.fullName || data.reporterName || 'संवाददाता',
+      }, user);
+    } finally {
+      release();
+    }
+  }
+
+  async getEpaperWhatsAppGenerations(params = {}) {
+    let list = [...(this.data.epaperWhatsAppGenerations || [])];
+    if (params.reporterId) {
+      list = list.filter((g) => g.reporterId === params.reporterId);
+    }
+    if (params.editionId) {
+      list = list.filter((g) => g.editionId === params.editionId);
+    }
+    if (params.format) {
+      list = list.filter((g) => g.format === params.format);
+    }
+    if (params.date) {
+      list = list.filter((g) => g.createdAt.startsWith(params.date));
+    }
+    return list;
+  }
+
+  _getIndiaDateString(dateInput = new Date()) {
+    try {
+      const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(d);
+    } catch {
+      return new Date().toISOString().split('T')[0];
+    }
+  }
+
+  async getReporterWhatsAppQuota(reporterId, date = null) {
+    const today = date || this._getIndiaDateString();
+    const generations = (this.data.epaperWhatsAppGenerations || []).filter((g) => {
+      if (g.reporterId !== reporterId) return false;
+      const genDate = g.createdAt ? this._getIndiaDateString(g.createdAt) : '';
+      return genDate === today || String(g.createdAt || '').startsWith(today);
+    });
+    const used = generations.length;
+
+    let maxDaily = 20;
+    if (this.data.reporterWhatsAppQuotas && this.data.reporterWhatsAppQuotas[reporterId] !== undefined) {
+      maxDaily = Number(this.data.reporterWhatsAppQuotas[reporterId]);
+    } else {
+      const u = (this.data.users || []).find((x) => x.id === reporterId);
+      if (u && u.customWhatsAppQuota !== undefined) {
+        maxDaily = Number(u.customWhatsAppQuota);
+      }
+    }
+
+    const remaining = Math.max(0, maxDaily - used);
+    return {
+      reporterId,
+      date: today,
+      used,
+      maxDaily,
+      remaining,
+      quotaExceeded: remaining <= 0,
+      timezone: 'Asia/Kolkata',
+    };
+  }
+
+  async setReporterWhatsAppQuota(reporterId, quota) {
+    if (!reporterId) throw new Error('ERR_INVALID_PARAM: reporterId is required');
+    const numericQuota = Number(quota);
+    if (isNaN(numericQuota) || numericQuota < 0) {
+      throw new Error('ERR_INVALID_QUOTA: Quota must be a non-negative number');
+    }
+    this.data.reporterWhatsAppQuotas = this.data.reporterWhatsAppQuotas || {};
+    this.data.reporterWhatsAppQuotas[reporterId] = numericQuota;
+
+    const users = this.data.users || [];
+    const idx = users.findIndex((u) => u.id === reporterId);
+    if (idx !== -1) {
+      users[idx] = {
+        ...users[idx],
+        customWhatsAppQuota: numericQuota,
+        updatedAt: new Date().toISOString(),
+      };
+      this.data.users = users;
+    }
+    this.save();
+    return {
+      reporterId,
+      maxDaily: numericQuota,
+      timezone: 'Asia/Kolkata',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  async saveEpaperAdSubmission(data, user = null) {
+    this.data.epaperAdSubmissions = this.data.epaperAdSubmissions || [];
+    if (!data || !data.advertiserName || !String(data.advertiserName).trim()) {
+      const err = new Error('ERR_MISSING_AD_CONTACT_INFO: Required advertiser name is missing.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!data.contactPhone || !String(data.contactPhone).trim()) {
+      const err = new Error('ERR_MISSING_AD_CONTACT_INFO: Required contact/billing information is missing.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const id = data.id || `ad-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const submissionNumber = data.submissionNumber || `ADV-MP-${new Date().toISOString().slice(0, 7).replace('-', '')}-${String(this.data.epaperAdSubmissions.length + 1).padStart(4, '0')}`;
+    const timestamp = new Date().toISOString();
+
+    const record = {
+      id,
+      submissionNumber,
+      advertiserName: String(data.advertiserName).trim(),
+      contactPhone: String(data.contactPhone).trim(),
+      category: data.category || 'COMMERCIAL',
+      text: data.text || '',
+      imageUrl: data.imageUrl || '',
+      receiptNumber: data.receiptNumber || '',
+      amount: data.amount !== undefined ? Number(data.amount) : 250,
+      targetDistrict: data.targetDistrict || 'dist-bhopal',
+      targetDistrictName: data.targetDistrictName || 'भोपाल',
+      targetPage: data.targetPage !== undefined ? Number(data.targetPage) : 11,
+      slotType: data.slotType || 'CLASSIFIED',
+      status: data.status || 'PENDING',
+      reporterId: data.reporterId || (user ? user.id : 'reporter-anonymous'),
+      reporterName: data.reporterName || (user ? user.name : 'संवाददाता'),
+      reporterBadge: data.reporterBadge || '',
+      reviewedBy: data.reviewedBy || null,
+      reviewedAt: data.reviewedAt || null,
+      reviewNotes: data.reviewNotes || null,
+      version: 1,
+      createdAt: data.createdAt || timestamp,
+      updatedAt: timestamp,
+    };
+
+    const existingIndex = this.data.epaperAdSubmissions.findIndex((a) => a.id === id);
+    if (existingIndex >= 0) {
+      record.version = (this.data.epaperAdSubmissions[existingIndex].version || 1) + 1;
+      this.data.epaperAdSubmissions[existingIndex] = {
+        ...this.data.epaperAdSubmissions[existingIndex],
+        ...record,
+      };
+    } else {
+      this.data.epaperAdSubmissions.push(record);
+    }
+    this.save();
+    return record;
+  }
+
+  async getEpaperAdSubmissions(params = {}) {
+    let list = [...(this.data.epaperAdSubmissions || [])];
+    if (params.status && params.status !== 'all') {
+      const s = String(params.status).toUpperCase();
+      list = list.filter((a) => String(a.status).toUpperCase() === s || (s === 'PENDING' && a.status === 'PENDING_APPROVAL'));
+    }
+    if (params.districtId && params.districtId !== 'all') {
+      list = list.filter((a) => a.targetDistrict === params.districtId);
+    }
+    if (params.reporterId && params.reporterId !== 'all') {
+      list = list.filter((a) => a.reporterId === params.reporterId);
+    }
+    if (params.slotType && params.slotType !== 'all') {
+      list = list.filter((a) => a.slotType === params.slotType);
+    }
+    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return list;
+  }
+
+  async getEpaperAdSubmissionById(id) {
+    const list = this.data.epaperAdSubmissions || [];
+    return list.find((a) => a.id === id) || null;
+  }
+
+  async reviewEpaperAdSubmission(id, action, notes = '', user = null) {
+    this.data.epaperAdSubmissions = this.data.epaperAdSubmissions || [];
+    const idx = this.data.epaperAdSubmissions.findIndex((a) => a.id === id);
+    if (idx < 0) {
+      const err = new Error(`ERR_AD_SUBMISSION_NOT_FOUND: विज्ञापन प्रविष्टि "${id}" नहीं मिली।`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const normalizedAction = String(action).toUpperCase();
+    if (normalizedAction !== 'APPROVE' && normalizedAction !== 'REJECT') {
+      const err = new Error('ERR_INVALID_REVIEW_ACTION: केवल "APPROVE" या "REJECT" मान्य है।');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const current = this.data.epaperAdSubmissions[idx];
+    const timestamp = new Date().toISOString();
+    const updated = {
+      ...current,
+      status: normalizedAction === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+      reviewedBy: user ? (user.name || user.id) : 'Desk Editor',
+      reviewedAt: timestamp,
+      reviewNotes: notes || '',
+      updatedAt: timestamp,
+      version: (current.version || 1) + 1,
+    };
+    this.data.epaperAdSubmissions[idx] = updated;
+    this.save();
+    return updated;
+  }
+
+  async saveEpaperEditionVersion(versionDoc) {
+    this.data.epaperEditionVersions = this.data.epaperEditionVersions || [];
+    if (!versionDoc || !versionDoc.id) {
+      throw new Error('ERR_INVALID_VERSION_DOC: Version document must have an id.');
+    }
+    const existing = this.data.epaperEditionVersions.find((v) => v.id === versionDoc.id);
+    if (existing) {
+      // Version snapshots are immutable
+      return existing;
+    }
+    const record = {
+      ...versionDoc,
+      immutable: true,
+      savedAt: new Date().toISOString(),
+    };
+    this.data.epaperEditionVersions.unshift(record);
+    this.save();
+    return record;
+  }
+
+  async getEpaperEditionVersions(editionId) {
+    const list = (this.data.epaperEditionVersions || []).filter((v) => v.editionId === editionId);
+    list.sort((a, b) => {
+      const vA = a.versionNumber || (a.snapshotData?.edition?.version) || 0;
+      const vB = b.versionNumber || (b.snapshotData?.edition?.version) || 0;
+      return vB - vA;
+    });
+    return list;
+  }
+
+  async getEpaperEditionVersionById(id) {
+    const list = this.data.epaperEditionVersions || [];
+    return list.find((v) => v.id === id) || null;
+  }
+
+  async publishEpaperEdition(editionId, expectedVersion = undefined, user = null) {
+    const existing = await this.getEpaperEditionById(editionId);
+    if (!existing) {
+      const err = new Error('ERR_NOT_FOUND: ई-पेपर संस्करण नहीं मिला।');
+      err.statusCode = 404;
+      err.code = 'ERR_NOT_FOUND';
+      throw err;
+    }
+
+    if (expectedVersion !== undefined && existing.version !== Number(expectedVersion)) {
+      const err = new Error(`ERR_OCC_COLLISION: Version conflict. Current: ${existing.version}, Expected: ${expectedVersion}`);
+      err.statusCode = 409;
+      err.code = 'ERR_OCC_COLLISION';
+      throw err;
+    }
+
+    const pages = await this.getEpaperPagesByEditionId(editionId);
+    const versionTag = `v${existing.version}.0.0`;
+    const snapshotId = `${editionId}-${versionTag}`;
+    const publishedAt = new Date().toISOString();
+    const publishedBy = user?.fullName || user?.name || 'संपादक';
+
+    const snapshot = {
+      id: snapshotId,
+      editionId,
+      versionNumber: existing.version,
+      versionTag,
+      editionSnapshot: JSON.parse(JSON.stringify(existing)),
+      pagesSnapshot: JSON.parse(JSON.stringify(pages)),
+      snapshotData: {
+        edition: JSON.parse(JSON.stringify(existing)),
+        pages: JSON.parse(JSON.stringify(pages)),
+      },
+      publishedBy,
+      publishedAt,
+      immutable: true,
+    };
+
+    await this.saveEpaperEditionVersion(snapshot);
+
+    const updatedEdition = {
+      ...existing,
+      status: 'PUBLISHED',
+      publishedAt,
+      publishedBy,
+      version: existing.version + 1,
+      updatedAt: publishedAt,
+    };
+
+    const idx = this.data.epaperEditions.findIndex((e) => e.id === editionId);
+    if (idx >= 0) {
+      this.data.epaperEditions[idx] = updatedEdition;
+    }
+    this.save();
+
+    return { edition: updatedEdition, snapshot };
+  }
+
   getHealth() {
     return {
       adapterType: 'local_json_atomic',
@@ -4875,6 +5762,41 @@ export class ProductionGuardAdapter {
   async saveDeletionRequest() { return this.failClosedError(); }
   async recordEngagementEvent() { return this.failClosedError(); }
   async getEngagementEvents() { return []; }
+
+  // E-Paper Studio fail-closed methods
+  async getEpaperEditions() { return { editions: [], items: [], total: 0, count: 0, page: 1, limit: 20, totalPages: 1 }; }
+  async getEpaperEditionById() { return null; }
+  async getEpaperEditionByCode() { return null; }
+  async getLatestEpaperEdition() { return null; }
+  async createEpaperEditionWithPages() { return this.failClosedError(); }
+  async saveEpaperEdition() { return this.failClosedError(); }
+  async updateEpaperEditionStatus() { return this.failClosedError(); }
+  async deleteEpaperEdition() { return this.failClosedError(); }
+  async getEpaperPagesByEditionId() { return []; }
+  async getEpaperPages() { return []; }
+  async getEpaperPageById() { return null; }
+  async getEpaperPageByNumber() { return null; }
+  async saveEpaperPage() { return this.failClosedError(); }
+  async deleteEpaperPage() { return this.failClosedError(); }
+  async checkArticleInEdition() { return { placed: false, pageNumber: null, pageId: null, pageTitle: null, elementId: null }; }
+  async checkArticlePlacement() { return { placed: false, pageNumber: null, pageId: null, pageTitle: null, elementId: null }; }
+  async getEpaperTemplates() { return INITIAL_EPAPER_TEMPLATES; }
+  async getEpaperTemplateById(id) { const t = INITIAL_EPAPER_TEMPLATES.find((x) => x.id === id); return t || null; }
+  async saveEpaperTemplate() { return this.failClosedError(); }
+  async deleteEpaperTemplate() { return this.failClosedError(); }
+  async saveEpaperWhatsAppGeneration() { return this.failClosedError(); }
+  async atomicSaveEpaperWhatsAppGeneration() { return this.failClosedError(); }
+  async getEpaperWhatsAppGenerations() { return []; }
+  async getReporterWhatsAppQuota(reporterId, date = null) { return { reporterId, date: date || new Date().toISOString().split('T')[0], used: 0, maxDaily: 20, remaining: 20, quotaExceeded: false, timezone: 'Asia/Kolkata' }; }
+  async setReporterWhatsAppQuota(reporterId, quota) { return { reporterId, maxDaily: Number(quota), timezone: 'Asia/Kolkata', updatedAt: new Date().toISOString() }; }
+  async saveEpaperAdSubmission() { return this.failClosedError(); }
+  async getEpaperAdSubmissions() { return []; }
+  async getEpaperAdSubmissionById() { return null; }
+  async reviewEpaperAdSubmission() { return this.failClosedError(); }
+  async saveEpaperEditionVersion() { return this.failClosedError(); }
+  async getEpaperEditionVersions() { return []; }
+  async getEpaperEditionVersionById() { return null; }
+  async publishEpaperEdition() { return this.failClosedError(); }
 
   getHealth() {
     return {

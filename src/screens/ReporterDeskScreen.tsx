@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   PenTool,
   History,
@@ -24,6 +24,15 @@ import {
   Users,
   QrCode,
   Printer,
+  Megaphone,
+  Tag,
+  Receipt,
+  Share2,
+  Download,
+  Cloud,
+  X,
+  RefreshCw,
+  Eye,
 } from 'lucide-react';
 import {
   ArticleDetail,
@@ -32,9 +41,14 @@ import {
   DistrictItem,
   ReporterAiDraft,
   ReporterProfile,
+  EpaperAdSubmissionDoc,
+  EpaperAdCategory,
+  EpaperAdSlotType,
+  EpaperWhatsAppQuotaResponse,
 } from '../types';
 import { BnwAiService } from '../services/aiService';
 import { apiClient } from '../services/apiClient';
+import { GraphicRenderer } from '../services/graphicRenderer';
 
 interface ReporterDeskScreenProps {
   categories: CategoryItem[];
@@ -45,6 +59,363 @@ interface ReporterDeskScreenProps {
   onBackClick: () => void;
 }
 
+interface ReporterArticleClippingModalProps {
+  story: ArticleDetail;
+  reporter: ReporterProfile;
+  quota: EpaperWhatsAppQuotaResponse | null;
+  onClose: () => void;
+  onQuotaUpdated: () => void;
+}
+
+export const ReporterArticleClippingModal: React.FC<ReporterArticleClippingModalProps> = ({
+  story,
+  reporter,
+  quota,
+  onClose,
+  onQuotaUpdated,
+}) => {
+  const [format, setFormat] = useState<'4:5' | '1:1'>('4:5');
+  const [headline, setHeadline] = useState(story.title || '');
+  const [body, setBody] = useState(story.content || story.summary || '');
+  const [district, setDistrict] = useState(story.districtName || reporter.assignedDistricts[0] || 'मध्य प्रदेश');
+  const [photoUrl, setPhotoUrl] = useState(story.imageUrl || '');
+  const [isRendering, setIsRendering] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const renderCard = useCallback(async () => {
+    if (!canvasRef.current) return;
+    setIsRendering(true);
+    try {
+      if (format === '4:5') {
+        await GraphicRenderer.renderArticleClipping(canvasRef.current, {
+          headline,
+          body,
+          reporterName: reporter.name,
+          reporterBadge: reporter.badgeNumber || 'BNW-REP-0101',
+          reporterAvatar: reporter.avatar,
+          photoUrl: photoUrl || undefined,
+          date: new Date().toLocaleDateString('hi-IN', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          }),
+          district,
+          editionTitle: 'अख़बार कतरन • डिजिटल संस्करण',
+        });
+      } else {
+        await GraphicRenderer.renderToCanvas(
+          canvasRef.current,
+          {
+            aspectRatio: '1:1',
+            headline,
+            subtext: body.slice(0, 180),
+            imageUrl: photoUrl || undefined,
+            districtName: district,
+            authorName: `संवाददाता: ${reporter.name} • ${reporter.badgeNumber || 'BNW-REP-0101'}`,
+            themeColor: '#0F172A',
+          },
+          undefined,
+          { scale: 1 }
+        );
+      }
+    } catch (err: any) {
+      console.warn('[ReporterArticleClippingModal] Render error:', err);
+    } finally {
+      setIsRendering(false);
+    }
+  }, [format, headline, body, district, photoUrl, reporter]);
+
+  useEffect(() => {
+    renderCard();
+  }, [renderCard]);
+
+  const handleDownload = () => {
+    if (!canvasRef.current) return;
+    const dataUrl = canvasRef.current.toDataURL('image/png');
+    GraphicRenderer.downloadImage(
+      dataUrl,
+      `bnw-clipping-${story.id || 'story'}-${format.replace(':', 'x')}.png`
+    );
+  };
+
+  const handleShareWhatsApp = () => {
+    const shareText = `*${headline}*\n\n${body.slice(0, 220)}...\n\nपूरी खबर पढ़ें: https://breakingnewswala.com/article/${story.slug || story.id}\n\n— अधिकृत संवाददाता: ${reporter.name} (${reporter.badgeNumber || 'BNW-REP-0101'})\nब्रेकिंग न्यूज़ वाला (मध्य प्रदेश)`;
+    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`, '_blank');
+  };
+
+  const handleSaveToCloud = async () => {
+    if (quota && quota.remaining <= 0) {
+      setStatusMessage({
+        type: 'error',
+        text: 'दैनिक व्हाट्सएप कार्ड निर्माण सीमा (20 कार्ड/दिन) समाप्त हो चुकी है।',
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    setStatusMessage(null);
+    try {
+      await apiClient.epaper.generateWhatsAppCard({
+        format,
+        headline,
+        body,
+        imageUrl: photoUrl || undefined,
+        articleId: story.id,
+      });
+      setStatusMessage({
+        type: 'success',
+        text: 'कार्ड क्लाउड में सफलतापूर्वक सहेजा गया (निजी व सुरक्षित भंडारण)।',
+      });
+      onQuotaUpdated();
+    } catch (err: any) {
+      const errMsg =
+        err.code === 'ERR_QUOTA_EXHAUSTED' || err.statusCode === 429
+          ? 'दैनिक व्हाट्सएप कार्ड निर्माण सीमा (20 कार्ड/दिन) समाप्त हो चुकी है।'
+          : err.message || 'क्लाउड में कार्ड सहेजना विफल रहा।';
+      setStatusMessage({ type: 'error', text: errMsg });
+      onQuotaUpdated();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const isQuotaExhausted = quota ? quota.remaining <= 0 : false;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-600 rounded-lg text-white">
+              <Share2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-bold flex items-center gap-2">
+                <span>अख़बार कतरन एवं सोशल कार्ड जनरेटर</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono">
+                  {format}
+                </span>
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                उच्च-गुणवत्ता देवनागरी अख़बार कतरन व व्हाट्सएप कार्ड
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${
+                isQuotaExhausted
+                  ? 'bg-red-950/80 border-red-700 text-red-300'
+                  : 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${isQuotaExhausted ? 'bg-red-400' : 'bg-emerald-400'} animate-pulse`} />
+              <span>कोटा: {quota?.remaining ?? 20}/{quota?.maxDaily ?? 20} शेष</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-4 sm:p-5 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Left Column: Canvas Preview */}
+          <div className="lg:col-span-6 flex flex-col items-center gap-3">
+            {/* Format Selector Pills */}
+            <div className="w-full grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setFormat('4:5')}
+                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  format === '4:5'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>4:5 (अख़बार कतरन / स्टोरी)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormat('1:1')}
+                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  format === '1:1'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>1:1 (व्हाट्सएप स्क्वायर)</span>
+              </button>
+            </div>
+
+            {/* Canvas Preview Container */}
+            <div className="relative w-full max-w-[340px] bg-slate-50 border border-slate-200 rounded-xl p-2 shadow-inner flex items-center justify-center min-h-[380px]">
+              {isRendering && (
+                <div className="absolute inset-0 bg-white/70 backdrop-blur-2xs flex items-center justify-center rounded-xl z-10">
+                  <RefreshCw className="w-6 h-6 text-red-600 animate-spin" />
+                </div>
+              )}
+              <canvas
+                ref={canvasRef}
+                className="w-full h-auto max-h-[460px] object-contain rounded-lg shadow-sm border border-slate-200 bg-white"
+              />
+            </div>
+          </div>
+
+          {/* Right Column: Editor Controls & Actions */}
+          <div className="lg:col-span-6 flex flex-col justify-between gap-4">
+            <div className="space-y-3.5 text-xs">
+              {/* Status Alert Banner */}
+              {statusMessage && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                    statusMessage.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-red-50 border-red-200 text-red-800'
+                  }`}
+                >
+                  {statusMessage.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  )}
+                  <span>{statusMessage.text}</span>
+                </div>
+              )}
+
+              {/* Quota Exhausted Warning */}
+              {isQuotaExhausted && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">दैनिक कोटा समाप्त (20/20 प्रयुक्त):</span>{' '}
+                    आप निःशुल्क उच्च-रिज़ॉल्यूशन PNG डाउनलोड व व्हाट्सएप शेयर कर सकते हैं। क्लाउड में नया कार्ड कल सुबह 5:30 बजे के बाद ही सहेजा जा सकेगा।
+                  </div>
+                </div>
+              )}
+
+              {/* Headline Input */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">शीर्षक (Headline)</label>
+                <input
+                  type="text"
+                  value={headline}
+                  onChange={(e) => setHeadline(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-hidden focus:border-red-600"
+                />
+              </div>
+
+              {/* Body / Snippet Input */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-700 block">मुख्य विवरण / सारांश (Justified Hindi Body)</label>
+                <textarea
+                  rows={4}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-normal focus:outline-hidden focus:border-red-600 resize-none"
+                />
+              </div>
+
+              {/* District & Photo Inputs */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block">जिला टैग</label>
+                  <input
+                    type="text"
+                    value={district}
+                    onChange={(e) => setDistrict(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block">तस्वीर URL (वैकल्पिक)</label>
+                  <input
+                    type="text"
+                    value={photoUrl}
+                    onChange={(e) => setPhotoUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Reporter Attribution Card Info */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src={reporter.avatar}
+                    alt={reporter.name}
+                    className="w-9 h-9 rounded-full object-cover border border-slate-300"
+                  />
+                  <div>
+                    <div className="font-bold text-slate-900 text-xs">{reporter.name}</div>
+                    <div className="text-[11px] text-blue-700 font-semibold">
+                      प्रमाणित संवाददाता • {reporter.badgeNumber || 'BNW-REP-0101'}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right text-[11px] text-slate-500">
+                  <div className="font-bold text-slate-700">breakingnewswala.com</div>
+                  <div>डिजिटल ई-पेपर नेटवर्क</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="py-2.5 px-3 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>PNG डाउनलोड</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareWhatsApp}
+                className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>व्हाट्सएप शेयर</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveToCloud}
+                disabled={isSaving || isQuotaExhausted}
+                className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-all ${
+                  isSaving || isQuotaExhausted
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                }`}
+              >
+                {isSaving ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Cloud className="w-3.5 h-3.5" />
+                )}
+                <span>क्लाउड में सहेजें</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   categories,
   districts,
@@ -53,7 +424,37 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   onSubmitDraft,
   onBackClick,
 }) => {
-  const [activeTab, setActiveTab] = useState<'create' | 'my_stories' | 'assignments' | 'profile'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'my_stories' | 'assignments' | 'profile' | 'classified_ads'>('create');
+
+  // Classified Ads Submission State
+  const [adAdvertiserName, setAdAdvertiserName] = useState<string>('');
+  const [adContactPhone, setAdContactPhone] = useState<string>('');
+  const [adCategory, setAdCategory] = useState<EpaperAdCategory>('COMMERCIAL');
+  const [adSlotType, setAdSlotType] = useState<EpaperAdSlotType>('CLASSIFIED');
+  const [adText, setAdText] = useState<string>('');
+  const [adReceiptNumber, setAdReceiptNumber] = useState<string>('');
+  const [adDistrict, setAdDistrict] = useState<string>('dist-bhopal');
+  const [adSubmitting, setAdSubmitting] = useState<boolean>(false);
+  const [myClassifiedAds, setMyClassifiedAds] = useState<EpaperAdSubmissionDoc[]>([]);
+  const [loadingMyAds, setLoadingMyAds] = useState<boolean>(false);
+  const [adToast, setAdToast] = useState<string | null>(null);
+
+  // 4:5 Article Clipping & WhatsApp Card Generator State
+  const [selectedStoryForClipping, setSelectedStoryForClipping] = useState<ArticleDetail | null>(null);
+  const [whatsappQuota, setWhatsappQuota] = useState<EpaperWhatsAppQuotaResponse | null>(null);
+
+  const loadWhatsAppQuota = useCallback(async () => {
+    try {
+      const q = await apiClient.epaper.getWhatsAppQuota();
+      setWhatsappQuota(q);
+    } catch (err) {
+      console.warn('[ReporterDeskScreen] Failed to load WhatsApp quota:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWhatsAppQuota();
+  }, [loadWhatsAppQuota]);
 
   // Active Reporter Selection (Persona Switcher)
   const [selectedReporterId, setSelectedReporterId] = useState<string>(
@@ -358,6 +759,58 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
     }, 2000);
   };
 
+  const loadMyClassifiedAds = async () => {
+    setLoadingMyAds(true);
+    try {
+      const ads = await apiClient.epaper.getClassifiedSubmissions({
+        reporterId: activeReporter.id,
+      });
+      setMyClassifiedAds(ads);
+    } catch (err: any) {
+      console.error('Failed to load reporter classified ads:', err);
+    } finally {
+      setLoadingMyAds(false);
+    }
+  };
+
+  const handleSubmitClassifiedAd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adAdvertiserName.trim() || !adContactPhone.trim()) {
+      alert('विज्ञापनदाता का नाम और संपर्क फोन अनिवार्य हैं');
+      return;
+    }
+    setAdSubmitting(true);
+    try {
+      const districtObj = districts.find((d) => d.id === adDistrict);
+      await apiClient.epaper.submitClassifiedAd({
+        advertiserName: adAdvertiserName.trim(),
+        contactPhone: adContactPhone.trim(),
+        category: adCategory,
+        slotType: adSlotType,
+        text: adText.trim(),
+        receiptNumber: adReceiptNumber.trim(),
+        targetDistrict: adDistrict,
+        targetDistrictName: districtObj?.nameHi || 'भोपाल',
+        reporterId: activeReporter.id,
+        reporterName: activeReporter.name,
+        reporterBadge: activeReporter.badgeNumber,
+        amount: adSlotType === 'CLASSIFIED' ? 250 : 2500,
+        status: 'PENDING',
+      });
+      setAdToast('विज्ञापन सफलतापूर्वक दर्ज हो गया! समीक्षा उपरांत ई-पेपर में प्रकाशित किया जाएगा।');
+      setAdAdvertiserName('');
+      setAdContactPhone('');
+      setAdText('');
+      setAdReceiptNumber('');
+      setTimeout(() => setAdToast(null), 4000);
+      await loadMyClassifiedAds();
+    } catch (err: any) {
+      alert(err.message || 'विज्ञापन दर्ज करने में विफलता!');
+    } finally {
+      setAdSubmitting(false);
+    }
+  };
+
   const filteredDrafts = reporterDrafts.filter((d) => {
     if (statusFilter === 'ALL') return true;
     return d.status === statusFilter;
@@ -470,6 +923,21 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
           >
             <UserCheck className="w-3.5 h-3.5" />
             <span>प्रेस पहचान पत्र (Press ID)</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('classified_ads');
+              loadMyClassifiedAds();
+            }}
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+              activeTab === 'classified_ads'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Megaphone className="w-3.5 h-3.5" />
+            <span>स्थानीय विज्ञापन / क्लासिफाइड</span>
           </button>
         </div>
       </div>
@@ -847,7 +1315,18 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 आपके द्वारा सबमिट की गई खबरें व वर्तमान स्थिति:
               </h2>
 
-              <div className="flex items-center gap-1.5 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {whatsappQuota && (
+                  <div
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold border flex items-center gap-1 mr-1 ${
+                      whatsappQuota.remaining <= 0
+                        ? 'bg-red-50 border-red-200 text-red-800'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    }`}
+                  >
+                    <span>व्हाट्सएप कार्ड: {whatsappQuota.remaining}/{whatsappQuota.maxDaily} शेष</span>
+                  </div>
+                )}
                 {['ALL', 'PENDING_REVIEW', 'REVISION_REQUESTED', 'PUBLISHED'].map((st) => (
                   <button
                     key={st}
@@ -929,6 +1408,17 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                       {draft.isBreaking && (
                         <span className="text-red-600 font-bold">🚨 ब्रेकिंग टैग</span>
                       )}
+                    </div>
+
+                    <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStoryForClipping(draft)}
+                        className="px-3 py-1.5 bg-linear-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                      >
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>4:5 कतरन एवं सोशल कार्ड</span>
+                      </button>
                     </div>
                   </div>
                 );
@@ -1130,7 +1620,236 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
             )}
           </div>
         )}
+
+        {/* TAB 5: LOCAL CLASSIFIED ADS INGESTION */}
+        {activeTab === 'classified_ads' && (
+          <div className="space-y-6">
+            <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-amber-950 flex items-center gap-2">
+                  <Megaphone className="w-5 h-5 text-amber-700" />
+                  <span>स्थानीय वर्गीकृत विज्ञापन एवं शोक संदेश डेस्क</span>
+                </h3>
+                <p className="text-xs text-amber-800 mt-1">
+                  ज़िला व तहसील स्तर पर स्थानीय व्यावसायिक प्रतिष्ठानों, निविदाओं एवं शोक संदेशों के विज्ञापन दर्ज करें।
+                </p>
+              </div>
+              <span className="px-3 py-1 bg-[#ED1727] text-white text-xs font-bold rounded-lg shadow-2xs">
+                अनिवार्य ASCI 'विज्ञापन' टैग युक्त
+              </span>
+            </div>
+
+            {adToast && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span>{adToast}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Submission Form */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+                <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-1.5">
+                  <Tag className="w-4 h-4 text-blue-600" />
+                  <span>नया स्थानीय विज्ञापन दर्ज करें</span>
+                </h4>
+
+                <form onSubmit={handleSubmitClassifiedAd} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      विज्ञापनदाता / प्रतिष्ठान का नाम: <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={adAdvertiserName}
+                      onChange={(e) => setAdAdvertiserName(e.target.value)}
+                      placeholder="उदा. श्री राम मिष्ठान भंडार"
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        संपर्क फोन / बिलिंग: <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={adContactPhone}
+                        onChange={(e) => setAdContactPhone(e.target.value)}
+                        placeholder="+91 98XXXXXXXX"
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">श्रेणी:</label>
+                      <select
+                        value={adCategory}
+                        onChange={(e) => setAdCategory(e.target.value as EpaperAdCategory)}
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                      >
+                        <option value="COMMERCIAL">व्यावसायिक (Commercial)</option>
+                        <option value="OBITUARY">शोक संदेश / श्रद्धांजलि</option>
+                        <option value="TENDER">सार्वजनिक निविदा (Tender)</option>
+                        <option value="PROPERTY">प्रॉपर्टी / रियल एस्टेट</option>
+                        <option value="MATRIMONIAL">वैवाहिक (Matrimonial)</option>
+                        <option value="CLASSIFIED">वर्गीकृत (Classified)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">स्लॉट प्रकार:</label>
+                      <select
+                        value={adSlotType}
+                        onChange={(e) => setAdSlotType(e.target.value as EpaperAdSlotType)}
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                      >
+                        <option value="CLASSIFIED">वर्गीकृत बॉक्स (₹250 - 30 शब्द)</option>
+                        <option value="BOTTOM_STRIP">तल स्ट्रिप विज्ञापन (₹2,500)</option>
+                        <option value="QUARTER_PAGE">क्वाटर पेज विज्ञापन (₹4,500)</option>
+                        <option value="VERTICAL_EAR">मास्टहेड ईयर पैनल (₹1,500)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">लक्षित जिला:</label>
+                      <select
+                        value={adDistrict}
+                        onChange={(e) => setAdDistrict(e.target.value)}
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                      >
+                        {districts.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.nameHi} ({d.nameEn})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      रसीद / भुगतान वाउचर संख्या (वैकल्पिक):
+                    </label>
+                    <input
+                      type="text"
+                      value={adReceiptNumber}
+                      onChange={(e) => setAdReceiptNumber(e.target.value)}
+                      placeholder="उदा. RCPT-2026-081"
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      विज्ञापन का मुख्य पाठ्य मैटर: <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      required
+                      rows={4}
+                      value={adText}
+                      onChange={(e) => setAdText(e.target.value)}
+                      placeholder="अखबार में मुद्रित होने वाला पूर्ण विज्ञापन संदेश..."
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={adSubmitting}
+                    className="w-full py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    {adSubmitting ? 'विज्ञापन दर्ज हो रहा है...' : 'समीक्षा हेतु विज्ञापन दर्ज करें'}
+                  </button>
+                </form>
+              </div>
+
+              {/* History / My Filed Ads */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      <Receipt className="w-4 h-4 text-emerald-600" />
+                      <span>मेरे द्वारा दर्ज किए गए विज्ञापन ({myClassifiedAds.length})</span>
+                    </h4>
+                    <button
+                      onClick={loadMyClassifiedAds}
+                      className="text-xs text-blue-700 hover:underline font-semibold"
+                    >
+                      रिफ्रेश
+                    </button>
+                  </div>
+
+                  {loadingMyAds ? (
+                    <div className="p-8 text-center text-xs text-slate-500">लोड हो रहा है...</div>
+                  ) : myClassifiedAds.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-100">
+                      आपने अभी तक कोई विज्ञापन दर्ज नहीं किया है।
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                      {myClassifiedAds.map((ad) => (
+                        <div
+                          key={ad.id}
+                          className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-blue-700">{ad.submissionNumber}</span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                ad.status === 'APPROVED'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : ad.status === 'REJECTED'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {ad.status === 'APPROVED'
+                                ? 'स्वीकृत (Approved)'
+                                : ad.status === 'REJECTED'
+                                ? 'अस्वीकृत'
+                                : 'लंबित (Pending)'}
+                            </span>
+                          </div>
+                          <div className="font-semibold text-slate-800">{ad.advertiserName}</div>
+                          <p className="text-[11px] text-slate-600 line-clamp-2">{ad.text}</p>
+                          <div className="flex justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-200">
+                            <span>ज़िला: {ad.targetDistrictName || ad.targetDistrict}</span>
+                            <span>राशि: ₹{ad.amount || 250}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
+                  <span>
+                    संवाददाताओं द्वारा दर्ज विज्ञापन संपादकीय डेस्क द्वारा स्वीकृत होने के बाद ही ई-पेपर के पृष्ठ 11 (वर्गीकृत पृष्ठ) पर मुद्रित होते हैं।
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* 4:5 Portrait Article Clipping & WhatsApp Card Generator Modal */}
+      {selectedStoryForClipping && (
+        <ReporterArticleClippingModal
+          story={selectedStoryForClipping}
+          reporter={activeReporter}
+          quota={whatsappQuota}
+          onClose={() => setSelectedStoryForClipping(null)}
+          onQuotaUpdated={loadWhatsAppQuota}
+        />
+      )}
     </div>
   );
 };

@@ -160,7 +160,10 @@ test('Master Execution 040: Master Admin & Public Access Verification', async (t
     const epaperRes = await mockServer.request('GET', '/api/v1/epaper/editions');
     assert.strictEqual(epaperRes.statusCode, 200);
     assert.strictEqual(epaperRes.data.success, true);
-    assert.ok(Array.isArray(epaperRes.data.data));
+    const editionsList = Array.isArray(epaperRes.data.data) ? epaperRes.data.data : epaperRes.data.data?.editions;
+    assert.ok(Array.isArray(editionsList));
+    const totalCount = typeof epaperRes.data.data?.total === 'number' ? epaperRes.data.data.total : editionsList.length;
+    assert.strictEqual(typeof totalCount, 'number');
   });
 
   // -------------------------------------------------------------

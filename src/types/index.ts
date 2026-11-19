@@ -26,6 +26,7 @@ export interface CategoryItem {
 export interface DistrictItem {
   id: string;
   slug: string;
+  name?: string;
   nameEn: string;
   nameHi: string;
   divisionId: string;
@@ -34,6 +35,7 @@ export interface DistrictItem {
 
 export interface DivisionItem {
   id: string;
+  name?: string;
   nameHi: string;
   nameEn: string;
   headquarters: string;
@@ -63,6 +65,7 @@ export interface ArticleItem {
   }>;
   categoryId?: string;
   categoryName?: string;
+  category?: string;
   districtId?: string;
   districtName?: string;
   divisionId?: string;
@@ -149,6 +152,291 @@ export interface EpaperEdition {
     title: string;
     imageUrl: string;
   }[];
+}
+
+// -------------------------------------------------------------
+// E-PAPER DOMAIN MODELS (Step 2 - Step 12)
+// -------------------------------------------------------------
+
+export type EpaperEditionType = 'DAILY' | 'SPECIAL';
+
+export type EpaperEditionStatus =
+  | 'DRAFT'
+  | 'EDITORIAL_REVIEW'
+  | 'LAYOUT_IN_PROGRESS'
+  | 'QUALITY_CHECK'
+  | 'APPROVED'
+  | 'PUBLISHED'
+  | 'ARCHIVED';
+
+export interface EpaperEditionDoc {
+  id: string;
+  editionCode: string;
+  title: string;
+  publicationDate: string; // YYYY-MM-DD
+  editionType: EpaperEditionType;
+  status: EpaperEditionStatus;
+  totalPages: number; // default 12 for DAILY
+  pages: string[]; // ordered array of EpaperPageDoc IDs
+  divisionId?: string;
+  divisionName?: string;
+  districtId?: string;
+  districtName?: string;
+  thumbnailUrl?: string;
+  pdfUrl?: string;
+  createdBy: string;
+  createdByName?: string;
+  createdByRole?: string;
+  publishedAt?: string;
+  publishedBy?: string;
+  archivedAt?: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type EpaperSectionType =
+  | 'FRONT_PAGE'
+  | 'STATE'
+  | 'NATIONAL'
+  | 'EDITORIAL'
+  | 'DISTRICT_FOCUS'
+  | 'SPORTS'
+  | 'BUSINESS'
+  | 'ENTERTAINMENT'
+  | 'SPECIAL';
+
+export type EpaperElementType =
+  | 'STORY'
+  | 'HEADLINE'
+  | 'IMAGE'
+  | 'AD'
+  | 'MASTHEAD'
+  | 'COLUMN';
+
+export type EpaperAdSlotType =
+  | 'L_SHAPE'
+  | 'BOTTOM_STRIP'
+  | 'FOOTER'
+  | 'VERTICAL_EAR'
+  | 'QUARTER_PAGE'
+  | 'HALF_PAGE'
+  | 'HALF_PAGE_HORIZONTAL'
+  | 'HALF_PAGE_VERTICAL'
+  | 'FULL_PAGE'
+  | 'CLASSIFIED';
+
+export type EpaperAdCategory =
+  | 'CLASSIFIED'
+  | 'OBITUARY'
+  | 'TENDER'
+  | 'COMMERCIAL'
+  | 'ANNOUNCEMENT'
+  | 'MATRIMONIAL'
+  | 'PROPERTY';
+
+export interface EpaperPageElementBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface EpaperPageElement {
+  id: string;
+  elementType: EpaperElementType;
+  articleId?: string;
+  adId?: string;
+  bounds: EpaperPageElementBounds;
+  colSpan: number;
+  rowSpan?: number;
+  customHeadline?: string;
+  customSubheadline?: string;
+  customBodyText?: string;
+  byline?: string;
+  photoCredit?: string;
+  sourceAttribution?: string;
+  columnType?: string;
+  asciBadge?: boolean;
+  badgeText?: string;
+  imageUrl?: string;
+  imageCaption?: string;
+  adSlotType?: EpaperAdSlotType | string;
+  adStatus?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  lineHeight?: number;
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  zIndex?: number;
+  role?: 'LEAD' | 'SECOND_LEAD' | 'ANCHOR' | 'BRIEF' | 'OPINION';
+}
+
+export interface EpaperPageDoc {
+  id: string;
+  editionId: string;
+  pageNumber: number; // 1-indexed (1 to totalPages)
+  pageTitle: string;
+  sectionType: EpaperSectionType | string;
+  templateId?: string;
+  gridColumns: 3 | 4 | 5 | 6 | 8;
+  elements: EpaperPageElement[];
+  thumbnailUrl?: string;
+  pdfUrl?: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EpaperTemplateRegion {
+  id: string;
+  name: string;
+  bounds: EpaperPageElementBounds;
+  colSpan: number;
+  rowSpan?: number;
+  defaultElementType: EpaperElementType;
+  isLocked?: boolean;
+}
+
+export interface EpaperTemplateDoc {
+  id: string;
+  templateCode: string;
+  name: string;
+  nameHi?: string;
+  description?: string;
+  category: string;
+  pageNumberDefault?: number;
+  gridColumns: 3 | 4 | 5 | 6 | 8;
+  regions: EpaperTemplateRegion[];
+  isSystem: boolean;
+  version: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface EpaperAdSubmissionDoc {
+  id: string;
+  submissionNumber: string;
+  advertiserName: string;
+  contactPhone: string;
+  category: EpaperAdCategory;
+  text: string;
+  imageUrl?: string;
+  receiptNumber?: string;
+  amount?: number;
+  targetDistrict: string;
+  targetDistrictName?: string;
+  targetPage?: number;
+  slotType: EpaperAdSlotType;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reporterId: string;
+  reporterName?: string;
+  reporterBadge?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewNotes?: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface EpaperRateCardItem {
+  slotType: EpaperAdSlotType;
+  nameHi: string;
+  descriptionHi: string;
+  dimensionsMm: string;
+  aspectRatio: string;
+  baseRateInr: number;
+  pricingUnit: 'PER_ISSUE' | 'PER_SQ_CM' | 'PER_WORD';
+  isFrontPageEligible: boolean;
+}
+
+export interface TemplateAnalysisResult {
+  totalSlots: number;
+  storySlots: number;
+  adSlots: number;
+  headlineSlots: number;
+  columnSlots: number;
+  imageSlots?: number;
+  layoutDensity: 'LOW' | 'MEDIUM' | 'HIGH' | 'BROADSHEET_STANDARD';
+  structure: string;
+  slots: Array<{
+    id?: string;
+    type: string;
+    bounds: EpaperPageElementBounds;
+    colSpan?: number;
+    aspectRatio?: string;
+  }>;
+  metadata?: {
+    model: string;
+    isFallback: boolean;
+    offlineReady: boolean;
+  };
+}
+
+export type WhatsAppCardFormat = '1:1' | '4:5';
+
+export interface ArticleClippingRenderOptions {
+  headline: string;
+  body: string;
+  reporterName: string;
+  reporterBadge?: string;
+  reporterAvatar?: string;
+  photoUrl?: string;
+  date?: string;
+  district?: string;
+  editionTitle?: string;
+}
+
+export interface EpaperWhatsAppGenerationDoc {
+  id: string;
+  editionId?: string;
+  pageNumber?: number;
+  articleId?: string;
+  reporterId: string;
+  reporterName?: string;
+  reporterBadge?: string;
+  format: WhatsAppCardFormat;
+  headline: string;
+  body: string;
+  imageUrl?: string;
+  storagePath: string;
+  isPrivate: true;
+  districtName?: string;
+  createdAt: string;
+  updatedAt?: string;
+  version: number;
+}
+
+export interface EpaperCheckArticlePlacementResponse {
+  placed: boolean;
+  pageNumber: number | null;
+  pageId: string | null;
+  pageTitle?: string | null;
+  elementId: string | null;
+  articleId?: string;
+}
+
+export interface EpaperWhatsAppQuotaResponse {
+  reporterId: string;
+  date: string;
+  used: number;
+  maxDaily: number;
+  remaining: number;
+  quotaExceeded: boolean;
+}
+
+export interface EpaperEditionVersionDoc {
+  id: string;
+  editionId: string;
+  versionNumber: number;
+  snapshotData: {
+    edition: EpaperEditionDoc;
+    pages: EpaperPageDoc[];
+  };
+  publishedBy: string;
+  publishedAt: string;
+  pdfUrl?: string;
+  version: number;
 }
 
 export interface FactCheckEvaluationItem {
