@@ -1,14 +1,29 @@
 {
+  "apphosting": {
+    "backendId": "breakingnewswala",
+    "rootDir": "/"
+  },
   "firestore": [
     {
-      "database": "ai-studio-android-breaking-b83ef913-4fbd-4bd1-8b00-92a4f70648d7",
+      "database": "ai-studio-breakingnewswala-81a8a8f4-57a5-4181-aa74-2ef4d34fbab7",
       "rules": "firestore.rules"
     }
   ],
+  "storage": {
+    "rules": "storage.rules"
+  },
   "emulators": {
     "firestore": {
       "host": "127.0.0.1",
       "port": 8085
+    },
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9099
+    },
+    "storage": {
+      "host": "127.0.0.1",
+      "port": 9199
     },
     "ui": {
       "enabled": false

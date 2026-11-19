@@ -192,23 +192,43 @@ function mapRoleForFirestoreRule(role: string): 'READER' | 'REPORTER' | 'ADMIN' 
 export async function syncUserProfileToFirestore(firebaseUser: FirebaseUser, resolvedRole = 'READER') {
   if (!firebaseUser?.uid) return;
   const userPath = `users/${firebaseUser.uid}`;
+  const userDocRef = doc(db, 'users', firebaseUser.uid);
   try {
-    const safeName = (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'BNW Reader').slice(0, 100);
-    const payload: Record<string, unknown> = {
-      id: firebaseUser.uid,
-      displayName: safeName,
-      role: mapRoleForFirestoreRule(resolvedRole),
-      state: 'मध्य प्रदेश',
-      updatedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-    };
-    if (firebaseUser.email) {
-      payload.email = firebaseUser.email.slice(0, 200);
+    const safeName = (firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'पाठक').slice(0, 100);
+    const safeEmail = (firebaseUser.email || `${firebaseUser.uid}@reader.breakingnewswala.com`).slice(0, 200);
+    const isMaster = firebaseUser.email === 'breakingnewswala.com@gmail.com';
+
+    // Verify if profile already exists in Firestore to execute correct create vs update rule
+    const existingSnap = await getDocFromServer(userDocRef).catch(() => null);
+
+    if (!existingSnap || !existingSnap.exists()) {
+      // First-time profile creation: matches firestore.rules create requirements
+      const createPayload: Record<string, unknown> = {
+        uid: firebaseUser.uid,
+        email: safeEmail,
+        displayName: safeName,
+        role: isMaster ? 'ADMIN' : 'READER',
+        district: 'भोपाल',
+        coins: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      if (firebaseUser.photoURL) {
+        createPayload.photoUrl = firebaseUser.photoURL.slice(0, 1000);
+      }
+      await setDoc(userDocRef, createPayload);
+    } else {
+      // Profile update: matches firestore.rules update requirements (only allowed mutable fields)
+      const updatePayload: Record<string, unknown> = {
+        displayName: safeName,
+        email: safeEmail,
+        updatedAt: serverTimestamp(),
+      };
+      if (firebaseUser.photoURL) {
+        updatePayload.photoUrl = firebaseUser.photoURL.slice(0, 1000);
+      }
+      await setDoc(userDocRef, updatePayload, { merge: true });
     }
-    if (firebaseUser.photoURL) {
-      payload.photoUrl = firebaseUser.photoURL.slice(0, 1000);
-    }
-    await setDoc(doc(db, 'users', firebaseUser.uid), payload, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, userPath);
   }
@@ -237,12 +257,14 @@ export async function saveBookmarkToFirestore(
   if (!uid || !article?.id) return;
   const docPath = `users/${uid}/bookmarks/${article.id}`;
   try {
+    // Strictly matches firestore.rules BookmarkItem schema:
+    // keys hasAll: ['userId', 'articleId', 'articleTitle', 'createdAt']
+    // keys hasOnly: ['userId', 'articleId', 'articleTitle', 'articleCategory', 'articleDistrict', 'articleImageUrl', 'createdAt']
     const payload: Record<string, unknown> = {
-      id: article.id,
       userId: uid,
       articleId: article.id,
       articleTitle: (article.title || 'समाचार').slice(0, 300),
-      savedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
     };
     if (article.categoryName) {
       payload.articleCategory = article.categoryName.slice(0, 50);
@@ -253,7 +275,7 @@ export async function saveBookmarkToFirestore(
     if (article.featuredImage) {
       payload.articleImageUrl = article.featuredImage.slice(0, 1000);
     }
-    await setDoc(doc(db, 'users', uid, 'bookmarks', article.id), payload, { merge: true });
+    await setDoc(doc(db, 'users', uid, 'bookmarks', article.id), payload);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, docPath);
   }

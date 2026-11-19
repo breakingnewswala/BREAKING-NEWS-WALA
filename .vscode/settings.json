@@ -1,0 +1,14 @@
+{
+  "java.jdt.ls.java.home": "C:\\Users\\aa\\.jdks\\jdk-17.0.21+9",
+  "java.home": "C:\\Users\\aa\\.jdks\\jdk-17.0.21+9",
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-17",
+      "path": "C:\\Users\\aa\\.jdks\\jdk-17.0.21+9",
+      "default": true
+    }
+  ],
+  "terminal.integrated.env.windows": {
+    "JAVA_HOME": "C:\\Users\\aa\\.jdks\\jdk-17.0.21+9"
+  }
+}

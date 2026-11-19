@@ -10,6 +10,8 @@
  */
 
 import crypto from 'node:crypto';
+import { initializeApp, getApps, getApp } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import firebaseConfig from '../../../firebase-applet-config.json' with { type: 'json' };
 import {
   INITIAL_CATEGORIES,
@@ -35,13 +37,228 @@ import {
 
 export const CANONICAL_FIRESTORE_DB_ID = firebaseConfig.firestoreDatabaseId || '(default)';
 
+/**
+ * Initializes and returns the authoritative Google Cloud Firestore client
+ * backed by the official Firebase Admin SDK.
+ * Respects FIRESTORE_EMULATOR_HOST in development/test, but strictly blocks
+ * emulator access when running in production (Finding 20-04).
+ * Supports Google Cloud Application Default Credentials (ADC) without requiring
+ * an explicit GOOGLE_APPLICATION_CREDENTIALS file path (Finding 20-02).
+ */
+export function getAuthoritativeFirestore(options = {}) {
+  // FINDING 20-04: Block Firestore Emulator in Production
+  if (process.env.NODE_ENV === 'production' && process.env.FIRESTORE_EMULATOR_HOST) {
+    const fatalErr = new Error(
+      'FATAL CONFIGURATION ERROR: FIRESTORE_EMULATOR_HOST is set while NODE_ENV === "production". Connecting production traffic to a local emulator is strictly prohibited.'
+    );
+    fatalErr.code = 'ERR_FATAL_EMULATOR_IN_PRODUCTION';
+    throw fatalErr;
+  }
+
+  const projectId = options.projectId || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || firebaseConfig.projectId || 'breaking-news-wala';
+  const databaseId = options.databaseId || process.env.FIRESTORE_DATABASE_ID || CANONICAL_FIRESTORE_DB_ID;
+
+  let app;
+  const appName = options.appName || 'authoritative-admin';
+  const existingApp = getApps().find((a) => a.name === appName);
+  if (!existingApp) {
+    // Official Firebase Admin SDK ADC mechanism: initializeApp with projectId.
+    // In GCP environments (Cloud Run, GKE, App Engine, GCE) or when GOOGLE_APPLICATION_CREDENTIALS
+    // is set, firebase-admin automatically resolves Application Default Credentials.
+    app = initializeApp({ projectId }, appName);
+  } else {
+    app = existingApp;
+  }
+
+  const firestore = (databaseId && databaseId !== '(default)')
+    ? getFirestore(app, databaseId)
+    : getFirestore(app);
+
+  try {
+    firestore.settings({ ignoreUndefinedProperties: true });
+  } catch {
+    // ignore if already initialized
+  }
+
+  return firestore;
+}
+
+/**
+ * @deprecated Legacy STEP 18 In-Memory Test Double
+ * Kept strictly for backward compatibility of historical test assertions.
+ * Production FirestoreAdapter exclusively uses real Firebase Admin SDK transactions.
+ */
+export class AuthoritativeFirestoreDatabase {
+  constructor() {
+    this.documents = new Map();
+    this.activeTransactions = 0;
+    this.totalRetries = 0;
+  }
+
+  doc(collectionPath, docId) {
+    return { path: `${collectionPath}/${docId}`, id: docId, collection: collectionPath };
+  }
+
+  collection(collectionPath) {
+    return { path: collectionPath, doc: (docId) => this.doc(collectionPath, docId) };
+  }
+
+  async runTransaction(updateFunction, options = { maxAttempts: 5 }) {
+    let attempts = 0;
+    const maxAttempts = options.maxAttempts || 5;
+
+    while (attempts < maxAttempts) {
+      attempts++;
+      this.activeTransactions++;
+
+      const readVersions = new Map();
+      const stagedWrites = [];
+      let hasWritten = false;
+
+      const transactionContext = {
+        get: async (docRef) => {
+          if (hasWritten) {
+            throw new Error('Firestore transactions require all reads to be executed before all writes.');
+          }
+          const doc = this.documents.get(docRef.path);
+          const version = doc ? doc.version : 0;
+          readVersions.set(docRef.path, version);
+          return {
+            id: docRef.id,
+            ref: docRef,
+            exists: Boolean(doc),
+            data: () => (doc ? JSON.parse(JSON.stringify(doc.data)) : undefined),
+          };
+        },
+        set: (docRef, data, opts = {}) => {
+          hasWritten = true;
+          stagedWrites.push({
+            type: 'set',
+            docRef,
+            data: JSON.parse(JSON.stringify(data)),
+            opts,
+          });
+        },
+        update: (docRef, data) => {
+          hasWritten = true;
+          stagedWrites.push({
+            type: 'update',
+            docRef,
+            data: JSON.parse(JSON.stringify(data)),
+          });
+        },
+        delete: (docRef) => {
+          hasWritten = true;
+          stagedWrites.push({ type: 'delete', docRef });
+        },
+      };
+
+      let result;
+      try {
+        result = await updateFunction(transactionContext);
+      } catch (err) {
+        this.activeTransactions--;
+        if (err.code === 'ERR_QUOTA_EXHAUSTED' || err.statusCode === 429 || err.code === 'ERR_VALIDATION') {
+          throw err;
+        }
+        throw err;
+      }
+
+      let conflict = false;
+      for (const [path, readVer] of readVersions.entries()) {
+        const currentDoc = this.documents.get(path);
+        const currentVer = currentDoc ? currentDoc.version : 0;
+        if (currentVer !== readVer) {
+          conflict = true;
+          break;
+        }
+      }
+
+      if (conflict) {
+        this.totalRetries++;
+        this.activeTransactions--;
+        const delay = Math.floor(Math.random() * 25) + 10;
+        await new Promise((res) => setTimeout(res, delay));
+        continue;
+      }
+
+      for (const write of stagedWrites) {
+        if (write.type === 'set') {
+          const current = this.documents.get(write.docRef.path);
+          const existingData = current ? current.data : {};
+          const finalData = write.opts?.merge ? { ...existingData, ...write.data } : write.data;
+          this.documents.set(write.docRef.path, {
+            data: finalData,
+            version: (current ? current.version : 0) + 1,
+            updatedAt: new Date().toISOString(),
+          });
+        } else if (write.type === 'update') {
+          const current = this.documents.get(write.docRef.path);
+          const existingData = current ? current.data : {};
+          this.documents.set(write.docRef.path, {
+            data: { ...existingData, ...write.data },
+            version: (current ? current.version : 0) + 1,
+            updatedAt: new Date().toISOString(),
+          });
+        } else if (write.type === 'delete') {
+          this.documents.delete(write.docRef.path);
+        }
+      }
+
+      this.activeTransactions--;
+      return result;
+    }
+
+    const err = new Error('ERR_FIRESTORE_TRANSACTION_COLLISION: Transaction exceeded maximum retry attempts due to contention.');
+    err.code = 'ERR_TRANSACTION_COLLISION';
+    err.statusCode = 409;
+    throw err;
+  }
+}
+
 export class FirestoreAdapter {
   constructor(options = {}) {
-    this.projectId = options.projectId || firebaseConfig.projectId || 'breaking-news-wala';
+    // FINDING 20-04: Block Firestore Emulator in Production
+    if (process.env.NODE_ENV === 'production' && process.env.FIRESTORE_EMULATOR_HOST) {
+      const fatalErr = new Error(
+        'FATAL CONFIGURATION ERROR: FIRESTORE_EMULATOR_HOST is set while NODE_ENV === "production". Connecting production traffic to a local emulator is strictly prohibited.'
+      );
+      fatalErr.code = 'ERR_FATAL_EMULATOR_IN_PRODUCTION';
+      throw fatalErr;
+    }
+
+    this.projectId = options.projectId || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || firebaseConfig.projectId || 'breaking-news-wala';
     this.databaseId = options.databaseId || process.env.FIRESTORE_DATABASE_ID || CANONICAL_FIRESTORE_DB_ID;
     this.isEmulator = Boolean(options.isEmulator || process.env.FIRESTORE_EMULATOR_HOST);
-    this.customClient = options.client || null;
-    this.connected = false;
+    this.customClient = options.client || options.firestore || null;
+    this.sharedDatabase = options.sharedDatabase || null;
+    this.firestore = this.customClient;
+
+    // FINDING 20-02: Support Google Cloud Ambient ADC
+    // Attempt Firestore initialization in production even when GOOGLE_APPLICATION_CREDENTIALS file path is absent.
+    const shouldAttemptFirestore = !options.offlineOnly && Boolean(
+      this.customClient ||
+      this.isEmulator ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      process.env.NODE_ENV === 'production' ||
+      options.useRealFirestore
+    );
+
+    if (!this.firestore && !this.sharedDatabase && shouldAttemptFirestore) {
+      try {
+        this.firestore = getAuthoritativeFirestore({
+          projectId: this.projectId,
+          databaseId: this.databaseId,
+        });
+      } catch (err) {
+        this.firestore = null;
+        this.lastError = err.message;
+        if (process.env.NODE_ENV === 'production') {
+          console.error('[FATAL] Failed to initialize authoritative Firestore in production:', err.message);
+        }
+      }
+    }
+    this.connected = Boolean(this.firestore || this.sharedDatabase);
     this.lastError = null;
 
     // In-memory collection storage mirror for emulator / offline mock fallback
@@ -101,7 +318,16 @@ export class FirestoreAdapter {
       ['readerFeedback', new Map()],
       ['comments', new Map()],
       ['deletionRequests', new Map()],
+      ['epaperEditions', new Map()],
+      ['epaperPages', new Map()],
+      ['epaperTemplates', new Map()],
+      ['epaperWhatsAppGenerations', new Map()],
+      ['epaperWhatsAppQuotas', new Map()],
+      ['epaperAdSubmissions', new Map()],
+      ['epaperEditionVersions', new Map()],
     ]);
+
+    this._reporterLocks = new Map();
 
     // Seed default baseline records into the collection mirror
     this._seedBaselineCollections();
@@ -2760,6 +2986,497 @@ export class FirestoreAdapter {
     return list.slice(0, filters.limit || 500);
   }
 
+  // =========================================================================
+  // E-Paper Management Module Integration (STEP 16 Parity)
+  // =========================================================================
+
+  async _acquireReporterLock(reporterId) {
+    if (!this._reporterLocks) {
+      this._reporterLocks = new Map();
+    }
+    let releaseLock;
+    const prevLock = this._reporterLocks.get(reporterId) || Promise.resolve();
+    const nextLock = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+    this._reporterLocks.set(reporterId, prevLock.then(() => nextLock));
+    await prevLock;
+    return () => releaseLock();
+  }
+
+  async createEpaperEditionWithPages(editionData, user = null) {
+    const epaperMap = this._collections.get('epaperEditions');
+    const pagesMap = this._collections.get('epaperPages');
+    const editionId = editionData.id || `ed-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const editionCode = editionData.editionCode || `EP-${(editionData.publicationDate || '2026-11-20').replace(/-/g, '')}-${(editionData.districtId || 'MP').toUpperCase().substring(0, 4)}-01`;
+    const now = new Date().toISOString();
+
+    const totalPages = Math.max(1, Number(editionData.totalPages || 4));
+    const pages = [];
+    for (let i = 1; i <= totalPages; i++) {
+      const pageId = `page-${editionId}-${i}`;
+      const pageRecord = {
+        id: pageId,
+        editionId,
+        pageNumber: i,
+        pageType: i === 1 ? 'FRONT_PAGE' : (i === totalPages ? 'BACK_PAGE' : 'INSIDE_PAGE'),
+        elements: [],
+        version: 1,
+        gridColumns: 8,
+        createdAt: now,
+        updatedAt: now,
+      };
+      pagesMap.set(pageId, pageRecord);
+      pages.push(pageRecord);
+    }
+
+    const editionRecord = {
+      ...editionData,
+      id: editionId,
+      editionCode,
+      version: 1,
+      status: 'DRAFT', // Invariant: All newly created editions MUST be initialized as DRAFT server-side
+      totalPages,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: user?.fullName || 'सिस्टम',
+    };
+    epaperMap.set(editionId, editionRecord);
+
+    return { edition: editionRecord, pages };
+  }
+
+  async getReporterWhatsAppQuota(reporterId, dateStr = null) {
+    // FINDING 20-01: Production Fail-Closed
+    if (process.env.NODE_ENV === 'production' && !this.firestore) {
+      const err = new Error('ERR_DATABASE_UNAVAILABLE: Authoritative Firestore connection is unconfigured or unreachable in production.');
+      err.code = 'ERR_DATABASE_UNAVAILABLE';
+      err.statusCode = 503;
+      throw err;
+    }
+    if (!reporterId) return { reporterId: '', date: '', used: 0, maxDaily: 20, remaining: 20, quotaExceeded: false, timezone: 'Asia/Kolkata' };
+    const istDate = dateStr || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+    let maxDaily = 20;
+    let used = 0;
+
+    if (this.sharedDatabase) {
+      const quotaRef = this.sharedDatabase.doc('epaperWhatsAppQuotas', reporterId);
+      const usageRef = this.sharedDatabase.doc('epaperWhatsAppDailyUsage', `${reporterId}_${istDate}`);
+
+      const quotaDoc = this.sharedDatabase.documents.get(quotaRef.path);
+      if (quotaDoc && typeof quotaDoc.data?.maxDaily === 'number') {
+        maxDaily = quotaDoc.data.maxDaily;
+      }
+      const usageDoc = this.sharedDatabase.documents.get(usageRef.path);
+      if (usageDoc && typeof usageDoc.data?.used === 'number') {
+        used = usageDoc.data.used;
+      }
+    } else if (this.firestore) {
+      try {
+        const quotaRef = this.firestore.collection('epaperWhatsAppQuotas').doc(reporterId);
+        const usageRef = this.firestore.collection('epaperWhatsAppDailyUsage').doc(`${reporterId}_${istDate}`);
+
+        const [quotaDoc, usageDoc] = await Promise.all([
+          quotaRef.get(),
+          usageRef.get(),
+        ]);
+
+        if (quotaDoc.exists && typeof quotaDoc.data()?.maxDaily === 'number') {
+          maxDaily = quotaDoc.data().maxDaily;
+        }
+        if (usageDoc.exists && typeof usageDoc.data()?.used === 'number') {
+          used = usageDoc.data().used;
+        }
+      } catch (dbErr) {
+        if (process.env.NODE_ENV === 'production') {
+          console.error('[firestoreAdapter] Database operation failed in production:', dbErr.message);
+          const err = new Error('ERR_DATABASE_UNAVAILABLE: Authoritative Firestore connection is unconfigured or unreachable in production.');
+          err.code = 'ERR_DATABASE_UNAVAILABLE';
+          err.statusCode = 503;
+          throw err;
+        }
+        throw dbErr;
+      }
+    } else {
+      const quotasMap = this._collections.get('epaperWhatsAppQuotas');
+      const customQuota = quotasMap?.get(reporterId);
+      if (customQuota && typeof customQuota.maxDaily === 'number') {
+        maxDaily = customQuota.maxDaily;
+      }
+      const genMap = this._collections.get('epaperWhatsAppGenerations');
+      const generations = Array.from(genMap?.values() || []).filter((g) => {
+        const genDate = g.date || (g.createdAt ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(g.createdAt)) : '');
+        return g.reporterId === reporterId && genDate === istDate;
+      });
+      used = generations.length;
+    }
+
+    const remaining = Math.max(0, maxDaily - used);
+    return {
+      reporterId,
+      date: istDate,
+      used,
+      maxDaily,
+      remaining,
+      quotaExceeded: remaining === 0,
+      timezone: 'Asia/Kolkata',
+    };
+  }
+
+  async setReporterWhatsAppQuota(reporterId, quota) {
+    // FINDING 20-01: Production Fail-Closed
+    if (process.env.NODE_ENV === 'production' && !this.firestore) {
+      const err = new Error('ERR_DATABASE_UNAVAILABLE: Authoritative Firestore connection is unconfigured or unreachable in production.');
+      err.code = 'ERR_DATABASE_UNAVAILABLE';
+      err.statusCode = 503;
+      throw err;
+    }
+    if (!reporterId) throw new Error('ERR_INVALID_PARAM: reporterId is required');
+    const numericQuota = Number(quota);
+    if (isNaN(numericQuota) || numericQuota < 0) {
+      throw new Error('ERR_INVALID_QUOTA: Quota must be a non-negative number');
+    }
+    const record = {
+      reporterId,
+      maxDaily: numericQuota,
+      timezone: 'Asia/Kolkata',
+      updatedAt: new Date().toISOString(),
+    };
+    if (this.sharedDatabase) {
+      const docRef = this.sharedDatabase.doc('epaperWhatsAppQuotas', reporterId);
+      const current = this.sharedDatabase.documents.get(docRef.path);
+      this.sharedDatabase.documents.set(docRef.path, {
+        data: record,
+        version: (current ? current.version : 0) + 1,
+        updatedAt: record.updatedAt,
+      });
+    } else if (this.firestore) {
+      try {
+        const docRef = this.firestore.collection('epaperWhatsAppQuotas').doc(reporterId);
+        await docRef.set(record, { merge: true });
+      } catch (dbErr) {
+        if (process.env.NODE_ENV === 'production') {
+          console.error('[firestoreAdapter] Database operation failed in production:', dbErr.message);
+          const err = new Error('ERR_DATABASE_UNAVAILABLE: Authoritative Firestore connection is unconfigured or unreachable in production.');
+          err.code = 'ERR_DATABASE_UNAVAILABLE';
+          err.statusCode = 503;
+          throw err;
+        }
+        throw dbErr;
+      }
+    }
+    const quotasMap = this._collections.get('epaperWhatsAppQuotas');
+    if (quotasMap) quotasMap.set(reporterId, record);
+    return record;
+  }
+
+  async atomicSaveEpaperWhatsAppGeneration(generationData, user = null) {
+    // FINDING 20-01: Production Fail-Closed
+    if (process.env.NODE_ENV === 'production' && !this.firestore) {
+      const err = new Error('ERR_DATABASE_UNAVAILABLE: Authoritative Firestore connection is unconfigured or unreachable in production.');
+      err.code = 'ERR_DATABASE_UNAVAILABLE';
+      err.statusCode = 503;
+      throw err;
+    }
+
+    const reporterId = user?.id || generationData.reporterId || 'anonymous';
+    const idempotencyKey = generationData.idempotencyKey || generationData.id || null;
+    const todayIST = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+    if (this.sharedDatabase) {
+      const usageRef = this.sharedDatabase.doc('epaperWhatsAppDailyUsage', `${reporterId}_${todayIST}`);
+      const quotaRef = this.sharedDatabase.doc('epaperWhatsAppQuotas', reporterId);
+      const genId = generationData.id || `wa-gen-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const genRef = this.sharedDatabase.doc('epaperWhatsAppGenerations', genId);
+      const idemRef = idempotencyKey ? this.sharedDatabase.doc('epaperWhatsAppIdempotency', `${reporterId}_${idempotencyKey}`) : null;
+
+      return await this.sharedDatabase.runTransaction(async (transaction) => {
+        if (idemRef) {
+          const existingIdem = await transaction.get(idemRef);
+          if (existingIdem.exists && existingIdem.data()) {
+            const priorGenId = existingIdem.data().generationId;
+            const priorGenRef = this.sharedDatabase.doc('epaperWhatsAppGenerations', priorGenId);
+            const priorGenDoc = await transaction.get(priorGenRef);
+            if (priorGenDoc.exists && priorGenDoc.data()) {
+              return priorGenDoc.data();
+            }
+          }
+        }
+
+        const [quotaDoc, usageDoc] = await Promise.all([
+          transaction.get(quotaRef),
+          transaction.get(usageRef),
+        ]);
+
+        const maxDaily = (quotaDoc.exists && typeof quotaDoc.data()?.maxDaily === 'number')
+          ? quotaDoc.data().maxDaily
+          : 20;
+        const currentUsed = (usageDoc.exists && typeof usageDoc.data()?.used === 'number')
+          ? usageDoc.data().used
+          : 0;
+
+        if (currentUsed >= maxDaily) {
+          const err = new Error(`दैनिक व्हाट्सएप कार्ड निर्माण सीमा (${maxDaily} कार्ड/दिन) समाप्त हो चुकी है।`);
+          err.code = 'ERR_QUOTA_EXHAUSTED';
+          err.statusCode = 429;
+          err.details = {
+            reporterId,
+            date: todayIST,
+            used: currentUsed,
+            maxDaily,
+            remaining: 0,
+            quotaExceeded: true,
+            timezone: 'Asia/Kolkata',
+          };
+          throw err;
+        }
+
+        const now = new Date().toISOString();
+        const nextUsed = currentUsed + 1;
+        transaction.set(usageRef, {
+          reporterId,
+          date: todayIST,
+          used: nextUsed,
+          maxDaily,
+          updatedAt: now,
+        }, { merge: true });
+
+        const record = {
+          ...generationData,
+          id: genId,
+          reporterId,
+          idempotencyKey,
+          date: todayIST,
+          createdAt: now,
+        };
+        transaction.set(genRef, record);
+
+        if (idemRef) {
+          transaction.set(idemRef, {
+            idempotencyKey,
+            generationId: genId,
+            reporterId,
+            date: todayIST,
+            createdAt: now,
+          });
+        }
+
+        const genMap = this._collections.get('epaperWhatsAppGenerations');
+        if (genMap) genMap.set(genId, record);
+
+        return record;
+      });
+    }
+
+    if (this.firestore) {
+      const usageRef = this.firestore.collection('epaperWhatsAppDailyUsage').doc(`${reporterId}_${todayIST}`);
+      const quotaRef = this.firestore.collection('epaperWhatsAppQuotas').doc(reporterId);
+      const genId = generationData.id || `wa-gen-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const genRef = this.firestore.collection('epaperWhatsAppGenerations').doc(genId);
+      const idemRef = idempotencyKey ? this.firestore.collection('epaperWhatsAppIdempotency').doc(`${reporterId}_${idempotencyKey}`) : null;
+
+      try {
+        return await this.firestore.runTransaction(async (transaction) => {
+          // 1. ALL READS MUST PRECEDE ALL WRITES
+          if (idemRef) {
+            const existingIdem = await transaction.get(idemRef);
+            if (existingIdem.exists && existingIdem.data()) {
+              const priorGenId = existingIdem.data().generationId;
+              const priorGenRef = this.firestore.collection('epaperWhatsAppGenerations').doc(priorGenId);
+              const priorGenDoc = await transaction.get(priorGenRef);
+              if (priorGenDoc.exists && priorGenDoc.data()) {
+                return priorGenDoc.data(); // Idempotency: return existing record without consuming quota
+              }
+            }
+          }
+
+          const [quotaDoc, usageDoc] = await Promise.all([
+            transaction.get(quotaRef),
+            transaction.get(usageRef),
+          ]);
+
+          const maxDaily = (quotaDoc.exists && typeof quotaDoc.data()?.maxDaily === 'number')
+            ? quotaDoc.data().maxDaily
+            : 20;
+          const currentUsed = (usageDoc.exists && typeof usageDoc.data()?.used === 'number')
+            ? usageDoc.data().used
+            : 0;
+
+          if (currentUsed >= maxDaily) {
+            const err = new Error(`दैनिक व्हाट्सएप कार्ड निर्माण सीमा (${maxDaily} कार्ड/दिन) समाप्त हो चुकी है।`);
+            err.code = 'ERR_QUOTA_EXHAUSTED';
+            err.statusCode = 429;
+            err.details = {
+              reporterId,
+              date: todayIST,
+              used: currentUsed,
+              maxDaily,
+              remaining: 0,
+              quotaExceeded: true,
+              timezone: 'Asia/Kolkata',
+            };
+            throw err;
+          }
+
+          // 2. ALL WRITES AFTER ALL READS
+          const now = new Date().toISOString();
+          const nextUsed = currentUsed + 1;
+          transaction.set(usageRef, {
+            reporterId,
+            date: todayIST,
+            used: nextUsed,
+            maxDaily,
+            updatedAt: now,
+          }, { merge: true });
+
+          const rawRecord = {
+            ...generationData,
+            id: genId,
+            reporterId,
+            idempotencyKey,
+            date: todayIST,
+            createdAt: now,
+          };
+          const record = {};
+          for (const [k, v] of Object.entries(rawRecord)) {
+            if (v !== undefined) {
+              record[k] = v;
+            }
+          }
+          transaction.set(genRef, record);
+
+          if (idemRef) {
+            transaction.set(idemRef, {
+              idempotencyKey,
+              generationId: genId,
+              reporterId,
+              date: todayIST,
+              createdAt: now,
+            });
+          }
+
+          // Mirror in in-memory collection map for backward compatibility
+          const genMap = this._collections.get('epaperWhatsAppGenerations');
+          if (genMap) genMap.set(genId, record);
+
+          return record;
+        });
+      } catch (txErr) {
+        // FINDING 20-03: Concurrent Idempotency Collision Resolution
+        // If a transaction fails (e.g. gRPC code 3 INVALID_ARGUMENT or conflict because a concurrent
+        // peer process already committed the same idempotency key), perform a fresh authoritative
+        // Firestore lookup outside the transaction to retrieve and return the committed generation.
+        if (idemRef) {
+          try {
+            const committedIdemDoc = await idemRef.get();
+            if (
+              committedIdemDoc.exists &&
+              committedIdemDoc.data()?.idempotencyKey === idempotencyKey &&
+              committedIdemDoc.data()?.reporterId === reporterId
+            ) {
+              const committedGenId = committedIdemDoc.data().generationId;
+              if (committedGenId) {
+                const committedGenDoc = await this.firestore.collection('epaperWhatsAppGenerations').doc(committedGenId).get();
+                if (committedGenDoc.exists && committedGenDoc.data()?.reporterId === reporterId) {
+                  return committedGenDoc.data();
+                }
+              }
+            }
+          } catch (lookupErr) {
+            console.warn('[firestoreAdapter] Idempotency fallback lookup failed:', lookupErr.message);
+          }
+        }
+        // In production, if the transaction failed due to transport / connectivity / credential outage, fail closed with 503
+        if (process.env.NODE_ENV === 'production' && (
+          txErr.code === 14 || // UNAVAILABLE
+          txErr.code === 4 ||  // DEADLINE_EXCEEDED
+          txErr.code === 'ERR_DATABASE_UNAVAILABLE' ||
+          txErr.message?.includes('default credentials') ||
+          txErr.message?.includes('UNAVAILABLE') ||
+          txErr.message?.includes('getaddrinfo')
+        )) {
+          console.error('[firestoreAdapter] Database transaction failed in production:', txErr.message);
+          const err = new Error('ERR_DATABASE_UNAVAILABLE: Authoritative Firestore connection is unconfigured or unreachable in production.');
+          err.code = 'ERR_DATABASE_UNAVAILABLE';
+          err.statusCode = 503;
+          throw err;
+        }
+        // If not a confirmed idempotency collision, rethrow original error
+        throw txErr;
+      }
+    }
+
+    // Process-local fallback (for isolated offline / non-shared mode)
+    const releaseLock = await this._acquireReporterLock(reporterId);
+    try {
+      const quotaInfo = await this.getReporterWhatsAppQuota(reporterId, todayIST);
+      if (quotaInfo.quotaExceeded || quotaInfo.remaining <= 0) {
+        const err = new Error(`दैनिक व्हाट्सएप कार्ड निर्माण सीमा (${quotaInfo.maxDaily}) समाप्त हो चुकी है।`);
+        err.code = 'ERR_QUOTA_EXHAUSTED';
+        err.statusCode = 429;
+        err.details = quotaInfo;
+        throw err;
+      }
+
+      const genMap = this._collections.get('epaperWhatsAppGenerations');
+      const genId = generationData.id || `wa-gen-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const now = new Date().toISOString();
+      const record = {
+        ...generationData,
+        id: genId,
+        reporterId,
+        idempotencyKey,
+        date: todayIST,
+        createdAt: now,
+      };
+      genMap.set(genId, record);
+      return record;
+    } finally {
+      if (typeof releaseLock === 'function') releaseLock();
+    }
+  }
+
+  async saveEpaperWhatsAppGeneration(data, user = null) {
+    return await this.atomicSaveEpaperWhatsAppGeneration(data, user);
+  }
+
+  async getEpaperWhatsAppGenerations(params = {}) {
+    // FINDING 20-01: Production Fail-Closed
+    if (process.env.NODE_ENV === 'production' && !this.firestore) {
+      const err = new Error('ERR_DATABASE_UNAVAILABLE: Authoritative Firestore connection is unconfigured or unreachable in production.');
+      err.code = 'ERR_DATABASE_UNAVAILABLE';
+      err.statusCode = 503;
+      throw err;
+    }
+    let list = [];
+    if (this.sharedDatabase) {
+      for (const [path, doc] of this.sharedDatabase.documents.entries()) {
+        if (path.startsWith('epaperWhatsAppGenerations/')) {
+          list.push(doc.data);
+        }
+      }
+    } else if (this.firestore) {
+      let queryRef = this.firestore.collection('epaperWhatsAppGenerations');
+      if (params.reporterId) {
+        queryRef = queryRef.where('reporterId', '==', params.reporterId);
+      }
+      if (params.date) {
+        queryRef = queryRef.where('date', '==', params.date);
+      }
+      const snapshot = await queryRef.get();
+      snapshot.forEach((doc) => {
+        list.push(doc.data());
+      });
+    } else {
+      const genMap = this._collections.get('epaperWhatsAppGenerations');
+      list = Array.from(genMap?.values() || []);
+    }
+    if (params.reporterId) list = list.filter((g) => g.reporterId === params.reporterId);
+    if (params.date) list = list.filter((g) => g.date === params.date);
+    return list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  }
+
   async disconnect() {
     this.connected = false;
   }
@@ -2770,13 +3487,15 @@ export class FirestoreAdapter {
       status: this.connected ? 'connected' : 'unverified',
       storageMode: 'firestore_authoritative',
       multiInstanceSafe: true,
-      provider: 'firebase_firestore',
+      provider: 'firebase_admin_firestore',
       databaseAvailable: this.connected,
       firestoreDatabaseId: this.databaseId,
       projectId: this.projectId,
+      isEmulator: this.isEmulator,
+      emulatorHost: process.env.FIRESTORE_EMULATOR_HOST || null,
       error: this.connected ? null : (this.lastError || 'ERR_DATABASE_UNAVAILABLE'),
       message: this.connected
-        ? `Authoritative Cloud Firestore adapter active [database: ${this.databaseId}]`
+        ? `Authoritative Cloud Firestore adapter active [database: ${this.databaseId}]${process.env.FIRESTORE_EMULATOR_HOST ? ` (Connected to Emulator: ${process.env.FIRESTORE_EMULATOR_HOST})` : ''}`
         : 'Firestore database is unreachable or credentials are unconfigured.',
     };
   }

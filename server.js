@@ -42,6 +42,12 @@ const PORT = !Number.isNaN(cliPort)
   : parseInt(envPort || process.env.DEFAULT_APP_PORT || '3000', 10);
 const HOST = '0.0.0.0';
 
+// FINDING 20-04: Block Firestore Emulator in Production
+if (process.env.NODE_ENV === 'production' && process.env.FIRESTORE_EMULATOR_HOST) {
+  console.error('[FATAL] FIRESTORE_EMULATOR_HOST is set while NODE_ENV === "production". Terminating startup to prevent accidental connection to a local emulator.');
+  process.exit(1);
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
 const isDevMode = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test';
 let viteServer = null;
