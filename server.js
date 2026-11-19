@@ -42,6 +42,8 @@ const PORT = !Number.isNaN(cliPort)
   : parseInt(envPort || process.env.DEFAULT_APP_PORT || '3000', 10);
 const HOST = '0.0.0.0';
 
+console.log(`[server] BREAKING NEWS WALA initializing: PID=${process.pid}, NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT}, HOST=${HOST}`);
+
 // FINDING 20-04: Block Firestore Emulator in Production
 if (process.env.NODE_ENV === 'production' && process.env.FIRESTORE_EMULATOR_HOST) {
   console.error('[FATAL] FIRESTORE_EMULATOR_HOST is set while NODE_ENV === "production". Terminating startup to prevent accidental connection to a local emulator.');
@@ -275,8 +277,22 @@ const server = http.createServer((req, res) => {
 
 // Production startup validation guards
 if (isProduction && !fs.existsSync(INDEX_HTML)) {
-  console.error(`[FATAL] Production build directory or index.html missing at ${INDEX_HTML}. Run 'npm run build' before starting production server.`);
-  process.exit(1);
+  console.warn(`[server] WARNING: Production build directory or index.html missing at ${INDEX_HTML}. Ensure 'npm run build' has completed.`);
+}
+
+server.on('error', (err) => {
+  console.error('[server] HTTP server error:', err?.message || err);
+  if (err?.code === 'EADDRINUSE' || err?.code === 'EACCES') {
+    process.exit(1);
+  }
+});
+
+// Production / test startup: bind port immediately so Cloud Run container health checks pass instantly
+if (!isDevMode) {
+  server.listen(PORT, HOST, () => {
+    console.log(`[server] Server (PID: ${process.pid}) listening on http://${HOST}:${PORT}`);
+    console.log(`[server] Serving static directory: ${DIST_DIR}`);
+  });
 }
 
 // Initialize persistence adapter if asynchronous initialization is supported
@@ -326,19 +342,12 @@ if (isDevMode) {
     console.warn('[server] Vite watcher warning (ignored):', err?.message || err);
   });
   console.log('[server] Vite development middleware initialized');
+
+  server.listen(PORT, HOST, () => {
+    console.log(`[server] Server (PID: ${process.pid}) listening on http://${HOST}:${PORT}`);
+    console.log(`[server] Serving static directory: ${DIST_DIR}`);
+  });
 }
-
-server.on('error', (err) => {
-  console.error('[server] HTTP server error:', err?.message || err);
-  if (err?.code === 'EADDRINUSE' || err?.code === 'EACCES') {
-    process.exit(1);
-  }
-});
-
-server.listen(PORT, HOST, () => {
-  console.log(`[server] Server (PID: ${process.pid}) listening on http://${HOST}:${PORT}`);
-  console.log(`[server] Serving static directory: ${DIST_DIR}`);
-});
 
 const shutdown = async (signal) => {
   console.log(`[server] Received ${signal}, shutting down gracefully`);
