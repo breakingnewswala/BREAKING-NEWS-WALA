@@ -1,0 +1,13 @@
+schema-version = "0.2"
+
+[project]
+id = "com.breakingnewswala.web"
+name = "BREAKING NEWS WALA"
+version = "1.6.0"
+
+[io.buildpacks]
+exclude = [
+  "app/**",
+  "gradle/**",
+  "gradle.properties"
+]
