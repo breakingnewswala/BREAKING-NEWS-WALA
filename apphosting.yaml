@@ -5,6 +5,11 @@ scripts:
   buildCommand: npm run build
   runCommand: node server.js
 
+outputFiles:
+  serverApp:
+    include:
+      - .
+
 runConfig:
   cpu: 1
   memoryMiB: 512
