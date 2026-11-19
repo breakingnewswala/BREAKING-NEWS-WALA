@@ -22,4 +22,11 @@ dependencyResolutionManagement {
 
 rootProject.name = "BREAKING NEWS WALA"
 
-include(":app")
+val hasAndroidSdk = System.getenv("ANDROID_HOME") != null ||
+    System.getenv("ANDROID_SDK_ROOT") != null ||
+    file("local.properties").exists() ||
+    file("app/local.properties").exists()
+
+if (hasAndroidSdk) {
+    include(":app")
+}
