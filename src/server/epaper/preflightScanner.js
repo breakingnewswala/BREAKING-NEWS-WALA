@@ -34,7 +34,8 @@ export class QualityPreflightScanner {
     const safePages = Array.isArray(pages) ? pages : [];
 
     // 0. PAGE_COUNT_RULE: Daily/Regular editions must contain exactly 12 pages; Special editions are flexible
-    const editionType = String(edition?.editionType || 'REGULAR').toUpperCase();
+    const hasExplicitEditionType = Boolean(edition && edition.editionType);
+    const editionType = hasExplicitEditionType ? String(edition.editionType).toUpperCase() : null;
     if (editionType === 'REGULAR' || editionType === 'DAILY') {
       if (safePages.length !== 12) {
         blockers.push({

@@ -365,25 +365,29 @@ export async function resolveRequestUser(req, adapterInstance = adapter) {
 
 export const isMasterAdminUser = (u) => {
   if (!u) return false;
-  const roles = Array.isArray(u.roles) ? u.roles.map((r) => String(r).toUpperCase()) : [String(u.role || '').toUpperCase()];
+  const raw = [...(Array.isArray(u.roles) ? u.roles : []), u.role];
+  const roles = raw.filter(Boolean).map((r) => String(r).toUpperCase().replace(/^ROLE_/, ''));
   return roles.includes('MASTER_ADMIN') || roles.includes('SUPER_ADMIN');
 };
 
 export const isAdminUser = (u) => {
   if (!u) return false;
-  const roles = Array.isArray(u.roles) ? u.roles.map((r) => String(r).toUpperCase()) : [String(u.role || '').toUpperCase()];
+  const raw = [...(Array.isArray(u.roles) ? u.roles : []), u.role];
+  const roles = raw.filter(Boolean).map((r) => String(r).toUpperCase().replace(/^ROLE_/, ''));
   return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN'].includes(r));
 };
 
 export const isEditorUser = (u) => {
   if (!u) return false;
-  const roles = Array.isArray(u.roles) ? u.roles.map((r) => String(r).toUpperCase()) : [String(u.role || '').toUpperCase()];
+  const raw = [...(Array.isArray(u.roles) ? u.roles : []), u.role];
+  const roles = raw.filter(Boolean).map((r) => String(r).toUpperCase().replace(/^ROLE_/, ''));
   return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CHIEF_EDITOR', 'MANAGING_EDITOR', 'EDITOR'].includes(r));
 };
 
 export const isReporterUser = (u) => {
   if (!u) return false;
-  const roles = Array.isArray(u.roles) ? u.roles.map((r) => String(r).toUpperCase()) : [String(u.role || '').toUpperCase()];
+  const raw = [...(Array.isArray(u.roles) ? u.roles : []), u.role];
+  const roles = raw.filter(Boolean).map((r) => String(r).toUpperCase().replace(/^ROLE_/, ''));
   return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CHIEF_EDITOR', 'MANAGING_EDITOR', 'EDITOR', 'REPORTER', 'TRUSTED_REPORTER'].includes(r));
 };
 
