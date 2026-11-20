@@ -41,6 +41,13 @@ export function handleFirestoreError(error, operationType, path) {
 }
 // CRITICAL: Validate connection to Firestore on initialization
 export async function testConnection() {
+    const isDev = typeof window !== 'undefined'
+        ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '0.0.0.0')
+        : (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production');
+    const isEmulator = typeof process !== 'undefined' && Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+    if (isDev && !isEmulator) {
+        return;
+    }
     try {
         await getDocFromServer(doc(db, 'test', 'connection'));
     }
@@ -50,7 +57,13 @@ export async function testConnection() {
         }
     }
 }
-testConnection();
+const isDevInit = typeof window !== 'undefined'
+    ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '0.0.0.0')
+    : (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production');
+const isEmulatorInit = typeof process !== 'undefined' && Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+if (!isDevInit || isEmulatorInit) {
+    testConnection();
+}
 // Authentication Helpers
 export async function signInWithGoogle() {
     try {

@@ -28,6 +28,16 @@ export class CloudStorageService {
   getBucket() {
     if (this._bucket) return this._bucket;
 
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isEmulator = Boolean(process.env.FIREBASE_STORAGE_EMULATOR_HOST);
+    const allowCloudInDev = process.env.ALLOW_CLOUD_STORAGE_IN_DEV === 'true';
+
+    // Development/Test isolation guard: do not connect to production Cloud Storage bucket
+    // unless running in production, running against a local storage emulator, or explicitly opted-in
+    if (!isProduction && !isEmulator && !allowCloudInDev) {
+      return null;
+    }
+
     try {
       if (getApps().length === 0) {
         initializeApp({

@@ -5,7 +5,7 @@ import {
   signInWithPopup,
   signOut,
   onAuthStateChanged,
-  User as FirebaseUser,
+  type User as FirebaseUser,
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -17,7 +17,7 @@ import {
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfig from '../firebase-applet-config.json' with { type: 'json' };
 
 // Initialize Firebase App
 const app = initializeApp(firebaseConfig);
@@ -38,15 +38,53 @@ export const FIREBASE_STATUS_META = {
   storageBucket: firebaseConfig.storageBucket,
 };
 
+// Environment & Development Safety Isolation Guards (STEP 18)
+export const isDevEnvironment = (): boolean => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.endsWith('.local')) {
+      return true;
+    }
+    // If running in browser and hostname is not production, check Vite dev flag
+    if (typeof (import.meta as any)?.env?.DEV === 'boolean') {
+      return (import.meta as any).env.DEV;
+    }
+    return host !== 'breakingnewswala.com' && !host.endsWith('.web.app') && !host.endsWith('.firebaseapp.com');
+  }
+  if (typeof (import.meta as any)?.env?.DEV === 'boolean') {
+    return (import.meta as any).env.DEV;
+  }
+  if (typeof process !== 'undefined') {
+    // In Node.js runtimes, any non-production execution is treated as dev/test
+    return process.env?.NODE_ENV !== 'production';
+  }
+  return false;
+};
+
+export const isEmulatorConfigured = (): boolean => {
+  if (typeof window !== 'undefined' && ((window as any).__FIREBASE_EMULATORS_ACTIVE__ || (window as any).FIREBASE_EMULATORS)) {
+    return true;
+  }
+  if (typeof (import.meta as any)?.env?.VITE_FIRESTORE_EMULATOR_HOST === 'string') {
+    return true;
+  }
+  if (typeof process !== 'undefined' && Boolean(process.env?.FIRESTORE_EMULATOR_HOST)) {
+    return true;
+  }
+  return false;
+};
+
 // Error Handling Specification matching skill requirements
-export enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
+export const OperationType = {
+  CREATE: 'create',
+  UPDATE: 'update',
+  DELETE: 'delete',
+  LIST: 'list',
+  GET: 'get',
+  WRITE: 'write',
+} as const;
+
+export type OperationType = typeof OperationType[keyof typeof OperationType];
 
 export interface FirestoreErrorInfo {
   error: string;
@@ -89,6 +127,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
 // CRITICAL: Validate connection to Firestore on initialization
 export async function testConnection(): Promise<{ connected: boolean; offline: boolean }> {
+  if (isDevEnvironment() && !isEmulatorConfigured()) {
+    // Isolated dev environment: skip live network probe to production Cloud Firestore
+    return { connected: false, offline: true };
+  }
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
     return { connected: true, offline: false };
@@ -102,7 +144,10 @@ export async function testConnection(): Promise<{ connected: boolean; offline: b
   }
 }
 
-testConnection();
+// In local development without an emulator, do not auto-invoke testConnection against production
+if (!isDevEnvironment() || isEmulatorConfigured()) {
+  testConnection();
+}
 
 // Prevent duplicate simultaneous popup requests (auth/cancelled-popup-request)
 let activeSignInPromise: Promise<FirebaseUser> | null = null;
@@ -191,6 +236,10 @@ function mapRoleForFirestoreRule(role: string): 'READER' | 'REPORTER' | 'ADMIN' 
 
 export async function syncUserProfileToFirestore(firebaseUser: FirebaseUser, resolvedRole = 'READER') {
   if (!firebaseUser?.uid) return;
+  if (isDevEnvironment() && !isEmulatorConfigured()) {
+    // Safe dev isolation: prevent mutating production Firestore user profiles from localhost
+    return;
+  }
   const userPath = `users/${firebaseUser.uid}`;
   const userDocRef = doc(db, 'users', firebaseUser.uid);
   try {
@@ -236,6 +285,10 @@ export async function syncUserProfileToFirestore(firebaseUser: FirebaseUser, res
 
 export async function fetchUserBookmarksFromFirestore(uid: string): Promise<string[]> {
   if (!uid) return [];
+  if (isDevEnvironment() && !isEmulatorConfigured()) {
+    // Safe dev isolation: local bookmarks stored in client state / localStorage
+    return [];
+  }
   const colPath = `users/${uid}/bookmarks`;
   try {
     const snap = await getDocs(collection(db, 'users', uid, 'bookmarks'));
@@ -255,6 +308,10 @@ export async function saveBookmarkToFirestore(
   article: { id: string; title: string; categoryName?: string; districtName?: string; featuredImage?: string }
 ) {
   if (!uid || !article?.id) return;
+  if (isDevEnvironment() && !isEmulatorConfigured()) {
+    // Safe dev isolation: prevent writing bookmarks to production Firestore from localhost
+    return;
+  }
   const docPath = `users/${uid}/bookmarks/${article.id}`;
   try {
     // Strictly matches firestore.rules BookmarkItem schema:
@@ -283,6 +340,10 @@ export async function saveBookmarkToFirestore(
 
 export async function removeBookmarkFromFirestore(uid: string, articleId: string) {
   if (!uid || !articleId) return;
+  if (isDevEnvironment() && !isEmulatorConfigured()) {
+    // Safe dev isolation: prevent deleting bookmarks from production Firestore from localhost
+    return;
+  }
   const docPath = `users/${uid}/bookmarks/${articleId}`;
   try {
     await deleteDoc(doc(db, 'users', uid, 'bookmarks', articleId));

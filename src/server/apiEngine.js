@@ -1741,7 +1741,20 @@ export async function handleApiRequest(req, res) {
       limit: Math.min(100, Math.max(1, parseInt(query.get('limit') || '20', 10))),
     };
     const result = await adapter.getEpaperEditions(filters);
-    return sendSuccess(res, result);
+    const rawList = Array.isArray(result) ? result : (result?.editions || result?.items || []);
+    const editionsList = rawList.map((ed) => ({
+      ...ed,
+      totalPages: (ed.editionType === 'DAILY' || !ed.editionType) ? 12 : (ed.totalPages || 4),
+      pdfUrl: ed.pdfUrl || `/api/v1/epaper/editions/${ed.id}/export/pdf`,
+      coverImageUrl: ed.coverImageUrl || `/api/v1/epaper/editions/${ed.id}/pages/1/export/png`,
+    }));
+    return sendSuccess(res, editionsList, {
+      total: result?.total ?? editionsList.length,
+      count: result?.count ?? editionsList.length,
+      page: result?.page ?? 1,
+      limit: result?.limit ?? editionsList.length,
+      totalPages: result?.totalPages ?? 1,
+    });
   }
 
   // 6. Create Edition (DAILY 12-page broadsheet or SPECIAL)

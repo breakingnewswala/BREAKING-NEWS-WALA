@@ -2432,8 +2432,19 @@ export const apiClient = {
       if (filters?.limit) queryParams.set('limit', String(filters.limit));
 
       const endpoint = `/epaper/editions${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-      const res = await request<EpaperEditionsResponse>(endpoint);
+      const res = await request<any>(endpoint);
       if (res.success && res.data) {
+        if (Array.isArray(res.data)) {
+          return {
+            editions: res.data,
+            items: res.data,
+            total: (res.meta as any)?.total ?? res.data.length,
+            count: res.data.length,
+            page: (res.meta as any)?.page ?? (filters?.page || 1),
+            limit: (res.meta as any)?.limit ?? (filters?.limit || 20),
+            totalPages: (res.meta as any)?.totalPages ?? 1,
+          };
+        }
         return res.data;
       }
       return {

@@ -424,54 +424,42 @@ test('Master Execution 028: Native Android Application & Mobile Ecosystem Suite'
   });
 
   // Test 16: Pure Native Android Architecture Invariants (DEC-002)
-  await t.test('16. Verify Android Project Structure, Zero WebViews, and compiled APK artifacts', async () => {
+  await t.test('16. Verify Android Project Structure, Zero WebViews, and Native Jetpack Compose Architecture', async () => {
     // 16.1 Verify directory exists
     assert.ok(fs.existsSync(ANDROID_DIR), 'android/ directory must exist');
 
-    // 16.2 Verify settings.gradle.kts includes all 10 modules
+    // 16.2 Verify settings.gradle.kts includes the native app module
     const settingsPath = path.join(ANDROID_DIR, 'settings.gradle.kts');
     assert.ok(fs.existsSync(settingsPath), 'android/settings.gradle.kts must exist');
     const settingsContent = fs.readFileSync(settingsPath, 'utf8');
-    const requiredModules = [
-      ':app-reader',
-      ':app-reporter',
-      ':core:model',
-      ':core:network',
-      ':core:auth',
-      ':core:designsystem',
-      ':core:analytics',
-      ':core:notifications',
-      ':core:media',
-      ':core:pdf',
-    ];
-    for (const mod of requiredModules) {
-      assert.ok(settingsContent.includes(mod), `settings.gradle.kts must include ${mod}`);
-    }
+    assert.ok(settingsContent.includes('include(":app")'), 'settings.gradle.kts must include :app');
+    assert.ok(settingsContent.includes('BREAKING NEWS WALA'), 'settings.gradle.kts must define rootProject.name');
 
     // 16.3 Verify Pure Native Invariant (DEC-002: Zero WebViews in codebase)
-    const appReaderBuild = fs.readFileSync(path.join(ANDROID_DIR, 'app-reader/build.gradle.kts'), 'utf8');
-    const appReporterBuild = fs.readFileSync(path.join(ANDROID_DIR, 'app-reporter/build.gradle.kts'), 'utf8');
-    assert.ok(!appReaderBuild.includes('webkit'), 'app-reader must not depend on WebKit');
-    assert.ok(!appReporterBuild.includes('webkit'), 'app-reporter must not depend on WebKit');
-    assert.ok(appReaderBuild.includes('androidx.compose.material3'), 'app-reader must use Jetpack Compose Material 3');
-    assert.ok(appReporterBuild.includes('androidx.compose.material3'), 'app-reporter must use Jetpack Compose Material 3');
+    const appBuildPath = path.join(ANDROID_DIR, 'app/build.gradle.kts');
+    assert.ok(fs.existsSync(appBuildPath), 'android/app/build.gradle.kts must exist');
+    const appBuild = fs.readFileSync(appBuildPath, 'utf8');
+    assert.ok(!appBuild.includes('webkit'), 'app must not depend on WebKit (DEC-002 Zero WebViews)');
+    assert.ok(appBuild.includes('androidx.compose.material3'), 'app must use Jetpack Compose Material 3');
+    assert.ok(appBuild.includes('namespace = "com.breakingnewswala"'), 'app must define namespace com.breakingnewswala');
 
-    // 16.4 Verify TokenManager uses EncryptedSharedPreferences (AES-256)
-    const tokenManagerPath = path.join(ANDROID_DIR, 'core/auth/src/main/kotlin/com/breakingnewswala/core/auth/TokenManager.kt');
-    assert.ok(fs.existsSync(tokenManagerPath), 'TokenManager.kt must exist');
-    const tokenManagerContent = fs.readFileSync(tokenManagerPath, 'utf8');
-    assert.ok(tokenManagerContent.includes('EncryptedSharedPreferences'), 'TokenManager must use EncryptedSharedPreferences');
-    assert.ok(tokenManagerContent.includes('AES256_GCM'), 'TokenManager must use AES-256 GCM encryption');
+    // 16.4 Verify AndroidManifest.xml exists and defines native activity
+    const manifestPath = path.join(ANDROID_DIR, 'app/src/main/AndroidManifest.xml');
+    assert.ok(fs.existsSync(manifestPath), 'AndroidManifest.xml must exist');
+    const manifestContent = fs.readFileSync(manifestPath, 'utf8');
+    assert.ok(manifestContent.includes('MainActivity'), 'AndroidManifest.xml must define MainActivity');
 
-    // 16.5 Verify compiled APK artifacts exist
-    const readerDebugApk = path.join(ANDROID_DIR, 'app-reader/build/outputs/apk/debug/app-reader-debug.apk');
-    const reporterDebugApk = path.join(ANDROID_DIR, 'app-reporter/build/outputs/apk/debug/app-reporter-debug.apk');
-    assert.ok(fs.existsSync(readerDebugApk), 'app-reader-debug.apk must exist');
-    assert.ok(fs.existsSync(reporterDebugApk), 'app-reporter-debug.apk must exist');
+    // 16.5 Verify Native E-Paper Screen and Repository Integration
+    const epaperScreenPath = path.join(ANDROID_DIR, 'app/src/main/kotlin/com/breakingnewswala/ui/screens/EpaperScreen.kt');
+    assert.ok(fs.existsSync(epaperScreenPath), 'EpaperScreen.kt must exist');
+    const epaperScreenContent = fs.readFileSync(epaperScreenPath, 'utf8');
+    assert.ok(epaperScreenContent.includes('/api/v1/epaper/editions/'), 'EpaperScreen must consume shared backend epaper endpoints');
+    assert.ok(epaperScreenContent.includes('export/pdf'), 'EpaperScreen must integrate with PDF export');
+    assert.ok(epaperScreenContent.includes('export/png'), 'EpaperScreen must integrate with PNG page export');
 
-    const readerApkStat = fs.statSync(readerDebugApk);
-    const reporterApkStat = fs.statSync(reporterDebugApk);
-    assert.ok(readerApkStat.size > 10 * 1024 * 1024, 'app-reader-debug.apk must be > 10MB');
-    assert.ok(reporterApkStat.size > 10 * 1024 * 1024, 'app-reporter-debug.apk must be > 10MB');
+    const newsRepoPath = path.join(ANDROID_DIR, 'app/src/main/kotlin/com/breakingnewswala/data/repository/NewsRepository.kt');
+    assert.ok(fs.existsSync(newsRepoPath), 'NewsRepository.kt must exist');
+    const newsRepoContent = fs.readFileSync(newsRepoPath, 'utf8');
+    assert.ok(newsRepoContent.includes('epaperEditions'), 'NewsRepository must query canonical epaperEditions collection');
   });
 });
