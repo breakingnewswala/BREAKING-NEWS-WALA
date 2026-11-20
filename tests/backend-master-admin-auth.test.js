@@ -15,6 +15,7 @@ import assert from 'node:assert';
 import http from 'node:http';
 import { handleApiRequest } from '../src/server/apiEngine.js';
 import { getPersistenceAdapter } from '../src/server/persistence/adapter.js';
+import { setupIsolatedTestPersistence } from './testIsolationHelper.js';
 import { SessionService } from '../src/server/auth/sessionService.js';
 import {
   MASTER_ADMIN_EMAILS,
@@ -101,10 +102,14 @@ function createMockFirebaseIdToken(payload, alg = 'none') {
 test('Master Execution 040: Master Admin & Public Access Verification', async (t) => {
   const mockServer = createMockServer();
   await mockServer.start();
-  const adapter = getPersistenceAdapter();
+  const isolation = setupIsolatedTestPersistence({ prefix: 'master_admin_auth_' });
+  const adapter = isolation.adapter;
 
   t.after(async () => {
     await mockServer.stop();
+    if (isolation && isolation.cleanup) {
+      isolation.cleanup();
+    }
   });
 
   // -------------------------------------------------------------

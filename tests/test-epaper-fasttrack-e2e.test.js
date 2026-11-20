@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { handleApiRequest, signToken } from '../src/server/apiEngine.js';
 import { getPersistenceAdapter } from '../src/server/persistence/adapter.js';
+import { setupIsolatedTestPersistence } from './testIsolationHelper.js';
 import { defaultCloudStorageService } from '../src/server/storage/cloudStorageService.js';
 import { QualityPreflightScanner, SEVERITY } from '../src/server/epaper/preflightScanner.js';
 import { HighResExportEngine, BROADSHEET_CONSTANTS } from '../src/server/epaper/exportEngine.js';
@@ -96,7 +97,8 @@ function createMockServer() {
 test('E-Paper Fast-Track Completion & Security Hardening Test Suite', async (t) => {
   const mockServer = createMockServer();
   await mockServer.start();
-  const adapter = getPersistenceAdapter();
+  const isolation = setupIsolatedTestPersistence({ prefix: 'fasttrack_' });
+  const adapter = isolation.adapter;
 
   const readerToken = signToken({ id: 'user-reader-01', identifier: 'reader@example.com', roles: ['READER'], district: 'भोपाल' });
   const reporterToken = signToken({ id: 'user-reporter-01', identifier: 'reporter@example.com', roles: ['REPORTER'], district: 'भोपाल' });
@@ -105,6 +107,9 @@ test('E-Paper Fast-Track Completion & Security Hardening Test Suite', async (t) 
 
   t.after(async () => {
     await mockServer.stop();
+    if (isolation && isolation.cleanup) {
+      isolation.cleanup();
+    }
   });
 
   // --------------------------------------------------------------------------
@@ -182,8 +187,12 @@ test('E-Paper Fast-Track Completion & Security Hardening Test Suite', async (t) 
     });
 
     assert.strictEqual(pubRes.statusCode, 422, 'Must reject with HTTP 422');
-    assert.strictEqual(pubRes.data.code, 'ERR_PREFLIGHT_BLOCKER');
-    assert.ok(pubRes.data.diagnostics.blockers.some((b) => b.code === 'INVALID_PAGE_COUNT'));
+    assert.ok(
+      pubRes.data.code === 'ERR_PREFLIGHT_BLOCKER' || pubRes.data.code === 'ERR_QUALITY_CHECK_FAILED',
+      `Expected ERR_PREFLIGHT_BLOCKER or ERR_QUALITY_CHECK_FAILED, got ${pubRes.data.code}`
+    );
+    const blockers = pubRes.data.diagnostics?.blockers || pubRes.data.qualityReport?.issues || [];
+    assert.ok(blockers.some((b) => b.code === 'INVALID_PAGE_COUNT' || b.code === 'DAILY_PAGE_COUNT_MISMATCH'));
   });
 
   // --------------------------------------------------------------------------

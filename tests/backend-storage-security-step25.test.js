@@ -31,13 +31,14 @@ import {
   adapter,
 } from '../src/server/apiEngine.js';
 import { LocalJsonAdapter } from '../src/server/persistence/adapter.js';
+import { setupIsolatedTestPersistence } from './testIsolationHelper.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 
-const testAdapter = new LocalJsonAdapter();
-setApiEngineAdapter(testAdapter);
+const isolation = setupIsolatedTestPersistence({ prefix: 'storage_sec_' });
+const testAdapter = isolation.adapter;
 
 const TEST_PORT = 3285;
 let server;
@@ -85,6 +86,9 @@ test('Step 25: Storage Security Rules & Ingress Protection Suite', async (t) => 
 
   t.after(() => {
     server.close();
+    if (isolation && isolation.cleanup) {
+      isolation.cleanup();
+    }
   });
 
   const reporterToken = signToken({

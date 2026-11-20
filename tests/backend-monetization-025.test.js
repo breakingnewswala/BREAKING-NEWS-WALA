@@ -31,6 +31,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { handleApiRequest, signToken } from '../src/server/apiEngine.js';
 import { getPersistenceAdapter } from '../src/server/persistence/adapter.js';
+import { setupIsolatedTestPersistence } from './testIsolationHelper.js';
 import { FirestoreAdapter } from '../src/server/persistence/firestoreAdapter.js';
 import {
   AD_PLACEMENT_SLOTS,
@@ -122,6 +123,8 @@ function createMockHttp() {
 test('Master Execution 025 — Monetization & Revenue System Test Suite', async (t) => {
   const httpHelper = createMockHttp();
   await httpHelper.start();
+  const isolation = setupIsolatedTestPersistence({ prefix: 'monetization_' });
+  const adapter = isolation.adapter;
 
   const adminToken = signToken({
     id: 'usr-admin-025',
@@ -153,6 +156,9 @@ test('Master Execution 025 — Monetization & Revenue System Test Suite', async 
 
   t.after(async () => {
     await httpHelper.stop();
+    if (isolation && isolation.cleanup) {
+      isolation.cleanup();
+    }
   });
 
   // =========================================================================
@@ -330,7 +336,7 @@ test('Master Execution 025 — Monetization & Revenue System Test Suite', async 
   // =========================================================================
   let settledTransactionId = '';
   await t.test('5. Cryptographic Verification: HMAC-SHA256 & Duplicate Defense', async () => {
-    const adapter = getPersistenceAdapter();
+    const adapter = isolation.adapter;
     const order = await adapter.getPaymentOrderById(createdOrderId);
     const mockSecret = process.env.RAZORPAY_KEY_SECRET || 'rzp_test_placeholder_secret_2026';
     const fakePaymentId = `pay_mock_${Date.now()}`;
