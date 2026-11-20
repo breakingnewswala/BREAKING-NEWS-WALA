@@ -325,6 +325,7 @@ export interface EpaperPageElement {
   textAlign?: 'left' | 'center' | 'right' | 'justify';
   zIndex?: number;
   role?: 'LEAD' | 'SECOND_LEAD' | 'ANCHOR' | 'BRIEF' | 'OPINION';
+  isLocked?: boolean;
 }
 
 export interface EpaperPageDoc {
@@ -1118,6 +1119,26 @@ export interface NewsToVideoRequest {
   customHeadline?: string;
   customSubtext?: string;
   includeVoiceover?: boolean;
+}
+
+export type VideoPostPlatform = 'FACEBOOK' | 'INSTAGRAM' | 'YOUTUBE' | 'DIRECT';
+
+export interface VideoPost {
+  id: string;
+  title: string;
+  caption?: string;
+  platform: VideoPostPlatform;
+  url: string;
+  embedUrl?: string;
+  thumbnailUrl?: string;
+  category?: string;
+  districtId?: string;
+  displayOrder?: number;
+  status: 'PUBLISHED' | 'DRAFT' | 'ARCHIVED';
+  createdAt: string;
+  publishedAt?: string;
+  authorName?: string;
+  viewsCount?: number;
 }
 
 // -------------------------------------------------------------

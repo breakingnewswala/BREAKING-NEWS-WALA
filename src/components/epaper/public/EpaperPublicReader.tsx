@@ -85,8 +85,9 @@ export const EpaperPublicReader: React.FC<EpaperPublicReaderProps> = ({
   const [readingFontSize, setReadingFontSize] = useState<number>(18);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
-  // Social Clipping modal state (4:5)
+  // Social Clipping modal state (Dual Formats: 4:5 Portrait & 1:1 Square)
   const [socialClippingArticle, setSocialClippingArticle] = useState<any | null>(null);
+  const [clippingFormat, setClippingFormat] = useState<'4:5' | '1:1'>('4:5');
   const clippingCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Export & Action states
@@ -193,7 +194,7 @@ export const EpaperPublicReader: React.FC<EpaperPublicReaderProps> = ({
     };
   }, [currentPage]);
 
-  // 3. Render 4:5 Social Clipping Modal Canvas
+  // 3. Render Social Clipping Modal Canvas (Supports 4:5 Portrait & 1:1 Square)
   useEffect(() => {
     if (socialClippingArticle && clippingCanvasRef.current) {
       GraphicRenderer.renderArticleClipping(clippingCanvasRef.current, {
@@ -205,9 +206,10 @@ export const EpaperPublicReader: React.FC<EpaperPublicReaderProps> = ({
         district: edition?.districtName || 'भोपाल',
         editionTitle: edition?.title || 'दैनिक ई-पेपर',
         photoUrl: socialClippingArticle.imageUrl,
+        format: clippingFormat,
       });
     }
-  }, [socialClippingArticle, edition]);
+  }, [socialClippingArticle, edition, clippingFormat]);
 
   // 4. TTS Audio cleanup
   const stopAudio = useCallback(() => {
@@ -941,14 +943,14 @@ export const EpaperPublicReader: React.FC<EpaperPublicReaderProps> = ({
         </div>
       )}
 
-      {/* 5. SOCIAL CLIPPING MODAL (4:5 Aspect Ratio) */}
+      {/* 5. SOCIAL CLIPPING MODAL (Dual Ratios: 4:5 & 1:1) */}
       {socialClippingArticle && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 text-slate-900 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-xs font-black text-slate-800 flex items-center gap-1.5 uppercase">
                 <Scissors className="w-4 h-4 text-[#ED1727]" />
-                सोशल मीडिया न्यूज़ कार्ड (4:5 Ratio)
+                सोशल मीडिया क्लिपिंग कार्ड
               </h3>
               <button
                 onClick={() => setSocialClippingArticle(null)}
@@ -958,18 +960,46 @@ export const EpaperPublicReader: React.FC<EpaperPublicReaderProps> = ({
               </button>
             </div>
 
-            {/* 4:5 Canvas Display */}
+            {/* Format Selector Pills (4:5 Portrait vs 1:1 Square) */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setClippingFormat('4:5')}
+                className={`flex-1 py-1 px-2 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  clippingFormat === '4:5'
+                    ? 'bg-white text-red-600 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                4:5 पोर्ट्रेट (1080×1350)
+              </button>
+              <button
+                type="button"
+                onClick={() => setClippingFormat('1:1')}
+                className={`flex-1 py-1 px-2 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  clippingFormat === '1:1'
+                    ? 'bg-white text-red-600 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                1:1 स्क्वायर (1080×1080)
+              </button>
+            </div>
+
+            {/* Dynamic Canvas Display */}
             <div className="flex justify-center bg-slate-100 p-2 rounded-xl border border-slate-200">
               <canvas
                 ref={clippingCanvasRef}
                 width={400}
-                height={500}
-                className="w-full max-w-[280px] aspect-[4/5] rounded shadow-md block bg-white"
+                height={clippingFormat === '1:1' ? 400 : 500}
+                className={`w-full max-w-[280px] ${clippingFormat === '1:1' ? 'aspect-square' : 'aspect-[4/5]'} rounded shadow-md block bg-white`}
               />
             </div>
 
             <p className="text-[11px] text-slate-500 text-center">
-              व्हाट्सएप, फेसबुक एवं इंस्टाग्राम पर शेयर करने हेतु अनुकूलित 4:5 न्यूज़ कार्ड
+              {clippingFormat === '1:1'
+                ? 'व्हाट्सएप एवं इंस्टाग्राम पोस्ट हेतु अनुकूलित 1:1 वर्गाकार न्यूज़ कार्ड'
+                : 'व्हाट्सएप, फेसबुक एवं इंस्टाग्राम स्टोरी हेतु अनुकूलित 4:5 पोर्ट्रेट न्यूज़ कार्ड'}
             </p>
 
             <div className="flex items-center gap-2 pt-2">
@@ -978,7 +1008,7 @@ export const EpaperPublicReader: React.FC<EpaperPublicReaderProps> = ({
                   if (clippingCanvasRef.current) {
                     clippingCanvasRef.current.toBlob((blob) => {
                       if (blob) {
-                        GraphicRenderer.downloadImage(blob, `BNW_Card_${Date.now()}.png`);
+                        GraphicRenderer.downloadImage(blob, `BNW_Clipping_${clippingFormat === '1:1' ? '1x1' : '4x5'}_${Date.now()}.png`);
                         showToast('न्यूज़ कार्ड डाउनलोड हो गया!');
                       }
                     });

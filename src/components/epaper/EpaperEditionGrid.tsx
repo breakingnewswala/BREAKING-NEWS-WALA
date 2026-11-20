@@ -152,18 +152,22 @@ export const EpaperEditionGrid: React.FC<EpaperEditionGridProps> = ({
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                 <button
                   onClick={() => onOpenNewsDesk(edition)}
-                  className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
-                  title="स्वीकृत वेब समाचारों को इस संस्करण के पृष्ठों पर असाइन करें"
+                  className={`flex-1 py-2 px-3 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer ${
+                    edition.status === 'DRAFT'
+                      ? 'bg-blue-600 hover:bg-blue-700'
+                      : 'bg-slate-800 hover:bg-slate-900'
+                  }`}
+                  title={edition.status === 'DRAFT' ? 'प्रारूप संपादन जारी रखें' : 'समाचार चयन व पृष्ठ विन्यास देखें'}
                 >
                   <BookOpen className="w-3.5 h-3.5" />
-                  <span>समाचार चयन डेस्क</span>
+                  <span>{edition.status === 'DRAFT' ? 'संपादन जारी रखें (Continue Editing)' : 'समाचार चयन डेस्क'}</span>
                 </button>
 
                 {onOpenDesigner && (
                   <button
                     onClick={() => onOpenDesigner(edition.id, 1)}
-                    className="p-2 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
-                    title="ब्रॉडशीट लेआउट डिज़ाइनर खोलें"
+                    className="p-2 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer"
+                    title="ई-पेपर डिज़ाइन स्टूडियो खोलें"
                   >
                     <Edit3 className="w-4 h-4 text-blue-600" />
                   </button>
@@ -172,8 +176,8 @@ export const EpaperEditionGrid: React.FC<EpaperEditionGridProps> = ({
                 {onOpenQualityChecker && (
                   <button
                     onClick={() => onOpenQualityChecker(edition)}
-                    className="p-2 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-colors"
-                    title="गुणवत्ता परीक्षक एवं प्रकाशन द्वार (Quality Checker)"
+                    className="p-2 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-colors cursor-pointer"
+                    title="गुणवत्ता परीक्षक एवं प्रकाशन द्वार (Quality Checker & Publish)"
                   >
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   </button>

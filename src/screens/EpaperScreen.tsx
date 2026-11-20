@@ -32,8 +32,10 @@ import {
   FileText,
   Sparkles,
   Layers,
+  Plus,
+  Shield,
 } from 'lucide-react';
-import { EpaperEdition } from '../types';
+import { AppRole, EpaperEdition } from '../types';
 import { EpaperPublicHomepage } from '../components/epaper/public/EpaperPublicHomepage';
 import { EpaperPublicReader } from '../components/epaper/public/EpaperPublicReader';
 import { EpaperDigitalArchive } from '../components/epaper/public/EpaperDigitalArchive';
@@ -49,6 +51,8 @@ export interface EpaperScreenProps {
   initialPageNumber?: number;
   initialView?: EpaperViewMode;
   onBackClick?: () => void;
+  currentRole?: AppRole | string;
+  onNavigateAdmin?: (tab?: string, action?: 'create' | 'drafts' | 'published' | 'templates' | 'archive') => void;
 }
 
 export const EpaperScreen: React.FC<EpaperScreenProps> = ({
@@ -57,6 +61,8 @@ export const EpaperScreen: React.FC<EpaperScreenProps> = ({
   initialPageNumber = 1,
   initialView,
   onBackClick,
+  currentRole,
+  onNavigateAdmin,
 }) => {
   // Determine initial view from props or URL query parameters
   const [currentView, setCurrentView] = useState<EpaperViewMode>(() => {
@@ -225,6 +231,36 @@ export const EpaperScreen: React.FC<EpaperScreenProps> = ({
           </nav>
         </div>
       </header>
+
+      {/* Master Admin Management Quick Bar (Visible strictly to MASTER_ADMIN & ADMIN) */}
+      {['MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(currentRole as any) && (
+        <div className="bg-gradient-to-r from-red-600 via-rose-700 to-slate-900 text-white px-3 sm:px-6 py-2 shadow-xs border-b border-red-700/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 bg-yellow-400 text-slate-900 text-[10px] font-black rounded-md uppercase tracking-wider shadow-2xs">
+              मास्टर एडमिन मोड
+            </span>
+            <span className="font-extrabold text-white text-xs hidden sm:inline">
+              ई-पेपर नियंत्रण व संपादन डेस्क (E-Paper Management)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onNavigateAdmin?.('epaper_studio', 'create')}
+              className="px-3.5 py-1.5 bg-white hover:bg-red-50 text-red-700 font-black rounded-lg shadow-xs transition-all flex items-center gap-1.5 text-xs active:scale-98"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ नया ई-पेपर बनाएँ (Create New E-Paper)</span>
+            </button>
+            <button
+              onClick={() => onNavigateAdmin?.('epaper_studio')}
+              className="px-3 py-1.5 bg-red-800/80 hover:bg-red-800 text-white font-bold rounded-lg transition-colors border border-red-400/30 flex items-center gap-1.5 text-xs"
+            >
+              <span>⚙️ ई-पेपर प्रबंधन डेस्क</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main View Container */}
       <main className="flex-1">

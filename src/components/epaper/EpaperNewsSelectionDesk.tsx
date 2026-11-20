@@ -101,11 +101,11 @@ export const EpaperNewsSelectionDesk: React.FC<EpaperNewsSelectionDeskProps> = (
   const [bulkTargetPage, setBulkTargetPage] = useState<number>(1);
   const [isBulkAssigning, setIsBulkAssigning] = useState<boolean>(false);
 
-  // Editorial Credits
+  // Editorial Credits (Canonical roles only: EDITOR, ADMIN, MASTER_ADMIN)
   const [staffCredits, setStaffCredits] = useState<Array<{ id: string; fullName: string; role: string }>>([
-    { id: 'usr-editor-1', fullName: 'दिनेश अग्निहोत्री (डेस्क संपादक)', role: 'EDITOR' },
+    { id: 'usr-editor-1', fullName: 'दिनेश अग्निहोत्री (संपादक)', role: 'EDITOR' },
     { id: 'usr-editor-2', fullName: 'समीक्षक संपादक (डेस्क 2)', role: 'EDITOR' },
-    { id: 'usr-admin-1', fullName: 'प्रधान संपादक / सिस्टम एडमिन', role: 'CHIEF_EDITOR' },
+    { id: 'usr-admin-1', fullName: 'प्रधान संपादक / सिस्टम एडमिन', role: 'ADMIN' },
     { id: 'usr-master-1', fullName: 'मास्टर एडमिन (BNW Live)', role: 'MASTER_ADMIN' },
   ]);
   const [selectedEditorCredit, setSelectedEditorCredit] = useState<string>('दिनेश अग्निहोत्री (डेस्क संपादक)');

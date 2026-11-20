@@ -8,6 +8,7 @@ import {
   Building2,
   Lock,
   Flame,
+  Video,
 } from 'lucide-react';
 import { AppRole } from '../types';
 import { NavTab } from './BottomNav';
@@ -120,11 +121,27 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
           </button>
 
           <button
-            onClick={() => onTabChange('home')}
-            className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors text-slate-700 hover:bg-slate-100 whitespace-nowrap"
+            onClick={() => onTabChange('taza')}
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+              activeTab === 'taza'
+                ? 'bg-red-50 text-[#ED1727]'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
           >
             <Flame className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span>ताज़ा खबरें</span>
+          </button>
+
+          <button
+            onClick={() => onTabChange('video-feed')}
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+              activeTab === 'video-feed'
+                ? 'bg-red-50 text-[#ED1727]'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+          >
+            <Video className="w-3.5 h-3.5 text-red-600 shrink-0" />
+            <span>वीडियो (VIDEO)</span>
           </button>
 
           <button
@@ -225,7 +242,7 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
           <button
             onClick={onProfileClick}
             aria-label="प्रोफ़ाइल"
-            className={`p-1.5 sm:p-2 rounded-full transition-colors ${
+            className={`hidden lg:flex p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer ${
               activeTab === 'profile'
                 ? 'bg-red-50 text-[#ED1727]'
                 : 'text-slate-700 hover:text-red-600 hover:bg-slate-100'

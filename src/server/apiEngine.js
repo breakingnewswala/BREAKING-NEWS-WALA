@@ -1782,8 +1782,18 @@ export async function handleApiRequest(req, res) {
     const editionType = rawType === 'SPECIAL' ? 'SPECIAL' : 'DAILY';
     let totalPages = 12;
     if (editionType === 'SPECIAL') {
-      const parsedPages = parseInt(body.totalPages, 10);
-      totalPages = Number.isInteger(parsedPages) ? Math.min(48, Math.max(1, parsedPages)) : 4;
+      if (body.totalPages !== undefined) {
+        const parsedPages = parseInt(body.totalPages, 10);
+        if (!Number.isInteger(parsedPages) || parsedPages < 1 || parsedPages > 48) {
+          return sendError(res, 400, 'ERR_VALIDATION', 'विशेष संस्करण (Special Edition) के लिए पृष्ठ संख्या 1 से 48 के मध्य होनी चाहिए।');
+        }
+        totalPages = parsedPages;
+      } else {
+        totalPages = 4;
+      }
+    } else {
+      // DAILY editions are ALWAYS strictly locked to 12 pages. Any client-supplied non-12 count is overridden to 12.
+      totalPages = 12;
     }
 
     const creationPayload = { ...body, editionType, totalPages, status: 'DRAFT' };
@@ -1851,6 +1861,9 @@ export async function handleApiRequest(req, res) {
     if (!existing) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
     }
+    if (existing.status === 'PUBLISHED') {
+      return sendError(res, 400, 'ERR_EDITION_ALREADY_PUBLISHED', 'प्रकाशित ई-पेपर संस्करण को सीधे संशोधित नहीं किया जा सकता। कृपया नए संस्करण हेतु संशोधन (Correction) पाइपलाइन का उपयोग करें।');
+    }
     const body = await parseRequestBody(req);
     // Disallow setting status to PUBLISHED via direct PUT/PATCH update.
     // Publication must go through the dedicated POST /api/v1/epaper/editions/:id/publish pipeline.
@@ -1873,16 +1886,23 @@ export async function handleApiRequest(req, res) {
     const effectiveType = (body.editionType ? String(body.editionType).trim().toUpperCase() : (existing.editionType || 'DAILY')).toUpperCase();
     if (effectiveType === 'DAILY') {
       body.editionType = 'DAILY';
-      body.totalPages = 12; // Invariant: Daily Edition must strictly remain 12 pages
+      body.totalPages = 12; // Invariant: Daily Edition must strictly remain 12 pages, client override overridden to 12
     } else if (effectiveType === 'SPECIAL') {
       body.editionType = 'SPECIAL';
       if (body.totalPages !== undefined) {
         const parsedPages = parseInt(body.totalPages, 10);
-        body.totalPages = Number.isInteger(parsedPages) ? Math.min(48, Math.max(1, parsedPages)) : (existing.totalPages || 4);
+        if (!Number.isInteger(parsedPages) || parsedPages < 1 || parsedPages > 48) {
+          return sendError(res, 400, 'ERR_VALIDATION', 'विशेष संस्करण (Special Edition) के लिए पृष्ठ संख्या 1 से 48 के मध्य होनी चाहिए।');
+        }
+        body.totalPages = parsedPages;
       }
     }
 
-    const expectedVersion = Number(body.version !== undefined ? body.version : body.expectedVersion);
+    const expectedVersion = Number(
+      body.version !== undefined
+        ? body.version
+        : (body.expectedVersion !== undefined ? body.expectedVersion : existing.version)
+    );
     if (existing.version !== undefined && (Number.isNaN(expectedVersion) || expectedVersion !== existing.version)) {
       return sendError(res, 409, 'ERR_CONCURRENCY_CONFLICT', `संस्करण विरोध (OCC Conflict): वर्तमान संस्करण ${existing.version} है, प्राप्त संस्करण ${expectedVersion} है।`, {
         currentVersion: existing.version,

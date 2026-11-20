@@ -36,3 +36,6 @@ Thumbs.db
 
 # AI and IDE temp
 .aistudio/
+
+# Local persistence & development scratch
+.data/

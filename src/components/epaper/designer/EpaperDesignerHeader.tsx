@@ -41,8 +41,11 @@ export interface EpaperDesignerHeaderProps {
   onUndo: () => void;
   onRedo: () => void;
   onSave: () => void;
+  onSaveDraft?: () => void;
+  onSaveEntireEdition?: () => void;
   onSaveAsTemplate?: () => void;
   onAutoArrange?: () => void;
+  onPreviewEdition?: () => void;
   isAutoArranging?: boolean;
   designerMode?: 'AUTO' | 'ASSISTED' | 'MANUAL';
   onModeChange?: (mode: 'AUTO' | 'ASSISTED' | 'MANUAL') => void;
@@ -66,8 +69,11 @@ export const EpaperDesignerHeader: React.FC<EpaperDesignerHeaderProps> = ({
   onUndo,
   onRedo,
   onSave,
+  onSaveDraft,
+  onSaveEntireEdition,
   onSaveAsTemplate,
   onAutoArrange,
+  onPreviewEdition,
   isAutoArranging,
   designerMode = 'ASSISTED',
   onModeChange,
@@ -311,28 +317,55 @@ export const EpaperDesignerHeader: React.FC<EpaperDesignerHeaderProps> = ({
           </button>
         </div>
 
-        {/* Live Preview Toggle */}
+        {/* Designer Mode Switcher (Section 4) */}
+        <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700/60">
+          <button
+            onClick={() => onModeChange?.('AUTO')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              designerMode === 'AUTO'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="ऑटो लेआउट मोड: स्वचालित ग्रिड विन्यास"
+          >
+            <span>ऑटो लेआउट</span>
+          </button>
+          <button
+            onClick={() => onModeChange?.('MANUAL')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              designerMode === 'MANUAL' || designerMode === 'ASSISTED'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="मैनुअल डिज़ाइन मोड: स्वतंत्र ड्रैग-ड्रॉप व संपादन"
+          >
+            <span>मैनुअल डिज़ाइन</span>
+          </button>
+        </div>
+
+        {/* Live Preview / Wireframe Toggle */}
         <button
-          onClick={togglePreview}
+          onClick={onPreviewEdition || togglePreview}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
             viewportState.previewMode
               ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
               : 'bg-slate-800/80 text-slate-300 border-slate-700/60 hover:text-white'
           }`}
-          title="लाइव ब्रॉडशीट प्रीव्यू / वायरफ्रेम टॉगल"
+          title="लाइव ब्रॉडशीट पूर्वावलोकन / पूर्वावलोकन मोड"
         >
           {viewportState.previewMode ? (
             <>
               <Eye className="w-3.5 h-3.5" />
-              <span>लाइव प्रीव्यू</span>
+              <span>पूर्वावलोकन सक्रिय</span>
             </>
           ) : (
             <>
-              <EyeOff className="w-3.5 h-3.5" />
-              <span>एडिटर मोड</span>
+              <Eye className="w-3.5 h-3.5 text-purple-400" />
+              <span>पूर्वावलोकन</span>
             </>
           )}
         </button>
+
         {/* AI Auto-Arrange Button (Auto Mode) */}
         {onAutoArrange && (
           <button
@@ -348,7 +381,7 @@ export const EpaperDesignerHeader: React.FC<EpaperDesignerHeaderProps> = ({
       </div>
 
       {/* Right: Undo/Redo, Dirty Status, Save & Close */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         {/* Undo / Redo */}
         <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700/60">
           <button
@@ -374,21 +407,47 @@ export const EpaperDesignerHeader: React.FC<EpaperDesignerHeaderProps> = ({
           {isDirty ? (
             <div className="flex items-center gap-1 text-amber-400 font-medium">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span>असुरक्षित</span>
+              <span className="hidden sm:inline">असुरक्षित</span>
             </div>
           ) : (
             <div className="flex items-center gap-1 text-emerald-400 font-medium">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>सहेजा हुआ</span>
+              <span className="hidden sm:inline">सहेजा हुआ</span>
             </div>
           )}
         </div>
+
+        {/* Save Draft Button (Section 6) */}
+        {onSaveDraft && (
+          <button
+            onClick={onSaveDraft}
+            disabled={isSaving}
+            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            title="ई-पेपर को प्रारूप (Draft) के रूप में सुरक्षित करें"
+          >
+            <Save className="w-3.5 h-3.5 text-slate-300" />
+            <span className="hidden xl:inline">प्रारूप सहेजें</span>
+          </button>
+        )}
+
+        {/* Save Entire Edition Button (Section 6) */}
+        {onSaveEntireEdition && (
+          <button
+            onClick={onSaveEntireEdition}
+            disabled={isSaving}
+            className="px-3 py-1.5 rounded-xl bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-700/60 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            title="संपूर्ण संस्करण एवं समस्त पृष्ठों को एक साथ सहेजें"
+          >
+            <Layers className="w-3.5 h-3.5 text-indigo-300" />
+            <span className="hidden lg:inline">संपूर्ण संस्करण</span>
+          </button>
+        )}
 
         {/* Save as Template Button */}
         {onSaveAsTemplate && (
           <button
             onClick={onSaveAsTemplate}
-            className="px-3 py-2 rounded-xl bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700/60 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            className="px-2.5 py-1.5 rounded-xl bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700/60 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
             title="वर्तमान पेज लेआउट को कस्टम टेम्पलेट के रूप में सहेजें"
           >
             <Layout className="w-3.5 h-3.5 text-purple-400" />
@@ -396,14 +455,15 @@ export const EpaperDesignerHeader: React.FC<EpaperDesignerHeaderProps> = ({
           </button>
         )}
 
-        {/* Save Button */}
+        {/* Save Current Page Button */}
         <button
           onClick={onSave}
           disabled={isSaving}
-          className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:opacity-60 text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-all"
+          className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:opacity-60 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+          title="वर्तमान सक्रिय पृष्ठ सहेजें (Ctrl+S)"
         >
-          <Save className="w-4 h-4" />
-          <span>{isSaving ? 'सहेजा जा रहा है...' : 'सहेजें (Ctrl+S)'}</span>
+          <Save className="w-3.5 h-3.5" />
+          <span>{isSaving ? 'सहेजा जा रहा है...' : 'पृष्ठ सहेजें'}</span>
         </button>
 
         {/* Close Button */}

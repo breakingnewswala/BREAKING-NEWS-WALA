@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   EpaperPageDoc,
   EpaperPageElement,
@@ -10,6 +10,7 @@ import {
   getColumnSpanWidth,
   GridColumnCount,
 } from '../../../utils/epaperLayout';
+import { apiClient } from '../../../services/apiClient';
 import {
   Trash2,
   Copy,
@@ -27,6 +28,11 @@ import {
   ArrowRightLeft,
   Image as ImageIcon,
   CheckCircle2,
+  Lock,
+  Unlock,
+  Upload,
+  RefreshCw,
+  X,
 } from 'lucide-react';
 
 export interface EpaperPropertiesPanelProps {
@@ -60,6 +66,40 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
   onUpdatePageSection,
   onUpdatePageGridColumns,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedElement) return;
+    setUploadError(null);
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setUploadError('केवल JPG, PNG अथवा WebP प्रारूप अनुमत हैं।');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('फ़ाइल का आकार 10MB से अधिक नहीं होना चाहिए।');
+      return;
+    }
+    setIsUploadingImage(true);
+    try {
+      const res = await apiClient.articles.uploadMedia(file, file.name);
+      if (res?.url) {
+        onUpdateElement({
+          ...selectedElement,
+          imageUrl: res.url,
+          photoCredit: selectedElement.photoCredit || 'बीएनडब्ल्यू विशेष छायाकार',
+        });
+      }
+    } catch (err: any) {
+      setUploadError(err.message || 'चित्र अपलोड विफल रहा');
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const grid = calculateColumnGrid(page.gridColumns || 8);
 
   const refArticle = selectedElement?.articleId && articles
@@ -159,6 +199,17 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
 
             <div className="flex items-center gap-1">
               <button
+                onClick={() => onUpdateElement({ ...selectedElement, isLocked: !selectedElement.isLocked })}
+                className={`p-1.5 rounded-lg transition-colors ${
+                  selectedElement.isLocked
+                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                }`}
+                title={selectedElement.isLocked ? 'अनलॉक करें (Unlock)' : 'तत्व लॉक करें (Lock)'}
+              >
+                {selectedElement.isLocked ? <Lock className="w-4 h-4 text-amber-700" /> : <Unlock className="w-4 h-4" />}
+              </button>
+              <button
                 onClick={() => onDuplicateElement(selectedElement.id)}
                 className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
                 title="प्रतिलिपि बनाएं (Duplicate - Ctrl+D)"
@@ -174,6 +225,97 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Locked Status Banner */}
+          {selectedElement.isLocked && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-700" />
+                <span className="font-bold">तत्व लॉक है (Position Locked)</span>
+              </div>
+              <button
+                onClick={() => onUpdateElement({ ...selectedElement, isLocked: false })}
+                className="text-[10px] font-bold text-amber-800 underline hover:text-amber-900"
+              >
+                अनलॉक करें
+              </button>
+            </div>
+          )}
+
+          {/* Dedicated Image Upload & Management Card */}
+          {(selectedElement.elementType === 'IMAGE' || selectedElement.elementType === 'STORY' || selectedElement.elementType === 'COLUMN') && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                  <span>चित्र प्रबंधन (Image Attachment)</span>
+                </span>
+                {selectedElement.imageUrl && (
+                  <button
+                    onClick={() => onUpdateElement({ ...selectedElement, imageUrl: undefined })}
+                    className="text-[10px] text-red-600 hover:underline flex items-center gap-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                    <span>हटाएं</span>
+                  </button>
+                )}
+              </div>
+
+              {selectedElement.imageUrl ? (
+                <div className="space-y-1.5">
+                  <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-black/5 aspect-video flex items-center justify-center">
+                    <img
+                      src={selectedElement.imageUrl}
+                      alt="Element attachment"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+                  <div className="text-[10px] text-slate-500 truncate font-mono">
+                    {selectedElement.imageUrl}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-white border border-dashed border-slate-300 rounded-lg text-center text-xs text-slate-500">
+                  <span>कोई चित्र संलग्न नहीं है</span>
+                </div>
+              )}
+
+              {/* Upload input & button */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleImageFileChange}
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingImage}
+                className="w-full py-1.5 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+              >
+                {isUploadingImage ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>अपलोड हो रहा है...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{selectedElement.imageUrl ? 'चित्र बदलें (Replace Image)' : 'फ़ोटो अपलोड करें (Upload Image)'}</span>
+                  </>
+                )}
+              </button>
+
+              {uploadError && (
+                <span className="text-[10px] text-red-600 block">{uploadError}</span>
+              )}
+            </div>
+          )}
 
           {/* Missing Image / Missing Credit Alerts */}
           {(selectedElement.elementType === 'STORY' || selectedElement.elementType === 'IMAGE') && !selectedElement.imageUrl && (

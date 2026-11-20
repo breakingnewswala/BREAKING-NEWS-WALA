@@ -1,9 +1,11 @@
 import React from 'react';
-import { Home, Newspaper, PenSquare, Search, User, ShieldCheck, Radio, Flame } from 'lucide-react';
+import { Home, Newspaper, PenSquare, User, ShieldCheck, Radio, Flame, Video } from 'lucide-react';
 import { AppRole } from '../types';
 
 export type NavTab =
   | 'home'
+  | 'taza'
+  | 'video-feed'
   | 'epaper'
   | 'reporter'
   | 'newsroom'
@@ -65,7 +67,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav className="block md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-lg">
       <div className="max-w-md mx-auto grid grid-cols-5 h-14">
-        {/* 1. Home */}
+        {/* 1. Home (होम) */}
         <button
           onClick={() => onTabChange('home')}
           className={`flex flex-col items-center justify-center relative transition-colors ${
@@ -81,8 +83,66 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           )}
         </button>
 
-        {/* 2. E-paper (for privileged) OR ताज़ा (for normal readers) */}
+        {/* 2. TAZA (ताज़ा - Full-Screen Swipe Feed) */}
+        <button
+          onClick={() => onTabChange('taza')}
+          className={`flex flex-col items-center justify-center relative transition-colors ${
+            activeTab === 'taza' ? 'text-[#ED1727]' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Flame className={`w-5 h-5 ${activeTab === 'taza' ? 'text-[#ED1727]' : 'text-amber-500'}`} />
+          <span className={`text-[11px] mt-0.5 ${activeTab === 'taza' ? 'font-bold text-[#ED1727]' : 'font-medium'}`}>
+            ताज़ा
+          </span>
+          {activeTab === 'taza' && (
+            <div className="absolute top-0 w-8 h-[2px] bg-[#ED1727] rounded-full" />
+          )}
+        </button>
+
+        {/* 3. VIDEO (वीडियो - URL-Based Facebook & Instagram Feed) */}
+        <button
+          onClick={() => onTabChange('video-feed')}
+          className={`flex flex-col items-center justify-center relative transition-colors ${
+            activeTab === 'video-feed' ? 'text-[#ED1727]' : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Video className="w-5 h-5" />
+          <span className={`text-[11px] mt-0.5 tracking-tight ${activeTab === 'video-feed' ? 'font-bold text-[#ED1727]' : 'font-medium'}`}>
+            VIDEO
+          </span>
+          {activeTab === 'video-feed' && (
+            <div className="absolute top-0 w-8 h-[2px] bg-[#ED1727] rounded-full" />
+          )}
+        </button>
+
+        {/* 4. Privileged Desk OR E-Paper for Readers */}
         {isPrivileged ? (
+          <button
+            onClick={() => onTabChange(getDeskTarget())}
+            className={`flex flex-col items-center justify-center relative transition-colors ${
+              isDeskActive ? 'text-[#ED1727]' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <div className="relative">
+              {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) ? (
+                <ShieldCheck className="w-5 h-5 text-amber-500" />
+              ) : (
+                <PenSquare className="w-5 h-5" />
+              )}
+              {['ADMIN', 'MASTER_ADMIN'].includes(currentRole) && pendingQueueCount > 0 && (
+                <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full min-w-4 text-center">
+                  {pendingQueueCount}
+                </span>
+              )}
+            </div>
+            <span className={`text-[11px] mt-0.5 ${isDeskActive ? 'font-bold' : 'font-medium'}`}>
+              {getDeskLabel()}
+            </span>
+            {isDeskActive && (
+              <div className="absolute top-0 w-8 h-[2px] bg-[#ED1727] rounded-full" />
+            )}
+          </button>
+        ) : (
           <button
             onClick={() => onTabChange('epaper')}
             className={`flex flex-col items-center justify-center relative transition-colors ${
@@ -97,68 +157,9 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               <div className="absolute top-0 w-8 h-[2px] bg-[#ED1727] rounded-full" />
             )}
           </button>
-        ) : (
-          <button
-            onClick={() => onTabChange('home')}
-            className={`flex flex-col items-center justify-center relative transition-colors ${
-              activeTab === 'home' ? 'text-slate-500 hover:text-slate-800' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Flame className="w-5 h-5 text-amber-500" />
-            <span className="text-[11px] mt-0.5 font-medium">
-              ताज़ा
-            </span>
-          </button>
         )}
 
-        {/* 3. Operational Surface or Live Updates */}
-        <button
-          onClick={() => onTabChange(getDeskTarget())}
-          className={`flex flex-col items-center justify-center relative transition-colors ${
-            isDeskActive ? 'text-[#ED1727]' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <div className="relative">
-            {isPrivileged ? (
-              ['MASTER_ADMIN', 'ADMIN'].includes(currentRole) ? (
-                <ShieldCheck className="w-5 h-5 text-amber-500" />
-              ) : (
-                <PenSquare className="w-5 h-5" />
-              )
-            ) : (
-              <Radio className="w-5 h-5 text-red-600 animate-pulse" />
-            )}
-            {isPrivileged && ['ADMIN', 'MASTER_ADMIN'].includes(currentRole) && pendingQueueCount > 0 && (
-              <span className="absolute -top-1 -right-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full min-w-4 text-center">
-                {pendingQueueCount}
-              </span>
-            )}
-          </div>
-          <span className={`text-[11px] mt-0.5 ${isDeskActive ? 'font-bold' : 'font-medium'}`}>
-            {getDeskLabel()}
-          </span>
-          {isDeskActive && (
-            <div className="absolute top-0 w-8 h-[2px] bg-[#ED1727] rounded-full" />
-          )}
-        </button>
-
-        {/* 4. Search */}
-        <button
-          onClick={() => onTabChange('search')}
-          className={`flex flex-col items-center justify-center relative transition-colors ${
-            activeTab === 'search' ? 'text-[#ED1727]' : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Search className="w-5 h-5" />
-          <span className={`text-[11px] mt-0.5 ${activeTab === 'search' ? 'font-bold' : 'font-medium'}`}>
-            खोजें
-          </span>
-          {activeTab === 'search' && (
-            <div className="absolute top-0 w-8 h-[2px] bg-[#ED1727] rounded-full" />
-          )}
-        </button>
-
-        {/* 5. Profile */}
+        {/* 5. Profile (प्रोफ़ाइल) */}
         <button
           onClick={() => onTabChange('profile')}
           className={`flex flex-col items-center justify-center relative transition-colors ${

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   FileText,
   Search,
@@ -13,6 +13,9 @@ import {
   Newspaper,
   BookOpen,
   Filter,
+  Upload,
+  Camera,
+  RefreshCw,
 } from 'lucide-react';
 import {
   ArticleDetail,
@@ -21,6 +24,7 @@ import {
   EpaperTemplateDoc,
 } from '../../../types';
 import { DEFAULT_EPAPER_TEMPLATES } from '../../../data/defaultEpaperTemplates';
+import { apiClient } from '../../../services/apiClient';
 
 export interface EpaperToolboxPanelProps {
   articles: ArticleDetail[];
@@ -29,6 +33,7 @@ export interface EpaperToolboxPanelProps {
   onAddStory: (article: ArticleDetail) => void;
   onAddPrimitive: (elementType: EpaperElementType) => void;
   onApplyTemplate: (template: EpaperTemplateDoc) => void;
+  onUploadMedia?: (file: File, category: 'newspaper' | 'article' | 'photo', caption?: string) => Promise<void> | void;
 }
 
 export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
@@ -38,11 +43,56 @@ export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
   onAddStory,
   onAddPrimitive,
   onApplyTemplate,
+  onUploadMedia,
 }) => {
-  const [activeTab, setActiveTab] = useState<'stories' | 'primitives' | 'templates'>('stories');
+  const [activeTab, setActiveTab] = useState<'stories' | 'uploads' | 'primitives' | 'templates'>('stories');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedTplCat, setSelectedTplCat] = useState<string>('all');
+
+  // Media upload state
+  const [uploadCategory, setUploadCategory] = useState<'newspaper' | 'article' | 'photo'>('newspaper');
+  const [uploadCaption, setUploadCaption] = useState<string>('');
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadFeedback, setUploadFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const mediaFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleTriggerUpload = (category: 'newspaper' | 'article' | 'photo') => {
+    setUploadCategory(category);
+    setUploadFeedback(null);
+    mediaFileInputRef.current?.click();
+  };
+
+  const handleMediaFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setUploadFeedback({ type: 'error', message: 'अमान्य प्रारूप! केवल JPG, PNG अथवा WebP अनुमत हैं।' });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadFeedback({ type: 'error', message: 'फ़ाइल का आकार 10 MB से अधिक नहीं हो सकता।' });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadFeedback(null);
+    try {
+      if (onUploadMedia) {
+        await onUploadMedia(file, uploadCategory, uploadCaption.trim() || file.name);
+      } else {
+        await apiClient.articles.uploadMedia(file, uploadCaption.trim() || file.name);
+      }
+      setUploadFeedback({ type: 'success', message: 'फ़ाइल सफलतापूर्वक अपलोड हुई और पृष्ठ पर संलग्न की गई!' });
+      setUploadCaption('');
+    } catch (err: any) {
+      setUploadFeedback({ type: 'error', message: err.message || 'मीडिया अपलोड विफल रहा।' });
+    } finally {
+      setIsUploading(false);
+      if (mediaFileInputRef.current) mediaFileInputRef.current.value = '';
+    }
+  };
 
   // Map articleId -> pageNumber across all edition pages to detect duplicates
   const placedArticleMap = useMemo(() => {
@@ -145,44 +195,205 @@ export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
 
   return (
     <aside className="w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 h-full overflow-hidden select-none">
+      {/* Hidden File Input for Media Upload */}
+      <input
+        ref={mediaFileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={handleMediaFileSelected}
+        className="hidden"
+      />
+
       {/* Tab Switcher */}
-      <div className="p-2 border-b border-slate-200 bg-slate-50 flex items-center gap-1">
+      <div className="p-2 border-b border-slate-200 bg-slate-50 grid grid-cols-4 gap-1">
         <button
           onClick={() => setActiveTab('stories')}
-          className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+          className={`py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
             activeTab === 'stories'
               ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
               : 'text-slate-600 hover:text-slate-900'
           }`}
+          title="स्वीकृत समाचार सूची"
         >
-          <FileText className="w-3.5 h-3.5" />
-          <span>समाचार ({approvedArticles.length})</span>
+          <FileText className="w-3 h-3 shrink-0" />
+          <span className="truncate">समाचार</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('uploads')}
+          className={`py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
+            activeTab === 'uploads'
+              ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+          title="अखबार चित्र व फोटोग्राफ अपलोड"
+        >
+          <Upload className="w-3 h-3 shrink-0 text-emerald-600" />
+          <span className="truncate">अपलोड</span>
         </button>
 
         <button
           onClick={() => setActiveTab('primitives')}
-          className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+          className={`py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
             activeTab === 'primitives'
               ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
               : 'text-slate-600 hover:text-slate-900'
           }`}
+          title="पेज तत्व (हेडलाइन, स्टोरी, इमेज, विज्ञापन)"
         >
-          <Layers className="w-3.5 h-3.5" />
-          <span>तत्व</span>
+          <Layers className="w-3 h-3 shrink-0" />
+          <span className="truncate">तत्व</span>
         </button>
 
         <button
           onClick={() => setActiveTab('templates')}
-          className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+          className={`py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center gap-1 ${
             activeTab === 'templates'
               ? 'bg-white text-blue-700 shadow-xs border border-slate-200'
               : 'text-slate-600 hover:text-slate-900'
           }`}
+          title="ब्रॉडशीट टेम्पलेट्स"
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>टेम्पलेट्स</span>
+          <Sparkles className="w-3 h-3 shrink-0" />
+          <span className="truncate">टेम्पलेट</span>
         </button>
       </div>
+
+      {/* Tab 2: Media & Image Uploads (Section 5) */}
+      {activeTab === 'uploads' && (
+        <div className="flex-1 flex flex-col p-4 overflow-y-auto space-y-4">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              मीडिया एवं फ़ोटो प्रबंधन
+            </span>
+            <h4 className="text-xs font-bold text-slate-800 mt-0.5">
+              पृष्ठ {activePageNumber} हेतु चित्र अपलोड करें
+            </h4>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              सीधे क्लाउड स्टोरेज में अपलोड करें व ब्रॉडशीट कैनवास पर तुरंत संलग्न करें।
+            </p>
+          </div>
+
+          {/* Caption Input */}
+          <div className="space-y-1">
+            <label className="block text-[11px] font-bold text-slate-700">
+              चित्र कैप्शन / शीर्षक (वैकल्पिक):
+            </label>
+            <input
+              type="text"
+              value={uploadCaption}
+              onChange={(e) => setUploadCaption(e.target.value)}
+              placeholder="चित्र का शीर्षक अथवा विवरण..."
+              className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 bg-white"
+            />
+          </div>
+
+          {/* 3 Clear Upload Actions */}
+          <div className="space-y-2.5">
+            {/* 1. Upload Newspaper Image */}
+            <div className="p-3 bg-slate-50 border border-slate-200 hover:border-blue-400 rounded-xl transition-all">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <Newspaper className="w-4 h-4 text-blue-600" />
+                  <span>1. समाचार पत्र फोटो (Newspaper Image)</span>
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 mb-2">
+                अखबार की मुख्य खबर हेतु उच्च-रिज़ॉल्यूशन लीड फोटो (JPG, PNG, WebP ≤ 10MB)।
+              </p>
+              <button
+                type="button"
+                onClick={() => handleTriggerUpload('newspaper')}
+                disabled={isUploading}
+                className="w-full py-1.5 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+              >
+                {isUploading && uploadCategory === 'newspaper' ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5" />
+                )}
+                <span>समाचार पत्र फोटो अपलोड करें</span>
+              </button>
+            </div>
+
+            {/* 2. Upload Article Image */}
+            <div className="p-3 bg-slate-50 border border-slate-200 hover:border-emerald-400 rounded-xl transition-all">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <ImageIcon className="w-4 h-4 text-emerald-600" />
+                  <span>2. आलेख चित्र (Article Image)</span>
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 mb-2">
+                विशेष आलेख अथवा विश्लेषण समाचार से संबंधित प्रासंगिक चित्र अपलोड करें।
+              </p>
+              <button
+                type="button"
+                onClick={() => handleTriggerUpload('article')}
+                disabled={isUploading}
+                className="w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+              >
+                {isUploading && uploadCategory === 'article' ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5" />
+                )}
+                <span>आलेख चित्र अपलोड करें</span>
+              </button>
+            </div>
+
+            {/* 3. Upload Supporting Photograph */}
+            <div className="p-3 bg-slate-50 border border-slate-200 hover:border-amber-400 rounded-xl transition-all">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <Camera className="w-4 h-4 text-amber-600" />
+                  <span>3. सहायक छायाचित्र (Supporting Photo)</span>
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 mb-2">
+                फील्ड संवाददाताओं द्वारा भेजा गया सहायक घटना छायाचित्र अथवा दस्तावेज़।
+              </p>
+              <button
+                type="button"
+                onClick={() => handleTriggerUpload('photo')}
+                disabled={isUploading}
+                className="w-full py-1.5 px-3 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+              >
+                {isUploading && uploadCategory === 'photo' ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5" />
+                )}
+                <span>सहायक छायाचित्र अपलोड करें</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Feedback banner */}
+          {uploadFeedback && (
+            <div
+              className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                uploadFeedback.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                  : 'bg-red-50 border-red-300 text-red-800'
+              }`}
+            >
+              {uploadFeedback.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+              )}
+              <span>{uploadFeedback.message}</span>
+            </div>
+          )}
+
+          {/* Infrastructure guarantee note */}
+          <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-xl text-[10px] text-blue-900 space-y-0.5">
+            <span className="font-bold block">🔒 अधिकृत मीडिया पाइपलाइन:</span>
+            <span>Cloud Storage / MinIO इंजन द्वारा 300 DPI मुद्रण मानकों पर आधारित सुरक्षित मीडिया संधारण।</span>
+          </div>
+        </div>
+      )}
 
       {/* Tab 1: Approved Stories Queue */}
       {activeTab === 'stories' && (

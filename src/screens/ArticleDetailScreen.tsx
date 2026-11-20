@@ -20,6 +20,7 @@ import {
   Flag,
   Send,
   AlertTriangle,
+  Newspaper,
 } from 'lucide-react';
 import { ArticleDetail, ArticleItem, CommentRecord } from '../types';
 import { BnwAiService } from '../services/aiService';
@@ -64,6 +65,50 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
   const [showCorrectionBox, setShowCorrectionBox] = useState(false);
   const [correctionText, setCorrectionText] = useState('');
   const [correctionSent, setCorrectionSent] = useState<string | null>(null);
+
+  // E-Paper Queue State for Staff (Admin/Editor/MasterAdmin)
+  const [currentUser] = useState<any>(() => {
+    try {
+      const raw = localStorage.getItem('bnw_auth_user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const isStaff = currentUser && ['ADMIN', 'MASTER_ADMIN', 'SUPER_ADMIN', 'EDITOR'].some((r) =>
+    currentUser.role === r || (Array.isArray(currentUser.roles) && currentUser.roles.includes(r))
+  );
+
+  const [isQueuedForEpaper, setIsQueuedForEpaper] = useState<boolean>(() => {
+    return (
+      article.epaperWorkflow?.status === 'APPROVED_FOR_EPAPER' ||
+      article.epaperWorkflow?.status === 'ASSIGNED_TO_PAGE' ||
+      (article as any).isEpaperShortlisted === true
+    );
+  });
+  const [isQueueingEpaper, setIsQueueingEpaper] = useState(false);
+  const [epaperToast, setEpaperToast] = useState<string | null>(null);
+
+  const handleToggleEpaperQueue = async () => {
+    if (isQueueingEpaper) return;
+    setIsQueueingEpaper(true);
+    try {
+      const targetStatus = isQueuedForEpaper ? 'EDITORIAL_REVIEW' : 'APPROVED_FOR_EPAPER';
+      await apiClient.epaper.updateArticleWorkflowStatus(article.id, {
+        targetStatus,
+        remarks: isQueuedForEpaper ? 'Removed from E-Paper queue' : 'Queued from Article Details screen',
+      });
+      setIsQueuedForEpaper(!isQueuedForEpaper);
+      setEpaperToast(isQueuedForEpaper ? 'ई-पेपर चयन सूची से हटा दिया गया।' : 'ई-पेपर चयन सूची में सफलतापूर्वक जोड़ा गया!');
+      setTimeout(() => setEpaperToast(null), 3000);
+    } catch (err: any) {
+      setEpaperToast(err.message || 'ई-पेपर स्थिति अद्यतन विफल');
+      setTimeout(() => setEpaperToast(null), 3000);
+    } finally {
+      setIsQueueingEpaper(false);
+    }
+  };
 
   // Award reading coins & record reading history on mount
   useEffect(() => {
@@ -419,7 +464,42 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
             <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
             <span>त्रुटि सुधार भेजें</span>
           </button>
+
+          {/* E-Paper Queue Action for Editorial/Admin Staff */}
+          {isStaff && (
+            <button
+              type="button"
+              onClick={handleToggleEpaperQueue}
+              disabled={isQueueingEpaper}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs ${
+                isQueuedForEpaper
+                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                  : 'bg-red-50 border border-red-300 text-red-700 hover:bg-red-100'
+              } disabled:opacity-50 cursor-pointer`}
+              title={isQueuedForEpaper ? 'ई-पेपर चयन सूची से हटाएं' : 'ई-पेपर संस्करण हेतु चुनें'}
+            >
+              <Newspaper className="w-3.5 h-3.5" />
+              <span>
+                {isQueueingEpaper
+                  ? 'प्रक्रियाधीन...'
+                  : isQueuedForEpaper
+                  ? '✓ ई-पेपर में शामिल'
+                  : '+ ई-पेपर में जोड़ें'}
+              </span>
+            </button>
+          )}
         </div>
+
+        {/* E-Paper Queue Notice Toast */}
+        {epaperToast && (
+          <div className="mt-2 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+              {epaperToast}
+            </span>
+            <button onClick={() => setEpaperToast(null)} className="text-emerald-500 hover:text-emerald-800 font-bold">✕</button>
+          </div>
+        )}
 
         {/* Inline Audio Status Notice */}
         {audioNotice && (

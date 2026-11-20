@@ -660,6 +660,13 @@ export const apiClient = {
     },
   },
 
+  // Media & Article Uploads Helper
+  articles: {
+    async uploadMedia(file: File, caption?: string): Promise<{ mediaId: string; url: string }> {
+      return apiClient.reporter.uploadMedia(file, caption);
+    },
+  },
+
   // 5. Newsroom Editorial Domain (Section 7, STEP B & C, Section 9)
   newsroom: {
     async fetchIncomingQueue(): Promise<ArticleDetail[]> {
@@ -2419,6 +2426,10 @@ export const apiClient = {
 
   // 17. E-Paper Management System Domain (/api/v1/epaper/*)
   epaper: {
+    async uploadMedia(file: File, caption?: string): Promise<{ mediaId: string; url: string }> {
+      return apiClient.reporter.uploadMedia(file, caption);
+    },
+
     async getEditions(filters?: EpaperEditionsFilter): Promise<EpaperEditionsResponse> {
       const queryParams = new URLSearchParams();
       if (filters?.date) queryParams.set('date', filters.date);
@@ -2748,7 +2759,7 @@ export const apiClient = {
       return { templateId: id, totalEditions: 0, editions: [] };
     },
 
-    async generateWhatsAppCard(payload: { editionId?: string; format: '1:1' | '4:5'; headline: string; body: string; imageUrl?: string; articleId?: string }): Promise<EpaperWhatsAppGenerationDoc> {
+    async generateWhatsAppCard(payload: { editionId?: string; format: '1:1' | '4:5'; headline: string; body: string; imageUrl?: string; articleId?: string; districtName?: string; category?: string }): Promise<EpaperWhatsAppGenerationDoc> {
       const res = await request<EpaperWhatsAppGenerationDoc>('/epaper/whatsapp/generate', {
         method: 'POST',
         body: JSON.stringify(payload),

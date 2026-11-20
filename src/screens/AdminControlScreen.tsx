@@ -47,6 +47,8 @@ import {
   Bot,
   Bookmark,
   Wheat,
+  Archive,
+  Layout,
 } from 'lucide-react';
 import {
   AppRole,
@@ -118,6 +120,8 @@ interface AdminControlScreenProps {
   onUpdateMandiRate?: (id: string, dto: Partial<MandiRateItem>) => Promise<void> | void;
   onDeleteMandiRate?: (id: string) => void;
   onBroadcastAlert: (title: string, district: string) => void;
+  initialTab?: 'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio';
+  initialEpaperAction?: 'create' | 'drafts' | 'published' | 'templates' | 'archive';
 }
 
 export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
@@ -149,10 +153,18 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   onUpdateMandiRate,
   onDeleteMandiRate,
   onBroadcastAlert,
+  initialTab,
+  initialEpaperAction,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio'
-  >('overview');
+  >(initialTab || 'overview');
+  const [epaperAction, setEpaperAction] = useState<'create' | 'drafts' | 'published' | 'templates' | 'archive' | undefined>(initialEpaperAction);
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+    if (initialEpaperAction) setEpaperAction(initialEpaperAction);
+  }, [initialTab, initialEpaperAction]);
 
   // Review Queue state
   const [selectedReviewArticleId, setSelectedReviewArticleId] = useState<string>(
@@ -923,7 +935,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
               }`}
           >
             <Newspaper className="w-3.5 h-3.5 text-blue-600" />
-            <span>ई-पेपर स्टूडियो</span>
+            <span>ई-पेपर प्रबंधन (E-Paper)</span>
           </button>
         </div>
 
@@ -954,11 +966,15 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                 <span>रिपोर्टर डेस्क</span>
               </button>
               <button
-                onClick={() => onNavigateTab('epaper')}
-                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-blue-300 hover:text-[#344FD6] text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
+                onClick={() => setActiveTab('epaper_studio')}
+                className={`px-2.5 py-1 rounded-md border text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors ${
+                  activeTab === 'epaper_studio'
+                    ? 'bg-blue-50 border-blue-400 text-blue-700 font-bold'
+                    : 'bg-white border-slate-200 hover:border-blue-300 hover:text-[#344FD6]'
+                }`}
               >
                 <Newspaper className="w-3 h-3 text-[#344FD6]" />
-                <span>ई-पेपर (Admin)</span>
+                <span>ई-पेपर प्रबंधन (Studio)</span>
               </button>
               <button
                 onClick={() => onNavigateTab('graphics')}
@@ -1139,6 +1155,177 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                   <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg">
                     <span className="text-slate-600 font-medium">सुरक्षा मानक:</span>
                     <strong className="text-emerald-700 font-semibold">DPDPA 2023 & IT Rules</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* E-PAPER MANAGEMENT SECTION (MASTER ADMIN CONTROL PANEL) */}
+            <div className="bg-gradient-to-br from-white to-slate-50 p-6 rounded-2xl border-2 border-red-200/80 shadow-sm space-y-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-red-600 text-white rounded-lg shadow-xs">
+                      <Newspaper className="w-5 h-5" />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                        <span>ई-पेपर प्रबंधन प्रणाली</span>
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 bg-red-100 text-red-800 rounded-full">
+                          E-PAPER MANAGEMENT
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        मध्य प्रदेश के 55 जिलों के लिए दैनिक व विशेष डिजिटल संस्करण निर्माण, प्रारूप, प्रकाशन एवं अभिलेखागार नियंत्रण
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary Action Button Prominently Displayed */}
+                <button
+                  onClick={() => {
+                    setEpaperAction('create');
+                    setActiveTab('epaper_studio');
+                  }}
+                  className="px-5 py-3 bg-red-600 hover:bg-red-700 text-white text-sm font-black rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 group ring-2 ring-red-500/20 active:scale-98"
+                >
+                  <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
+                  <span>+ नया ई-पेपर बनाएँ (Create New E-Paper)</span>
+                </button>
+              </div>
+
+              {/* 4 E-Paper Management Action Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div
+                  onClick={() => {
+                    setEpaperAction('drafts');
+                    setActiveTab('epaper_studio');
+                  }}
+                  className="p-4 bg-white hover:bg-amber-50/50 border border-slate-200 hover:border-amber-400 rounded-xl cursor-pointer transition-all shadow-2xs group flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="p-2 bg-amber-100 text-amber-700 rounded-lg group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                        <FileText className="w-4 h-4" />
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded">
+                        Action 2
+                      </span>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 group-hover:text-amber-800">
+                        Manage Draft Editions
+                      </h4>
+                      <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                        प्रारूप संस्करण प्रबंधन
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      अधूरे, संपादनरत एवं अनुमोदन के लिए लंबित प्रारूप संस्करणों को पुनः खोलें व संपादित करें।
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] font-bold text-amber-700 flex items-center gap-1">
+                    <span>प्रारूप खोलें</span> &rarr;
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setEpaperAction('published');
+                    setActiveTab('epaper_studio');
+                  }}
+                  className="p-4 bg-white hover:bg-emerald-50/50 border border-slate-200 hover:border-emerald-400 rounded-xl cursor-pointer transition-all shadow-2xs group flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="p-2 bg-emerald-100 text-emerald-700 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                        Action 3
+                      </span>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 group-hover:text-emerald-800">
+                        Manage Published Editions
+                      </h4>
+                      <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                        प्रकाशित संस्करण प्रबंधन
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      लाइव पाठकों के लिए प्रसारित संस्करणों की स्थिति, पेज रीच व डाउनलोड एनालिटिक्स देखें।
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] font-bold text-emerald-700 flex items-center gap-1">
+                    <span>प्रकाशित सूची</span> &rarr;
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setEpaperAction('templates');
+                    setActiveTab('epaper_studio');
+                  }}
+                  className="p-4 bg-white hover:bg-purple-50/50 border border-slate-200 hover:border-purple-400 rounded-xl cursor-pointer transition-all shadow-2xs group flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="p-2 bg-purple-100 text-purple-700 rounded-lg group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                        <Layout className="w-4 h-4" />
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded">
+                        Action 4
+                      </span>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 group-hover:text-purple-800">
+                        E-Paper Template Library
+                      </h4>
+                      <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                        ई-पेपर टेम्पलेट लाइब्रेरी
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      ब्रॉडशीट (32.9 × 52 cm) 8-कॉलम ग्रिड लेआउट, फ्रंट पेज, संपादकीय और खेल पृष्ठ टेम्पलेट्स।
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] font-bold text-purple-700 flex items-center gap-1">
+                    <span>टेम्पलेट्स देखें</span> &rarr;
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setEpaperAction('archive');
+                    setActiveTab('epaper_studio');
+                  }}
+                  className="p-4 bg-white hover:bg-blue-50/50 border border-slate-200 hover:border-blue-400 rounded-xl cursor-pointer transition-all shadow-2xs group flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="p-2 bg-blue-100 text-blue-700 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                        <Archive className="w-4 h-4" />
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded">
+                        Action 5
+                      </span>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 group-hover:text-blue-800">
+                        Edition Archive Management
+                      </h4>
+                      <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                        संस्करण अभिलेखागार प्रबंधन
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      पुराने ऐतिहासिक ई-पेपर संस्करणों की खोज, जिलावार फ़िल्टरिंग एवं बैकअप स्टोरेज सत्यापन।
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] font-bold text-blue-700 flex items-center gap-1">
+                    <span>अभिलेखागार खोलें</span> &rarr;
                   </div>
                 </div>
               </div>
@@ -4006,6 +4193,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
               articles={articles}
               pendingArticles={pendingArticles}
               currentRole={currentRole}
+              initialAction={epaperAction}
             />
           </div>
         )}

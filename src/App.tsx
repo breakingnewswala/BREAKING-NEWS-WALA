@@ -43,6 +43,11 @@ const ProfileScreen = React.lazy(() => import('./screens/ProfileScreen').then((m
 const GraphicsStudioScreen = React.lazy(() => import('./screens/GraphicsStudioScreen').then((m) => ({ default: m.GraphicsStudioScreen })));
 const VideoStudioScreen = React.lazy(() => import('./screens/VideoStudioScreen').then((m) => ({ default: m.VideoStudioScreen })));
 const AiNewsroomScreen = React.lazy(() => import('./screens/AiNewsroomScreen').then((m) => ({ default: m.AiNewsroomScreen })));
+import { TazaFeedScreen } from './components/taza/TazaFeedScreen';
+import { PublicVideoFeedScreen } from './components/video/PublicVideoFeedScreen';
+import { AdminVideoManagerModal } from './components/video/AdminVideoManagerModal';
+import { DEFAULT_VIDEO_POSTS } from './data/defaultVideoPosts';
+import { VideoPost } from './types';
 import { Radio, X } from 'lucide-react';
 import { apiClient, AuthUser, getStoredAccessToken } from './services/apiClient';
 import {
@@ -78,6 +83,23 @@ export const App: React.FC = () => {
   const [pendingStories, setPendingStories] = useState<ArticleDetail[]>(INITIAL_PENDING_STORIES);
   const [reporterDrafts, setReporterDrafts] = useState<ArticleDetail[]>(INITIAL_PENDING_STORIES);
 
+  // E-Paper Admin Deep Linking Signals
+  const [adminInitialTab, setAdminInitialTab] = useState<
+    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio' | undefined
+  >(undefined);
+  const [adminEpaperAction, setAdminEpaperAction] = useState<
+    'create' | 'drafts' | 'published' | 'templates' | 'archive' | undefined
+  >(undefined);
+
+  const handleNavigateToAdminWithEpaperAction = (
+    tab: 'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio' = 'epaper_studio',
+    action?: 'create' | 'drafts' | 'published' | 'templates' | 'archive'
+  ) => {
+    setAdminInitialTab(tab);
+    setAdminEpaperAction(action);
+    navigateToTab('admin');
+  };
+
   // Operational Surface States
   const [reporters, setReporters] = useState<ReporterProfile[]>(MOCK_REPORTERS);
   const [ads, setAds] = useState<AdBannerItem[]>(MOCK_ADS);
@@ -106,6 +128,10 @@ export const App: React.FC = () => {
     district: 'पूरा मध्य प्रदेश',
   });
 
+  // URL-Based Video Feed States
+  const [videoPosts, setVideoPosts] = useState<VideoPost[]>(DEFAULT_VIDEO_POSTS);
+  const [isVideoManagerOpen, setIsVideoManagerOpen] = useState<boolean>(false);
+
   const resolveHighestRole = (roles: string[]): AppRole => {
     const upperRoles = roles.map((r) => String(r).toUpperCase());
     if (upperRoles.includes('MASTER_ADMIN') || upperRoles.includes('SUPER_ADMIN')) {
@@ -129,6 +155,12 @@ export const App: React.FC = () => {
     setAuthUser(user);
     setAccountRole(resolvedRole);
     setCurrentRole(resolvedRole);
+    // Normal USER login must strictly land on Home, never forced into E-Paper
+    if (resolvedRole === 'READER') {
+      setSelectedArticleId(null);
+      setActiveTab('home');
+      window.location.hash = '';
+    }
   };
 
   const handleQuickMasterLogin = async () => {
@@ -160,6 +192,11 @@ export const App: React.FC = () => {
               setAccountRole(resolvedRole);
               if (isNewUserSession) {
                 setCurrentRole(resolvedRole);
+                if (resolvedRole === 'READER') {
+                  setSelectedArticleId(null);
+                  setActiveTab('home');
+                  window.location.hash = '';
+                }
               }
               setIsAuthChecking(false);
               return;
@@ -200,6 +237,11 @@ export const App: React.FC = () => {
           setAccountRole(resolvedRole);
           if (isNewUserSession) {
             setCurrentRole(resolvedRole);
+            if (resolvedRole === 'READER') {
+              setSelectedArticleId(null);
+              setActiveTab('home');
+              window.location.hash = '';
+            }
           }
           // Sync user profile & bookmarks with live Cloud Firestore
           syncUserProfileToFirestore(firebaseUser, resolvedRole).catch(() => {});
@@ -335,9 +377,12 @@ export const App: React.FC = () => {
       const pathname = window.location.pathname.replace('/', '').toLowerCase();
       const target = hash || pathname;
 
-      if (target === 'epaper' || target === 'search' || target === 'profile') {
+      if (target === 'epaper' || target === 'search' || target === 'profile' || target === 'taza' || target === 'video-feed') {
         setSelectedArticleId(null);
         setActiveTab(target as NavTab);
+      } else if (target === 'videos') {
+        setSelectedArticleId(null);
+        setActiveTab('video-feed');
       } else if (target === 'reporter') {
         if (['MASTER_ADMIN', 'ADMIN', 'EDITOR', 'REPORTER'].includes(currentRole)) {
           setSelectedArticleId(null);
@@ -448,13 +493,30 @@ export const App: React.FC = () => {
       navigateToTab(targetTab);
       return;
     }
-    if (targetRole === 'READER' && ['admin', 'newsroom', 'reporter', 'graphics', 'videos', 'ai-newsroom'].includes(activeTab)) {
+    if (targetRole === 'READER') {
       navigateToTab('home');
-    } else if (targetRole === 'REPORTER' && ['admin', 'newsroom', 'graphics', 'videos', 'ai-newsroom'].includes(activeTab)) {
+    } else if (targetRole === 'REPORTER') {
       navigateToTab('reporter');
-    } else if (targetRole === 'MASTER_ADMIN' && activeTab === 'home') {
+    } else if (targetRole === 'MASTER_ADMIN') {
       navigateToTab('admin');
     }
+  };
+
+  // Video Management Handlers
+  const handleSaveVideoPost = (newPost: VideoPost) => {
+    setVideoPosts((prev) => {
+      const idx = prev.findIndex((p) => p.id === newPost.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = newPost;
+        return next;
+      }
+      return [newPost, ...prev];
+    });
+  };
+
+  const handleDeleteVideoPost = (postId: string) => {
+    setVideoPosts((prev) => prev.filter((p) => p.id !== postId));
   };
 
   // Coin earning helper
@@ -1015,6 +1077,7 @@ export const App: React.FC = () => {
         accountRole={accountRole}
         onRoleChange={(role) => setCurrentRole(role)}
         onSwitchPersona={handleSwitchPersona}
+        onNavigateAdminTab={handleNavigateToAdminWithEpaperAction}
         onQuickMasterLogin={handleQuickMasterLogin}
         isAuthenticated={Boolean(authUser)}
         userCoins={userCoins}
@@ -1126,6 +1189,36 @@ export const App: React.FC = () => {
               <EpaperScreen
                 editions={EPAPER_EDITIONS}
                 onBackClick={() => navigateToTab('home')}
+                currentRole={currentRole}
+                onNavigateAdmin={(tab, action) =>
+                  handleNavigateToAdminWithEpaperAction((tab as any) || 'epaper_studio', action)
+                }
+              />
+            )}
+
+            {/* TAZA: Full-Screen Swipe-Based News Reading Experience */}
+            {activeTab === 'taza' && (
+              <TazaFeedScreen
+                articles={articles}
+                bookmarkedIds={bookmarkedIds}
+                onBookmarkToggle={handleBookmarkToggle}
+                onShareArticle={handleShareArticle}
+                onEarnCoins={handleEarnCoins}
+                onArticleClick={handleArticleClick}
+              />
+            )}
+
+            {/* VIDEO: Dedicated URL-Based Video Feed */}
+            {activeTab === 'video-feed' && (
+              <PublicVideoFeedScreen
+                videoPosts={videoPosts}
+                currentRole={currentRole}
+                onOpenVideoManager={() => setIsVideoManagerOpen(true)}
+                onShareVideo={(post) => {
+                  if (navigator.share) {
+                    navigator.share({ title: post.title, text: post.caption, url: post.url }).catch(() => {});
+                  }
+                }}
               />
             )}
 
@@ -1180,6 +1273,8 @@ export const App: React.FC = () => {
                 categories={CATEGORIES}
                 currentRole={currentRole}
                 accountRole={accountRole}
+                initialTab={adminInitialTab}
+                initialEpaperAction={adminEpaperAction}
                 onSwitchPersona={handleSwitchPersona}
                 onNavigateTab={navigateToTab}
                 onApproveArticle={handleApproveAndPublish}
@@ -1333,6 +1428,7 @@ export const App: React.FC = () => {
         activeTab === 'epaper' ||
         activeTab === 'search' ||
         activeTab === 'profile' ||
+        activeTab === 'video-feed' ||
         selectedArticleId) && (
           <Footer
             categories={CATEGORIES}
@@ -1356,6 +1452,15 @@ export const App: React.FC = () => {
         onTabChange={navigateToTab}
         currentRole={currentRole}
         pendingQueueCount={pendingStories.length}
+      />
+
+      {/* 7. Admin Video Manager Modal */}
+      <AdminVideoManagerModal
+        isOpen={isVideoManagerOpen}
+        onClose={() => setIsVideoManagerOpen(false)}
+        videoPosts={videoPosts}
+        onSaveVideoPost={handleSaveVideoPost}
+        onDeleteVideoPost={handleDeleteVideoPost}
       />
     </div>
   );

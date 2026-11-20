@@ -46,6 +46,9 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
   const [selectedDivision, setSelectedDivision] = useState<string>('all');
   const [selectedDistrict, setSelectedDistrict] = useState<string>('dist-bhopal');
   const [editionTitle, setEditionTitle] = useState<string>('भोपाल मुख्य राज्य संस्करण - दैनिक ई-पेपर');
+  const [editionLanguage, setEditionLanguage] = useState<string>('hi');
+  const [editionCode, setEditionCode] = useState<string>('');
+  const [editionDescription, setEditionDescription] = useState<string>('');
   const [totalPages, setTotalPages] = useState<number>(12);
   const [specialTheme, setSpecialTheme] = useState<string>('');
 
@@ -55,18 +58,28 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
     return d.divisionId === selectedDivision;
   });
 
-  // Auto-generate title suggestion when district or type changes
+  // Auto-generate safe edition code and title suggestion when district, date, or type changes
   useEffect(() => {
     const distObj = districts.find((d) => d.id === selectedDistrict);
     const distName = distObj?.nameHi || distObj?.nameEn || 'भोपाल';
+    const distSlug = (distObj?.nameEn || 'bhopal').toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const dateSlug = publicationDate || 'date';
+    const typeSlug = editionType === 'DAILY' ? 'daily' : 'special';
+
     if (editionType === 'DAILY') {
       setEditionTitle(`${distName} मुख्य संस्करण - दैनिक ई-पेपर`);
       setTotalPages(12);
     } else {
       const themeSuffix = specialTheme ? ` (${specialTheme})` : ' विशेषांक';
       setEditionTitle(`${distName} विशेष परिशिष्ट${themeSuffix}`);
+      if (totalPages === 12 && !specialTheme) {
+        setTotalPages(8);
+      }
     }
-  }, [selectedDistrict, editionType, specialTheme, districts]);
+
+    const autoCode = `epaper-${distSlug}-${dateSlug}-${typeSlug}`.toLowerCase();
+    setEditionCode((prev) => (prev && prev !== autoCode && !prev.startsWith('epaper-') ? prev : autoCode));
+  }, [selectedDistrict, editionType, specialTheme, publicationDate, districts]);
 
   // Ensure district validity when division changes
   useEffect(() => {
@@ -89,6 +102,19 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
       setErrorMessage('कृपया संस्करण शीर्षक दर्ज करें।');
       return;
     }
+    if (editionType === 'DAILY' && totalPages !== 12) {
+      setErrorMessage('दैनिक संस्करण में अनिवार्यतः ठीक 12 पृष्ठ होने चाहिए।');
+      return;
+    }
+    if (editionType === 'SPECIAL' && (totalPages < 1 || totalPages > 48)) {
+      setErrorMessage('विशेष संस्करण पृष्ठ संख्या 1 से 48 के मध्य होनी चाहिए।');
+      return;
+    }
+    const safeCodeRegex = /^[a-z0-9-]+$/i;
+    if (editionCode && !safeCodeRegex.test(editionCode)) {
+      setErrorMessage('संस्करण पहचानकर्ता (Identifier) केवल अक्षरों, अंकों और हाइफन (-) से बना होना चाहिए।');
+      return;
+    }
     setErrorMessage(null);
     setStep(2);
   };
@@ -100,6 +126,9 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
     const distObj = districts.find((d) => d.id === selectedDistrict);
     const divObj = divisions.find((div) => div.id === (distObj?.divisionId || selectedDivision));
 
+    const finalPages = editionType === 'DAILY' ? 12 : totalPages;
+    const finalCode = editionCode.trim().toLowerCase() || `epaper-${(distObj?.nameEn || 'mp').toLowerCase().replace(/[^a-z0-9]/g, '-')}-${publicationDate}-${editionType.toLowerCase()}`;
+
     const payload = {
       title: editionTitle.trim(),
       publicationDate,
@@ -108,7 +137,10 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
       districtName: distObj?.nameHi || distObj?.nameEn || 'भोपाल',
       divisionId: divObj?.id || selectedDivision,
       divisionName: divObj?.nameHi || divObj?.nameEn || 'भोपाल संभाग',
-      totalPages: editionType === 'DAILY' ? 12 : totalPages,
+      editionCode: finalCode,
+      language: editionLanguage,
+      description: editionDescription.trim() || undefined,
+      totalPages: finalPages,
       status: 'DRAFT' as const,
     };
 
@@ -164,11 +196,16 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
           {step === 1 ? (
             /* STEP 1: Basic Info & Jurisdiction */
             <div className="space-y-5">
-              {/* Edition Type Choice */}
+              {/* Edition Type Choice & Dimensions Notice */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-2">
-                  संस्करण का प्रकार चुनें (Edition Type) *
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    संस्करण का प्रकार चुनें (Edition Type) *
+                  </label>
+                  <span className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                    📐 मानक ब्रॉडशीट आयाम: 32.9 × 52.0 सेमी (Broadsheet)
+                  </span>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div
                     onClick={() => {
@@ -182,18 +219,21 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-bold text-slate-900">दैनिक ब्रॉडशीट (Daily)</span>
+                      <span className="text-sm font-bold text-slate-900">दैनिक ब्रॉडशीट (Daily Edition)</span>
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                        12 पृष्ठ
+                        ठीक 12 पृष्ठ अनिवार्य
                       </span>
                     </div>
                     <p className="text-xs text-slate-600">
-                      मानक 12-पृष्ठीय ब्रॉडशीट समाचार पत्र (32.9 × 52.0 सेमी)। सभी 12 डिफ़ॉल्ट संपादकीय अनुभाग सम्मिलित।
+                      मानक 12-पृष्ठीय ब्रॉडशीट समाचार पत्र (32.9 × 52.0 सेमी)। राज्य व जिला समाचारों हेतु स्थिर 12-पृष्ठ संरचना।
                     </p>
                   </div>
 
                   <div
-                    onClick={() => setEditionType('SPECIAL')}
+                    onClick={() => {
+                      setEditionType('SPECIAL');
+                      if (totalPages === 12) setTotalPages(8);
+                    }}
                     className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
                       editionType === 'SPECIAL'
                         ? 'border-blue-600 bg-blue-50/50 ring-2 ring-blue-100'
@@ -201,13 +241,13 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                     }`}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-bold text-slate-900">विशेष संस्करण (Special)</span>
+                      <span className="text-sm font-bold text-slate-900">विशेष संस्करण (Special Edition)</span>
                       <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                        कस्टम पृष्ठ
+                        1 से 48 पृष्ठ समर्थित
                       </span>
                     </div>
                     <p className="text-xs text-slate-600">
-                      बजट विशेषांक, स्थापना दिवस अथवा चुनाव विशेष परिशिष्ट। पृष्ठ संख्या आवश्यकतानुसार चयन करें।
+                      बजट विशेषांक, स्थापना दिवस या चुनाव परिशिष्ट। 1 से 48 तक स्वतंत्र पृष्ठ संख्या विन्यास।
                     </p>
                   </div>
                 </div>
@@ -218,7 +258,7 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
                   <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>विशेष परिशिष्ट विवरण (Special Edition Setup)</span>
+                    <span>विशेष परिशिष्ट विन्यास (1 से 48 पृष्ठ)</span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
@@ -235,25 +275,46 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        कुल पृष्ठ संख्या (Total Pages)
+                        कुल पृष्ठ संख्या (1 से 48 पृष्ठ) *
                       </label>
-                      <select
-                        value={totalPages}
-                        onChange={(e) => setTotalPages(Number(e.target.value))}
-                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 bg-white"
-                      >
-                        <option value={4}>4 पृष्ठ (लघु परिशिष्ट)</option>
-                        <option value={8}>8 पृष्ठ (मध्यम विशेषांक)</option>
-                        <option value={12}>12 पृष्ठ (पूर्ण ब्रॉडशीट)</option>
-                        <option value={16}>16 पृष्ठ (विशाल परिशिष्ट)</option>
-                        <option value={24}>24 पृष्ठ (महा-विशेषांक)</option>
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={48}
+                          value={totalPages}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setTotalPages(isNaN(val) ? 1 : Math.max(1, Math.min(48, val)));
+                          }}
+                          className="w-24 text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 bg-white font-bold"
+                        />
+                        <select
+                          value={[4, 8, 12, 16, 24, 32, 48].includes(totalPages) ? totalPages : ''}
+                          onChange={(e) => {
+                            if (e.target.value) setTotalPages(Number(e.target.value));
+                          }}
+                          className="flex-1 text-xs px-2 py-2 border border-slate-300 rounded-lg bg-white"
+                        >
+                          <option value="">त्वरित प्रीसेट चुनें...</option>
+                          <option value={4}>4 पृष्ठ (लघु परिशिष्ट)</option>
+                          <option value={8}>8 पृष्ठ (मध्यम विशेषांक)</option>
+                          <option value={12}>12 पृष्ठ (मानक विशेषांक)</option>
+                          <option value={16}>16 पृष्ठ (विशाल परिशिष्ट)</option>
+                          <option value={24}>24 पृष्ठ (महा-विशेषांक)</option>
+                          <option value={32}>32 पृष्ठ (वृहद विशेषांक)</option>
+                          <option value={48}>48 पृष्ठ (अधिकतम सीमा)</option>
+                        </select>
+                      </div>
+                      <span className="text-[10px] text-amber-800 mt-1 block">
+                        * विशेष संस्करण में 1 से 48 पृष्ठ अनुमत हैं।
+                      </span>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Publication Date */}
+              {/* Publication Date & Language */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -270,6 +331,24 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                   </div>
                 </div>
 
+                {/* Edition Language */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    संस्करण की भाषा (Edition Language) *
+                  </label>
+                  <select
+                    value={editionLanguage}
+                    onChange={(e) => setEditionLanguage(e.target.value)}
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 bg-white font-medium"
+                  >
+                    <option value="hi">हिन्दी (Hindi - देवनागरी लिपि)</option>
+                    <option value="en">English (English Edition)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Division & District Targeting */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Division Targeting */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -288,10 +367,8 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                     ))}
                   </select>
                 </div>
-              </div>
 
-              {/* District Targeting */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* District Targeting */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     जिला लक्ष्योन्मुखीकरण (Target District) *
@@ -314,11 +391,14 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                     {filteredDistricts.length} जिले उपलब्ध (मध्य प्रदेश के 55 जिलों से)
                   </span>
                 </div>
+              </div>
 
+              {/* Edition Title & Safe Identifier */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Edition Title */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    संस्करण का पूर्ण शीर्षक (Edition Title) *
+                    संस्करण का पूर्ण शीर्षक (Edition Name) *
                   </label>
                   <input
                     type="text"
@@ -328,6 +408,37 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
+
+                {/* Safe Edition Identifier */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    संस्करण पहचानकर्ता (Edition Identifier) *
+                  </label>
+                  <input
+                    type="text"
+                    value={editionCode}
+                    onChange={(e) => setEditionCode(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                    placeholder="उदा. epaper-bhopal-2026-11-22-daily"
+                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 font-mono text-slate-700"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    अद्वितीय URL एवं सिस्टम पहचानकर्ता (केवल a-z, 0-9, '-')
+                  </span>
+                </div>
+              </div>
+
+              {/* Optional Edition Description */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  संस्करण विवरण / संपादकीय टिप्पणी (Optional Description)
+                </label>
+                <textarea
+                  rows={2}
+                  value={editionDescription}
+                  onChange={(e) => setEditionDescription(e.target.value)}
+                  placeholder="वैकल्पिक संपादकीय टिप्पणी, विशेष कवरेज निर्देश अथवा संस्करण विवरण..."
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-500 resize-none"
+                />
               </div>
             </div>
           ) : (
@@ -337,18 +448,15 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                 <div>
                   <div className="text-xs font-bold text-slate-900">{editionTitle}</div>
                   <div className="text-[11px] text-slate-500">
-                    तिथि: {publicationDate} • कुल पृष्ठ: {totalPages} • प्रारूप: ब्रॉडशीट 32.9 × 52.0 सेमी
+                    पहचानकर्ता: <span className="font-mono font-bold text-blue-700">{editionCode}</span> • भाषा: <span className="font-semibold text-slate-700">{editionLanguage === 'hi' ? 'हिन्दी (Hindi)' : 'English'}</span> • तिथि: {publicationDate} • कुल पृष्ठ: <span className="font-bold text-slate-800">{totalPages}</span> ({editionType === 'DAILY' ? 'दैनिक ब्रॉडशीट - 12 पृष्ठ' : 'विशेष संस्करण'}) • मुद्रण आयाम: 32.9 × 52.0 सेमी
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    // standard preset notice
-                  }}
-                  className="text-xs text-blue-600 font-bold hover:underline flex items-center gap-1"
+                  className="text-xs text-blue-600 font-bold flex items-center gap-1"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>12-पृष्ठीय मानक प्रीसेट सक्रिय</span>
+                  <span>{editionType === 'DAILY' ? '12-पृष्ठीय मानक ब्रॉडशीट' : `${totalPages}-पृष्ठीय विशेषांक`}</span>
                 </button>
               </div>
 
@@ -440,10 +548,10 @@ export const EpaperCreationWizardModal: React.FC<EpaperCreationWizardModalProps>
                 type="button"
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="px-6 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2 shadow-2xs transition-colors"
+                className="px-6 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-2 shadow-2xs transition-colors cursor-pointer"
               >
                 {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>संस्करण बनाएं व पृष्ठ आरंभ करें</span>
+                <span>संस्करण बनाएं और समाचार चयन डेस्क पर जाएं (Proceed to News Selection) →</span>
               </button>
             )}
           </div>

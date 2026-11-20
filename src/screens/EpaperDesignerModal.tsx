@@ -740,6 +740,91 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
     }
   };
 
+  // Save Draft Edition (Section 6)
+  const handleSaveDraft = async () => {
+    if (!edition) return;
+    setIsSaving(true);
+    try {
+      if (activePage && isDirty) {
+        await handleSavePage();
+      }
+      const updated = await apiClient.epaper.updateEditionStatus(edition.id, 'DRAFT', edition.version);
+      if (updated) setEdition(updated);
+      showToast('ई-पेपर प्रारूप (Draft) सुरक्षित रूप से सहेजा गया!', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'प्रारूप सहेजने में त्रुटि!', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Save Entire Edition & All Modified Pages (Section 6)
+  const handleSaveEntireEdition = async () => {
+    if (!edition) return;
+    setIsSaving(true);
+    try {
+      if (activePage && isDirty) {
+        await handleSavePage();
+      }
+      const updated = await apiClient.epaper.updateEdition(edition.id, {
+        version: edition.version,
+      });
+      if (updated) setEdition(updated);
+      showToast(`संपूर्ण संस्करण "${edition.title}" एवं पृष्ठ विन्यास सहेजे गए!`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'संस्करण सहेजने में त्रुटि!', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Media Upload & Content Insertion Handler (Section 5)
+  const handleUploadMedia = async (
+    file: File,
+    category: 'newspaper' | 'article' | 'photo',
+    caption?: string
+  ) => {
+    if (!activePage) return;
+    const res = await apiClient.articles.uploadMedia(file, caption || file.name);
+    if (!res || !res.url) {
+      throw new Error('अपलोड प्रतिक्रिया में मान्य URL प्राप्त नहीं हुआ।');
+    }
+
+    const grid = calculateColumnGrid(activePage.gridColumns || 8);
+    const colSpan = Math.min(4, activePage.gridColumns || 8);
+    const spanWidth = getColumnSpanWidth(colSpan, grid.columnWidth, grid.gutterWidth);
+    const existingCount = activePage.elements?.length || 0;
+
+    const newElem: EpaperPageElement = {
+      id: `elem-img-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      elementType: 'IMAGE',
+      bounds: {
+        x: grid.columnOffsets[0] || 42.52,
+        y: 200 + ((existingCount * 25) % 400),
+        width: spanWidth,
+        height: 220,
+      },
+      colSpan,
+      imageUrl: res.url,
+      customHeadline: caption || file.name.replace(/\.[^/.]+$/, ''),
+      customBodyText: caption || '',
+      photoCredit:
+        category === 'newspaper'
+          ? 'बीएनडब्ल्यू मुख्य फोटो डेस्क'
+          : category === 'photo'
+          ? 'बीएनडब्ल्यू फील्ड छायाकार'
+          : 'बीएनडब्ल्यू विशेष साभार',
+      zIndex: existingCount + 1,
+    };
+
+    const updated = [...(activePage.elements || []), newElem];
+    setActivePage({ ...activePage, elements: updated });
+    setSelectedElementId(newElem.id);
+    setIsDirty(true);
+    pushHistory();
+    showToast(`चित्र पृष्ठ ${activePage.pageNumber} पर संलग्न कर दिया गया!`, 'success');
+  };
+
   // OCC Reload Remote
   const handleOccReloadRemote = async () => {
     if (!activePage) return;
@@ -962,8 +1047,11 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
             onUndo={handleUndo}
             onRedo={handleRedo}
             onSave={handleSavePage}
+            onSaveDraft={handleSaveDraft}
+            onSaveEntireEdition={handleSaveEntireEdition}
             onSaveAsTemplate={() => setShowSaveTplModal(true)}
             onAutoArrange={handleAutoArrange}
+            onPreviewEdition={() => setViewportState((prev) => ({ ...prev, previewMode: !prev.previewMode }))}
             isAutoArranging={isAutoArranging}
             designerMode={viewportState.designerMode || 'ASSISTED'}
             onModeChange={handleModeChange}
@@ -980,6 +1068,7 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
               onAddStory={handleAddStory}
               onAddPrimitive={handleAddPrimitive}
               onApplyTemplate={handleApplyTemplate}
+              onUploadMedia={handleUploadMedia}
             />
 
             {/* Panel 2: Center Stage (Broadsheet Canvas 932.6 x 1474 pt) */}

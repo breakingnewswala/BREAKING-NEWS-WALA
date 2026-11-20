@@ -128,10 +128,10 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
     e: React.PointerEvent,
     element: EpaperPageElement
   ) => {
-    if (viewportState.activeTool === 'hand' || isSpacePressed) return;
+    onSelectElement(element.id);
+    if (viewportState.activeTool === 'hand' || isSpacePressed || element.isLocked) return;
     e.stopPropagation();
 
-    onSelectElement(element.id);
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
     setDragState({
@@ -150,6 +150,7 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
     handle: ResizeHandleType,
     element: EpaperPageElement
   ) => {
+    if (element.isLocked) return;
     e.stopPropagation();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
 
@@ -384,9 +385,11 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
                     height: `${b.height}px`,
                     zIndex: isSelected ? 40 : el.zIndex || 1,
                   }}
-                  className={`absolute group cursor-move transition-shadow ${
+                  className={`absolute group ${el.isLocked ? 'cursor-default' : 'cursor-move'} transition-shadow ${
                     isSelected
-                      ? 'ring-2 ring-blue-600 bg-blue-600/5 shadow-md'
+                      ? el.isLocked
+                        ? 'ring-2 ring-amber-500 bg-amber-500/5 shadow-md'
+                        : 'ring-2 ring-blue-600 bg-blue-600/5 shadow-md'
                       : isColliding
                       ? 'ring-2 ring-red-500 bg-red-500/10'
                       : 'hover:ring-1 hover:ring-blue-400/80 hover:bg-blue-400/5'
@@ -396,7 +399,7 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
                   <div
                     className={`absolute left-0 -top-5 px-1.5 py-0.5 rounded-t text-[9px] font-bold tracking-tight uppercase flex items-center gap-1 ${
                       isSelected
-                        ? 'bg-blue-600 text-white'
+                        ? el.isLocked ? 'bg-amber-600 text-white' : 'bg-blue-600 text-white'
                         : isColliding
                         ? 'bg-red-500 text-white'
                         : 'bg-slate-800 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity'
@@ -404,11 +407,12 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
                   >
                     <span>{el.elementType}</span>
                     <span>• {el.colSpan || 1} Col</span>
+                    {el.isLocked && <span title="तत्व लॉक है (Locked)">🔒</span>}
                     {isColliding && <AlertTriangle className="w-2.5 h-2.5 text-white animate-pulse" />}
                   </div>
 
-                  {/* 8 Resize Handles (only on selected element) */}
-                  {isSelected &&
+                  {/* 8 Resize Handles (only on selected element if not locked) */}
+                  {isSelected && !el.isLocked &&
                     resizeHandles.map(({ handle, cursor, style }) => (
                       <div
                         key={handle}

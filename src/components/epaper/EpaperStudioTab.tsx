@@ -46,6 +46,7 @@ export interface EpaperStudioTabProps {
   articles: ArticleDetail[];
   pendingArticles?: ArticleDetail[];
   currentRole?: AppRole | string;
+  initialAction?: 'create' | 'drafts' | 'published' | 'templates' | 'archive';
   onOpenDesigner?: (editionId: string, pageNumber: number) => void;
 }
 
@@ -55,6 +56,7 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
   articles,
   pendingArticles = [],
   currentRole = 'ADMIN',
+  initialAction,
   onOpenDesigner,
 }) => {
   const [editions, setEditions] = useState<EpaperEditionDoc[]>([]);
@@ -75,6 +77,24 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
   const [activeDesignerEditionId, setActiveDesignerEditionId] = useState<string | null>(null);
   const [activeDesignerPageNum, setActiveDesignerPageNum] = useState<number>(1);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Handle external navigation action signals
+  useEffect(() => {
+    if (initialAction === 'create') {
+      setShowWizard(true);
+    } else if (initialAction === 'drafts') {
+      setSelectedStatus('DRAFT');
+      setActiveSubView('grid');
+    } else if (initialAction === 'published') {
+      setSelectedStatus('PUBLISHED');
+      setActiveSubView('grid');
+    } else if (initialAction === 'templates') {
+      setActiveSubView('templates');
+    } else if (initialAction === 'archive') {
+      setSelectedStatus('ARCHIVED');
+      setActiveSubView('grid');
+    }
+  }, [initialAction]);
 
   const handleOpenDesigner = (editionId: string, pageNumber: number = 1) => {
     setActiveDesignerEditionId(editionId);
@@ -207,33 +227,86 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
         </div>
       )}
 
-      {/* Header Banner */}
+      {/* Header Banner & Master Admin Entry Bar */}
       <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 rounded-2xl p-6 text-white shadow-md flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-blue-300 text-xs font-bold tracking-wider uppercase mb-1">
             <Newspaper className="w-4 h-4" />
-            <span>ई-पेपर प्रबंधन प्रणाली (E-Paper Studio & News Selection)</span>
+            <span>ई-पेपर प्रबंधन प्रणाली (E-PAPER MANAGEMENT)</span>
           </div>
           <h2 className="text-xl font-bold text-white">डिजिटल समाचार पत्र एवं ब्रॉडशीट प्रकाशन केंद्र</h2>
           <p className="text-xs text-slate-300 max-w-xl mt-1">
             मध्य प्रदेश के 55 जिलों एवं 10 संभागों हेतु 12-पृष्ठीय ब्रॉडशीट समाचार पत्र निर्माण, संपादकीय चयन डेस्क एवं स्वचालित लेआउट।
           </p>
+
+          {/* Master Admin Quick Action Shortcuts */}
+          <div className="flex flex-wrap items-center gap-2 mt-4 text-xs font-bold">
+            <button
+              onClick={() => {
+                setSelectedStatus('DRAFT');
+                setActiveSubView('grid');
+              }}
+              className={`px-3 py-1.5 rounded-lg border transition-all ${
+                selectedStatus === 'DRAFT' && activeSubView === 'grid'
+                  ? 'bg-blue-600 border-blue-400 text-white'
+                  : 'bg-white/10 border-white/20 text-slate-200 hover:bg-white/20'
+              }`}
+            >
+              <span>1. प्रारूप संस्करण ({metrics.draft})</span>
+            </button>
+            <button
+              onClick={() => {
+                setSelectedStatus('PUBLISHED');
+                setActiveSubView('grid');
+              }}
+              className={`px-3 py-1.5 rounded-lg border transition-all ${
+                selectedStatus === 'PUBLISHED' && activeSubView === 'grid'
+                  ? 'bg-emerald-600 border-emerald-400 text-white'
+                  : 'bg-white/10 border-white/20 text-slate-200 hover:bg-white/20'
+              }`}
+            >
+              <span>2. प्रकाशित संस्करण ({metrics.published})</span>
+            </button>
+            <button
+              onClick={() => setActiveSubView('templates')}
+              className={`px-3 py-1.5 rounded-lg border transition-all ${
+                activeSubView === 'templates'
+                  ? 'bg-purple-600 border-purple-400 text-white'
+                  : 'bg-white/10 border-white/20 text-slate-200 hover:bg-white/20'
+              }`}
+            >
+              <span>3. टेम्पलेट लाइब्रेरी</span>
+            </button>
+            <button
+              onClick={() => {
+                setSelectedStatus('ARCHIVED');
+                setActiveSubView('grid');
+              }}
+              className={`px-3 py-1.5 rounded-lg border transition-all ${
+                selectedStatus === 'ARCHIVED' && activeSubView === 'grid'
+                  ? 'bg-amber-600 border-amber-400 text-white'
+                  : 'bg-white/10 border-white/20 text-slate-200 hover:bg-white/20'
+              }`}
+            >
+              <span>4. संस्करण अभिलेखागार ({metrics.archived})</span>
+            </button>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
           <button
             onClick={() => loadEditions()}
-            className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+            className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
             title="डेटा पुनः लोड करें"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={() => setShowWizard(true)}
-            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-md transition-colors"
+            className="px-6 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-sm flex items-center gap-2 shadow-lg hover:shadow-red-900/50 transition-all cursor-pointer transform hover:-translate-y-0.5"
           >
-            <Plus className="w-4 h-4" />
-            <span>+ नया संस्करण बनाएं</span>
+            <Plus className="w-5 h-5 stroke-[3]" />
+            <span>+ नया ई-पेपर बनाएँ (Create New E-Paper)</span>
           </button>
         </div>
       </div>

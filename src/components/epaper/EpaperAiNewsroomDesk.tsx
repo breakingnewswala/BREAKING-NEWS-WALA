@@ -52,7 +52,7 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
   onOpenDesigner,
 }) => {
   // Navigation Sub-Tabs
-  const [activeTab, setActiveTab] = useState<'editorial' | 'verification' | 'design' | 'graphics' | 'history'>('editorial');
+  const [activeTab, setActiveTab] = useState<'editorial' | 'writer' | 'verification' | 'design' | 'graphics' | 'history'>('editorial');
   const [editorialSubMode, setEditorialSubMode] = useState<'headlines' | 'summary' | 'copyedit' | 'structure' | 'translate'>('headlines');
 
   // Selected Article & Inputs
@@ -86,6 +86,22 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
   const [designResult, setDesignResult] = useState<EpaperAiDesignSuggestion | null>(null);
   const [compositionResult, setCompositionResult] = useState<EpaperAiCompositionProposal | null>(null);
   const [graphicResult, setGraphicResult] = useState<EpaperAiGraphicSuggestion | null>(null);
+
+  // Writer States (Workflow A: Raw Script, Workflow B: Topic/URL, Workflow C: Placement)
+  const [writerSubMode, setWriterSubMode] = useState<'RAW_SCRIPT' | 'TOPIC_URL'>('RAW_SCRIPT');
+  const [writerRawScript, setWriterRawScript] = useState<string>('');
+  const [writerTopic, setWriterTopic] = useState<string>('');
+  const [writerUrl, setWriterUrl] = useState<string>('');
+  const [writerFormat, setWriterFormat] = useState<string>('DETAILED');
+  const [writerDistrict, setWriterDistrict] = useState<string>('भोपाल');
+  const [writerCategory, setWriterCategory] = useState<string>('STATE');
+  const [writerLoading, setWriterLoading] = useState<boolean>(false);
+  const [writerResult, setWriterResult] = useState<any | null>(null);
+  const [writerTargetEditionId, setWriterTargetEditionId] = useState<string>(editions[0]?.id || '');
+  const [writerTargetPageNum, setWriterTargetPageNum] = useState<number>(1);
+  const [writerTargetColSpan, setWriterTargetColSpan] = useState<number>(2);
+  const [writerTargetRole, setWriterTargetRole] = useState<string>('LEAD');
+  const [writerIsPlacing, setWriterIsPlacing] = useState<boolean>(false);
 
   // History & Usage
   const [historyItems, setHistoryItems] = useState<EpaperAiNewsroomHistoryItem[]>([]);
@@ -346,6 +362,130 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
     }
   };
 
+  // 10. Writer Handlers (Workflow A: Raw Script, Workflow B: Topic/URL, Workflow C: E-Paper Placement)
+  const handleGenerateRawScriptDraft = async () => {
+    if (!writerRawScript.trim()) {
+      showNotification('कृपया कच्ची स्क्रिप्ट अथवा मुख्य बिंदु दर्ज करें।', 'error');
+      return;
+    }
+    setWriterLoading(true);
+    try {
+      const res = await apiClient.ai.generateNewsDraft({
+        title: customTitle || writerTopic || 'घटनाक्रम पर आधारित समाचार',
+        notes: writerRawScript,
+        district: writerDistrict,
+        format: writerFormat as any,
+        language: 'hi',
+      });
+      setWriterResult(res);
+      showNotification('एआई समाचार प्रारूप सफलतापूर्वक तैयार हुआ!');
+      loadHistoryAndUsage();
+    } catch (err: any) {
+      showNotification(err.message || 'समाचार निर्माण विफल', 'error');
+    } finally {
+      setWriterLoading(false);
+    }
+  };
+
+  const handleGenerateTopicUrlDraft = async () => {
+    if (!writerTopic.trim() && !writerUrl.trim()) {
+      showNotification('कृपया समाचार का विषय अथवा यूआरएल दर्ज करें।', 'error');
+      return;
+    }
+    setWriterLoading(true);
+    try {
+      if (writerUrl.trim()) {
+        try {
+          const res = await apiClient.ai.conductResearch({
+            topic: writerTopic.trim() || writerUrl.trim(),
+            district: writerDistrict,
+            referenceLinks: [writerUrl.trim()],
+          });
+          const draftRes = await apiClient.ai.generateNewsDraft({
+            title: writerTopic.trim() || res.topicSummary || 'वेब संदर्भ रिपोर्ट',
+            notes: `${res.topicSummary}\n${(res.factBreakdown?.confirmedFacts || []).join('\n')}`,
+            district: writerDistrict,
+            format: writerFormat as any,
+            language: 'hi',
+          });
+          setWriterResult(draftRes);
+          showNotification('वेब स्रोत से समाचार प्रारूप तैयार हुआ!');
+        } catch (_urlErr: any) {
+          // Transparent extraction failure handling: NEVER hallucinate
+          setWriterResult({
+            headline: writerTopic.trim() || 'वेब स्रोत संदर्भ',
+            leadParagraph: 'सूचना: प्रदान किए गए वेब यूआरएल से सामग्री निष्कर्षण संभव नहीं हो सका।',
+            fullContent: 'पत्रकारिता दिशानिर्देशों के अनुसार, अपुष्ट अथवा अनुपलब्ध वेब लिंक के आधार पर कोई भी काल्पनिक विवरण नहीं गढ़ा गया है। कृपया मान्य लिंक प्रदान करें अथवा कच्ची स्क्रिप्ट का उपयोग करें।',
+            sourceExtractionFailed: true,
+          });
+          showNotification('स्रोत सामग्री निष्कर्षण में बाधा — कोई काल्पनिक तथ्य नहीं जोड़े गए', 'error');
+        }
+      } else {
+        const res = await apiClient.ai.conductResearch({
+          topic: writerTopic.trim(),
+          district: writerDistrict,
+        });
+        const draftRes = await apiClient.ai.generateNewsDraft({
+          title: writerTopic.trim(),
+          notes: `${res.topicSummary}\n${(res.factBreakdown?.confirmedFacts || []).join('\n')}`,
+          district: writerDistrict,
+          format: writerFormat as any,
+          language: 'hi',
+        });
+        setWriterResult(draftRes);
+        showNotification('विषय अनुसंधान आधारित समाचार प्रारूप तैयार हुआ!');
+      }
+      loadHistoryAndUsage();
+    } catch (err: any) {
+      showNotification(err.message || 'समाचार निर्माण विफल', 'error');
+    } finally {
+      setWriterLoading(false);
+    }
+  };
+
+  const handlePlaceWriterResultIntoPage = async () => {
+    if (!writerResult) {
+      showNotification('प्लेस करने हेतु पहले समाचार जनरेट करें।', 'error');
+      return;
+    }
+    if (!writerTargetEditionId) {
+      showNotification('कृपया लक्ष्य ई-पेपर संस्करण चुनें।', 'error');
+      return;
+    }
+    setWriterIsPlacing(true);
+    try {
+      const headline = writerResult.headline || customTitle || 'एआई जनरेटेड समाचार';
+      const summary = writerResult.leadParagraph || writerResult.summary || '';
+      const content = writerResult.fullContent || writerResult.body || writerResult.leadParagraph || '';
+      const draft = await apiClient.reporter.createDraft({
+        title: headline,
+        summary,
+        content,
+        districtId: writerDistrict || 'bhopal',
+        categoryId: writerCategory || 'madhya-pradesh',
+        isBreaking: false,
+      });
+
+      await apiClient.epaper.updateArticleWorkflowStatus(draft.id, {
+        targetStatus: 'APPROVED_FOR_EPAPER',
+        remarks: 'AI Writer placement into e-paper',
+      });
+
+      await apiClient.epaper.assignArticlesToPage(writerTargetEditionId, {
+        pageNumber: writerTargetPageNum,
+        articleIds: [draft.id],
+        colSpan: writerTargetColSpan,
+        role: writerTargetRole,
+      });
+
+      showNotification(`समाचार ई-पेपर संस्करण के पृष्ठ ${writerTargetPageNum} पर सफलतापूर्वक आवंटित हो गया!`);
+    } catch (err: any) {
+      showNotification(err.message || 'ई-पेपर पृष्ठ पर समाचार आवंटन विफल', 'error');
+    } finally {
+      setWriterIsPlacing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Toast Notification */}
@@ -419,6 +559,17 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
             <span>1. संपादकीय सहायक (Editorial)</span>
           </button>
           <button
+            onClick={() => setActiveTab('writer')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+              activeTab === 'writer'
+                ? 'bg-purple-600 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>2. एआई समाचार लेखक (AI Writer)</span>
+          </button>
+          <button
             onClick={() => setActiveTab('verification')}
             className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
               activeTab === 'verification'
@@ -427,7 +578,7 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>2. तथ्य-परीक्षण व सत्यापन (Verification)</span>
+            <span>3. तथ्य-परीक्षण व सत्यापन (Verification)</span>
           </button>
           <button
             onClick={() => setActiveTab('design')}
@@ -438,7 +589,7 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
             }`}
           >
             <Layout className="w-3.5 h-3.5" />
-            <span>3. पेज डिज़ाइन व टेम्पलेट (Design)</span>
+            <span>4. पेज डिज़ाइन व टेम्पलेट (Design)</span>
           </button>
           <button
             onClick={() => setActiveTab('graphics')}
@@ -449,7 +600,7 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
             }`}
           >
             <ImageIcon className="w-3.5 h-3.5" />
-            <span>4. दृश्य व ग्राफिक सहायता (Graphics)</span>
+            <span>5. दृश्य व ग्राफिक सहायता (Graphics)</span>
           </button>
           <button
             onClick={() => setActiveTab('history')}
@@ -460,7 +611,7 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
             }`}
           >
             <History className="w-3.5 h-3.5" />
-            <span>5. उपयोग व ऑडिट इतिहास (Audit)</span>
+            <span>6. उपयोग व ऑडिट इतिहास (Audit)</span>
           </button>
         </div>
       </div>
@@ -1113,6 +1264,345 @@ export const EpaperAiNewsroomDesk: React.FC<EpaperAiNewsroomDeskProps> = ({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* TAB 2: AI NEWS WRITER & E-PAPER COMPOSER (WORKFLOW A, B, C)    */}
+      {/* ============================================================== */}
+      {activeTab === 'writer' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  एआई समाचार लेखक व ई-पेपर कम्पोज़र (AI News Writer & Composer)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  कच्ची स्क्रिप्ट अथवा विषय/यूआरएल से पत्रकारिता-सम्मत समाचार तैयार करें और सीधे ई-पेपर पृष्ठ पर प्लेस करें
+                </p>
+              </div>
+
+              {/* Sub-mode selector */}
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setWriterSubMode('RAW_SCRIPT')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    writerSubMode === 'RAW_SCRIPT'
+                      ? 'bg-white text-purple-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  वर्कफ्लो A: कच्ची स्क्रिप्ट
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWriterSubMode('TOPIC_URL')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    writerSubMode === 'TOPIC_URL'
+                      ? 'bg-white text-purple-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  वर्कफ्लो B: विषय / वेब यूआरएल
+                </button>
+              </div>
+            </div>
+
+            {/* Inputs based on Sub-mode */}
+            {writerSubMode === 'RAW_SCRIPT' ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">समाचार प्रारूप (Format):</label>
+                    <select
+                      value={writerFormat}
+                      onChange={(e) => setWriterFormat(e.target.value)}
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-1 focus:ring-purple-500"
+                    >
+                      <option value="DETAILED">विस्तृत रिपोर्ट (450 शब्द)</option>
+                      <option value="SHORT">संक्षिप्त समाचार (150 शब्द)</option>
+                      <option value="BREAKING">ब्रेकिंग न्यूज़ फ्लैश (100 शब्द)</option>
+                      <option value="POLITICAL">राजनीतिक हलचल (400 शब्द)</option>
+                      <option value="DISTRICT">जिला आंचलिक समाचार (300 शब्द)</option>
+                      <option value="CRIME">अपराध व सुरक्षा (350 शब्द)</option>
+                      <option value="GOVERNMENT">शासकीय योजना/नीति (350 शब्द)</option>
+                      <option value="SPECIAL_REPORT">विशेष पड़ताल (600 शब्द)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">संबंधित जिला (District):</label>
+                    <input
+                      type="text"
+                      value={writerDistrict}
+                      onChange={(e) => setWriterDistrict(e.target.value)}
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-1 focus:ring-purple-500"
+                      placeholder="उदा. भोपाल, इंदौर, जबलपुर"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">श्रेणी (Category):</label>
+                    <select
+                      value={writerCategory}
+                      onChange={(e) => setWriterCategory(e.target.value)}
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-1 focus:ring-purple-500"
+                    >
+                      <option value="STATE">मध्य प्रदेश (State)</option>
+                      <option value="CITY">भोपाल / नगर (City)</option>
+                      <option value="POLITICS">राजनीति (Politics)</option>
+                      <option value="CRIME">अपराध (Crime)</option>
+                      <option value="BUSINESS">व्यापार (Business)</option>
+                      <option value="SPORTS">खेल (Sports)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    कच्ची स्क्रिप्ट / संवाददाता नोट्स (Raw Script / Bullet Points):
+                  </label>
+                  <textarea
+                    rows={5}
+                    value={writerRawScript}
+                    onChange={(e) => setWriterRawScript(e.target.value)}
+                    placeholder="संवाददाता द्वारा भेजी गई कच्ची स्क्रिप्ट, प्रत्यक्षदर्शी बयान, आंकड़े, पुलिस अथवा प्रशासनिक वक्तव्य, घटना का समय व स्थान दर्ज करें..."
+                    className="w-full text-xs border border-slate-300 rounded-xl p-3 text-slate-900 focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleGenerateRawScriptDraft}
+                    disabled={writerLoading || !writerRawScript.trim()}
+                    className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>{writerLoading ? 'समाचार तैयार हो रहा है...' : 'एआई समाचार ड्राफ्ट बनाएं'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">समाचार विषय (News Topic):</label>
+                    <input
+                      type="text"
+                      value={writerTopic}
+                      onChange={(e) => setWriterTopic(e.target.value)}
+                      placeholder="उदा. मध्य प्रदेश में नई सौर ऊर्जा नीति 2026"
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-1 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">संबंधित जिला (District):</label>
+                    <input
+                      type="text"
+                      value={writerDistrict}
+                      onChange={(e) => setWriterDistrict(e.target.value)}
+                      placeholder="उदा. मध्य प्रदेश, भोपाल"
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-1 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    बाह्य संदर्भ अथवा स्रोत यूआरएल (External URL - Optional):
+                  </label>
+                  <input
+                    type="url"
+                    value={writerUrl}
+                    onChange={(e) => setWriterUrl(e.target.value)}
+                    placeholder="https://example.com/press-release"
+                    className="w-full text-xs border border-slate-300 rounded-xl p-2.5 text-slate-900 focus:ring-1 focus:ring-purple-500 focus:outline-none font-mono"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    नोट: यदि यूआरएल दुर्गम या अनुपलब्ध है तो प्रणाली पारदर्शी चेतावनी देगी; किसी भी फर्जी तथ्य का निर्माण नहीं होगा।
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleGenerateTopicUrlDraft}
+                    disabled={writerLoading || (!writerTopic.trim() && !writerUrl.trim())}
+                    className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>{writerLoading ? 'सामग्री विश्लेषित हो रही है...' : 'स्रोत विश्लेषण व समाचार तैयार करें'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Generated Output Preview & E-Paper Placement Desk */}
+            {writerResult && (
+              <div className="mt-5 pt-4 border-t border-slate-200 space-y-4 animate-in fade-in">
+                {writerResult.sourceExtractionFailed && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      <strong>स्रोत निष्कर्षण चेतावनी:</strong> बाह्य वेब स्रोत से सीधे तथ्य प्राप्त नहीं हो सके। पत्रकारिता सत्यनिष्ठा नियम के तहत कोई भी मनगढ़ंत विवरण नहीं जोड़ा गया।
+                    </span>
+                  </div>
+                )}
+
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      तैयार समाचार प्रारूप (Editable Draft)
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard(writerResult.fullContent || writerResult.leadParagraph || '', 'writer-copy')}
+                      className="text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1 font-semibold cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>{copiedKey === 'writer-copy' ? 'कॉपी हो गया' : 'टेक्स्ट कॉपी करें'}</span>
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">मुख्य शीर्षक (Headline):</label>
+                    <input
+                      type="text"
+                      value={writerResult.headline || ''}
+                      onChange={(e) => setWriterResult({ ...writerResult, headline: e.target.value })}
+                      className="w-full text-sm font-bold border border-slate-300 rounded-lg p-2.5 text-slate-900 bg-white"
+                    />
+                  </div>
+
+                  {writerResult.subHeadline && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">उप-शीर्षक (Sub-headline):</label>
+                      <input
+                        type="text"
+                        value={writerResult.subHeadline || ''}
+                        onChange={(e) => setWriterResult({ ...writerResult, subHeadline: e.target.value })}
+                        className="w-full text-xs font-semibold border border-slate-300 rounded-lg p-2 text-slate-800 bg-white"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">लीड परिच्छेद (5Ws + 1H Lead):</label>
+                    <textarea
+                      rows={2}
+                      value={writerResult.leadParagraph || ''}
+                      onChange={(e) => setWriterResult({ ...writerResult, leadParagraph: e.target.value })}
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-900 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">विस्तृत समाचार सामग्री (Full Body):</label>
+                    <textarea
+                      rows={6}
+                      value={writerResult.fullContent || writerResult.body || writerResult.leadParagraph || ''}
+                      onChange={(e) => setWriterResult({ ...writerResult, fullContent: e.target.value })}
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2.5 text-slate-900 bg-white leading-relaxed"
+                    />
+                  </div>
+                </div>
+
+                {/* Workflow C: Placement Desk into E-Paper Page */}
+                <div className="bg-purple-50/70 border border-purple-200 p-4 rounded-xl space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Layout className="w-4 h-4 text-purple-700" />
+                    <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wider">
+                      वर्कफ्लो C: ई-पेपर पृष्ठ व लेआउट स्लॉट आवंटन (E-Paper Page Placement)
+                    </h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">लक्ष्य ई-पेपर संस्करण:</label>
+                      <select
+                        value={writerTargetEditionId}
+                        onChange={(e) => setWriterTargetEditionId(e.target.value)}
+                        className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-900 bg-white"
+                      >
+                        {editions.map((ed) => (
+                          <option key={ed.id} value={ed.id}>
+                            {ed.title} ({ed.editionType})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">लक्ष्य पृष्ठ (Page Number):</label>
+                      <select
+                        value={writerTargetPageNum}
+                        onChange={(e) => setWriterTargetPageNum(Number(e.target.value))}
+                        className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-900 bg-white font-bold"
+                      >
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map((p) => (
+                          <option key={p} value={p}>
+                            पृष्ठ {p} {p === 1 ? '(प्रथम पृष्ठ / Front Page)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">कॉलम विस्तार (Columns):</label>
+                      <select
+                        value={writerTargetColSpan}
+                        onChange={(e) => setWriterTargetColSpan(Number(e.target.value))}
+                        className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-900 bg-white"
+                      >
+                        <option value={1}>1 कॉलम (संक्षिप्त/सिंगल)</option>
+                        <option value={2}>2 कॉलम (मध्यम/सामान्य)</option>
+                        <option value={3}>3 कॉलम (प्रमुख/लीड)</option>
+                        <option value={4}>4 कॉलम (फुल विड्थ/बैनर)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">स्थान भूमिका (Role):</label>
+                      <select
+                        value={writerTargetRole}
+                        onChange={(e) => setWriterTargetRole(e.target.value)}
+                        className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-900 bg-white"
+                      >
+                        <option value="LEAD">प्रमुख खबर (Lead Story)</option>
+                        <option value="SECONDARY">द्वितीयक खबर (Secondary)</option>
+                        <option value="BRIEF">संक्षिप्त समाचार (Brief)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={handlePlaceWriterResultIntoPage}
+                      disabled={writerIsPlacing}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{writerIsPlacing ? 'आवंटित हो रहा है...' : 'ई-पेपर पृष्ठ पर जोड़ें'}</span>
+                    </button>
+
+                    {onOpenDesigner && writerTargetEditionId && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenDesigner(writerTargetEditionId, writerTargetPageNum)}
+                        className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Layout className="w-3.5 h-3.5" />
+                        <span>पेज डिज़ाइनर में खोलें (Open in Designer)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

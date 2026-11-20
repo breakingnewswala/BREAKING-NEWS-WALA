@@ -66,11 +66,22 @@ export const EpaperWhatsAppStudio: React.FC<EpaperWhatsAppStudioProps> = ({
   const [selectedDistrict, setSelectedDistrict] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  // 3. Multi-Story Selection
+  // 3. Multi-Story Selection & Modes
+  const [studioMode, setStudioMode] = useState<'stories' | 'raw_script'>('stories');
   const [selectedStories, setSelectedStories] = useState<WhatsAppEligibleArticleItem[]>([]);
   const [editionTitle, setEditionTitle] = useState<string>('दैनिक डिजिटल बुलेटिन');
   const [cardFormat, setCardFormat] = useState<WhatsAppCardFormat>('4:5');
   const [activePreviewIndex, setActivePreviewIndex] = useState<number>(0);
+
+  // Raw Script & Multi-Photo Input States
+  const [rawHeadline, setRawHeadline] = useState<string>('');
+  const [rawScript, setRawScript] = useState<string>('');
+  const [rawDistrict, setRawDistrict] = useState<string>('भोपाल');
+  const [rawCategory, setRawCategory] = useState<string>('STATE');
+  const [rawPhotos, setRawPhotos] = useState<string[]>([]);
+  const [rawPhotoInput, setRawPhotoInput] = useState<string>('');
+  const [rawIsGenerating, setRawIsGenerating] = useState<boolean>(false);
+  const [rawAiAnalyzing, setRawAiAnalyzing] = useState<boolean>(false);
 
   // 4. Generation & Actions
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -147,6 +158,25 @@ export const EpaperWhatsAppStudio: React.FC<EpaperWhatsAppStudioProps> = ({
     const canvas = previewCanvasRef.current;
     if (!canvas) return;
 
+    if (studioMode === 'raw_script') {
+      try {
+        await GraphicRenderer.renderArticleClipping(canvas, {
+          headline: rawHeadline || 'कच्ची स्क्रिप्ट समाचार शीर्षक',
+          body: rawScript || 'संपादक अथवा संवाददाता द्वारा दर्ज की गई कच्ची स्क्रिप्ट यहाँ प्रदर्शित होगी...',
+          reporterName: 'अधिकृत संवाददाता',
+          reporterBadge: 'BNW-REP-0101',
+          photoUrl: rawPhotos[0] || undefined,
+          district: rawDistrict || 'मध्य प्रदेश',
+          category: rawCategory || undefined,
+          editionTitle: editionTitle || 'दैनिक डिजिटल बुलेटिन',
+          format: cardFormat,
+        });
+      } catch (err) {
+        console.warn('[EpaperWhatsAppStudio] Canvas preview render failed:', err);
+      }
+      return;
+    }
+
     const currentStory = selectedStories[activePreviewIndex];
     if (!currentStory) {
       // Clear canvas if no story selected
@@ -173,7 +203,18 @@ export const EpaperWhatsAppStudio: React.FC<EpaperWhatsAppStudioProps> = ({
     } catch (err) {
       console.warn('[EpaperWhatsAppStudio] Canvas preview render failed:', err);
     }
-  }, [selectedStories, activePreviewIndex, cardFormat, editionTitle]);
+  }, [
+    studioMode,
+    rawHeadline,
+    rawScript,
+    rawPhotos,
+    rawDistrict,
+    rawCategory,
+    selectedStories,
+    activePreviewIndex,
+    cardFormat,
+    editionTitle,
+  ]);
 
   useEffect(() => {
     renderPreview();
@@ -294,6 +335,79 @@ export const EpaperWhatsAppStudio: React.FC<EpaperWhatsAppStudioProps> = ({
       });
     } finally {
       setIsRegenerating(false);
+    }
+  };
+
+  // AI Script & Layout Analyzer
+  const handleAnalyzeRawScript = () => {
+    if (!rawScript.trim()) {
+      setStatusMessage({ type: 'error', text: 'कृपया विश्लेषण हेतु कच्ची स्क्रिप्ट दर्ज करें।' });
+      return;
+    }
+    setRawAiAnalyzing(true);
+    try {
+      const words = rawScript.trim().split(/\s+/).length;
+      // Auto-suggest format: > 140 words fits best on 4:5; shorter on 1:1
+      if (words > 140 && cardFormat !== '4:5') {
+        setCardFormat('4:5');
+      } else if (words <= 140 && cardFormat !== '1:1') {
+        setCardFormat('1:1');
+      }
+
+      // Auto-generate headline if missing
+      if (!rawHeadline.trim()) {
+        const firstSentence = rawScript.split(/[।\.\n]/)[0].trim();
+        const suggested = firstSentence.length > 80 ? firstSentence.slice(0, 75) + '...' : firstSentence;
+        setRawHeadline(suggested);
+      }
+
+      setStatusMessage({
+        type: 'success',
+        text: `एआई विश्लेषण संपन्न: ${words} शब्द। अनुकूलित प्रारूप: ${words > 140 ? '4:5 पोर्ट्रेट' : '1:1 स्क्वायर'}।`,
+      });
+    } finally {
+      setRawAiAnalyzing(false);
+    }
+  };
+
+  // Generate Single WhatsApp Card from Raw Script
+  const handleGenerateRawScriptCard = async () => {
+    if (!rawScript.trim()) {
+      setStatusMessage({ type: 'error', text: 'कृपया कच्ची स्क्रिप्ट दर्ज करें।' });
+      return;
+    }
+    if (quota && quota.remaining <= 0) {
+      setStatusMessage({ type: 'error', text: 'दैनिक कोटा समाप्त हो चुका है (20/20 प्रयुक्त)। कल IST मध्यरात्रि पर रीसेट होगा।' });
+      return;
+    }
+
+    setRawIsGenerating(true);
+    setStatusMessage({ type: 'info', text: 'स्क्रिप्ट से व्हाट्सएप कार्ड तैयार किया जा रहा है...' });
+
+    try {
+      const res = await apiClient.epaper.generateWhatsAppCard({
+        format: cardFormat,
+        headline: rawHeadline || 'कच्ची स्क्रिप्ट मुख्य समाचार',
+        body: rawScript,
+        imageUrl: rawPhotos[0] || undefined,
+        districtName: rawDistrict,
+        category: rawCategory,
+      });
+
+      setStatusMessage({
+        type: 'success',
+        text: `व्हाट्सएप कार्ड सफलतापूर्वक तैयार हुआ! 1 दैनिक कोटा प्रयुक्त हुआ।`,
+      });
+
+      loadQuota();
+      loadHistory();
+    } catch (err: any) {
+      setStatusMessage({
+        type: 'error',
+        text: `कार्ड निर्माण विफल: ${err.message}`,
+      });
+    } finally {
+      setRawIsGenerating(false);
     }
   };
 
@@ -447,6 +561,34 @@ export const EpaperWhatsAppStudio: React.FC<EpaperWhatsAppStudioProps> = ({
       <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: News Selection & Multi-Story Package Config (7 Cols) */}
         <div className="lg:col-span-7 space-y-5">
+          {/* Studio Mode Selector */}
+          <div className="flex items-center gap-2 p-1.5 bg-slate-200/70 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setStudioMode('stories')}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                studioMode === 'stories'
+                  ? 'bg-white text-teal-800 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>स्वीकृत समाचारों से बनाएं (From Stories)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setStudioMode('raw_script')}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                studioMode === 'raw_script'
+                  ? 'bg-white text-teal-800 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>त्वरित स्क्रिप्ट व फोटो इनपुट (Raw Script & Photos)</span>
+            </button>
+          </div>
+
           {/* Controls Bar: Format Switcher & Edition Title */}
           <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-3">
             <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -502,7 +644,9 @@ export const EpaperWhatsAppStudio: React.FC<EpaperWhatsAppStudioProps> = ({
             </div>
           </div>
 
-          {/* Selected Stories Queue (Reorder, Remove, Card Count) */}
+          {studioMode === 'stories' ? (
+            <>
+              {/* Selected Stories Queue (Reorder, Remove, Card Count) */}
           <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -690,6 +834,142 @@ export const EpaperWhatsAppStudio: React.FC<EpaperWhatsAppStudioProps> = ({
               )}
             </div>
           </div>
+            </>
+          ) : (
+            /* Mode 2: Raw Script & Multi-Photo Input Desk */
+            <div className="bg-white p-5 rounded-xl border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                  2. कच्ची स्क्रिप्ट व समाचार विवरण
+                </h4>
+                <button
+                  type="button"
+                  onClick={handleAnalyzeRawScript}
+                  disabled={rawAiAnalyzing || !rawScript.trim()}
+                  className="px-2.5 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded text-[11px] font-bold border border-purple-200 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>{rawAiAnalyzing ? 'विश्लेषण...' : 'एआई विश्लेषण व लेआउट चयन'}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    शीर्षक (वैकल्पिक, खाली छोड़ने पर एआई बनाएगा):
+                  </label>
+                  <input
+                    type="text"
+                    value={rawHeadline}
+                    onChange={(e) => setRawHeadline(e.target.value)}
+                    placeholder="उदा. भोपाल में विकास योजनाओं का शिलान्यास"
+                    className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-900 focus:ring-1 focus:ring-teal-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">संबंधित जिला:</label>
+                  <input
+                    type="text"
+                    value={rawDistrict}
+                    onChange={(e) => setRawDistrict(e.target.value)}
+                    placeholder="उदा. भोपाल, जबलपुर"
+                    className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-900 focus:ring-1 focus:ring-teal-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  कच्ची स्क्रिप्ट / समाचार पाठ (Raw Script):
+                </label>
+                <textarea
+                  rows={4}
+                  value={rawScript}
+                  onChange={(e) => setRawScript(e.target.value)}
+                  placeholder="संवाददाता द्वारा मौके से भेजी गई स्क्रिप्ट, तथ्य, अधिकारी का नाम, पुलिस बयान, घटना का समय व स्थान दर्ज करें..."
+                  className="w-full text-xs border border-slate-300 rounded-xl p-2.5 text-slate-900 focus:ring-1 focus:ring-teal-600 focus:outline-none"
+                />
+              </div>
+
+              {/* Multi-Photo Attachment Desk (Up to 4 Photos) */}
+              <div className="space-y-2 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                    <ImageIcon className="w-3.5 h-3.5 text-teal-700" />
+                    फोटोग्राफ संलग्न करें (अधिकतम 4 फोटो):
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-semibold">{rawPhotos.length} / 4 जुड़ी हैं</span>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={rawPhotoInput}
+                    onChange={(e) => setRawPhotoInput(e.target.value)}
+                    placeholder="फोटो यूआरएल (https://...) पेस्ट करें"
+                    className="flex-1 text-xs border border-slate-300 rounded-lg p-2 text-slate-900 focus:ring-1 focus:ring-teal-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (rawPhotoInput.trim() && rawPhotos.length < 4) {
+                        setRawPhotos([...rawPhotos, rawPhotoInput.trim()]);
+                        setRawPhotoInput('');
+                      }
+                    }}
+                    disabled={!rawPhotoInput.trim() || rawPhotos.length >= 4}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold disabled:opacity-50 cursor-pointer"
+                  >
+                    + फोटो जोड़ें
+                  </button>
+                </div>
+
+                {rawPhotos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {rawPhotos.map((url, i) => (
+                      <div key={i} className="relative group w-16 h-16 rounded-lg overflow-hidden border border-slate-300 shadow-2xs">
+                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setRawPhotos(rawPhotos.filter((_, idx) => idx !== i))}
+                          className="absolute inset-0 bg-black/60 text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        >
+                          हटाएं
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Generate Action Button */}
+              <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                <span className="text-[11px] text-slate-500">
+                  कोटा लागत: <strong>1 कार्ड</strong> | शेष: <strong>{quota?.remaining ?? 20}</strong>
+                </span>
+
+                <button
+                  type="button"
+                  disabled={rawIsGenerating || !rawScript.trim() || (quota?.remaining ?? 20) <= 0}
+                  onClick={handleGenerateRawScriptCard}
+                  className="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {rawIsGenerating ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>कार्ड तैयार हो रहा है...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>व्हाट्सएप कार्ड जनरेट करें (1 कोटा)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column: Live High-Resolution Preview & Share Actions (5 Cols) */}

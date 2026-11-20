@@ -22,6 +22,7 @@ import {
   HelpCircle,
   LogOut,
   Crown,
+  Plus,
 } from 'lucide-react';
 import { AppRole, CategoryItem, DistrictItem, DivisionItem, EpaperEdition } from '../types';
 import { NavTab } from './BottomNav';
@@ -35,6 +36,7 @@ interface NavDrawerProps {
   accountRole?: AppRole;
   onRoleChange: (role: AppRole) => void;
   onSwitchPersona?: (role: AppRole, targetTab?: NavTab) => void;
+  onNavigateAdminTab?: (tab?: any, action?: 'create' | 'drafts' | 'published' | 'templates' | 'archive') => void;
   userCoins: number;
   bookmarkedCount: number;
   categories: CategoryItem[];
@@ -59,6 +61,7 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
   accountRole = currentRole,
   onRoleChange,
   onSwitchPersona,
+  onNavigateAdminTab,
   userCoins,
   bookmarkedCount,
   categories,
@@ -85,14 +88,14 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
     onClose();
   };
 
-  // Switch persona directly inside Menu without closing drawer so user can inspect each role's menu bar & tabs
+  // Switch persona directly in designated Master Admin menu and reveal chosen view
   const handlePersonaClick = (targetRole: AppRole) => {
     if (onSwitchPersona) {
       onSwitchPersona(targetRole);
     } else {
       onRoleChange(targetRole);
     }
-    setDrawerTab('menu');
+    onClose();
   };
 
   const filteredDistricts = districtFilter.trim()
@@ -190,58 +193,49 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
             </button>
           </div>
 
-          {/* Master Admin 3-Tab Persona Switcher permanently inside Menu */}
-          {isMasterAccount ? (
-            <div className="space-y-1">
-              <p className="text-[10px] font-bold text-amber-300/90 tracking-wide">
-                रोल प्रीव्यू बदलें (मेन्यू टैब यहीं देखें):
+          {/* Master Admin 3-Option Role Switcher (Visible in designated menu area for MASTER_ADMIN only) */}
+          {isMasterAccount && (
+            <div className="space-y-1.5 pt-1">
+              <p className="text-[10px] font-extrabold text-amber-300 tracking-wider uppercase flex items-center gap-1">
+                <Crown className="w-3 h-3 text-amber-400" />
+                <span>मास्टर एडमिन मोड चयन (ROLE VIEW):</span>
               </p>
-              <div className="grid grid-cols-3 gap-1 bg-slate-950/70 p-1 rounded-lg border border-slate-700/80 text-[10px] font-bold">
+              <div className="grid grid-cols-3 gap-1.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-700 text-[10px] font-black">
                 <button
                   onClick={() => handlePersonaClick('MASTER_ADMIN')}
-                  className={`py-1.5 px-1 rounded-md flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                  className={`py-2 px-1 rounded-lg flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                     currentRole === 'MASTER_ADMIN' || currentRole === 'ADMIN'
-                      ? 'bg-amber-500 text-slate-950 shadow-xs'
+                      ? 'bg-amber-500 text-slate-950 shadow-md ring-1 ring-amber-300'
                       : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
-                  <Crown className="w-3 h-3 shrink-0" />
-                  <span className="truncate">मास्टर एडमिन</span>
+                  <Crown className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">MASTER ADMIN</span>
                 </button>
                 <button
                   onClick={() => handlePersonaClick('REPORTER')}
-                  className={`py-1.5 px-1 rounded-md flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                  className={`py-2 px-1 rounded-lg flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                     currentRole === 'REPORTER'
-                      ? 'bg-blue-600 text-white shadow-xs'
+                      ? 'bg-blue-600 text-white shadow-md ring-1 ring-blue-300'
                       : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
-                  <PenTool className="w-3 h-3 shrink-0" />
-                  <span className="truncate">रिपोर्टर</span>
+                  <PenTool className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">REPORTER</span>
                 </button>
                 <button
                   onClick={() => handlePersonaClick('READER')}
-                  className={`py-1.5 px-1 rounded-md flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                  className={`py-2 px-1 rounded-lg flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                     currentRole === 'READER'
-                      ? 'bg-emerald-600 text-white shadow-xs'
+                      ? 'bg-emerald-600 text-white shadow-md ring-1 ring-emerald-300'
                       : 'text-slate-300 hover:bg-slate-800'
                   }`}
                 >
-                  <User className="w-3 h-3 shrink-0" />
-                  <span className="truncate">यूजर</span>
+                  <User className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">USER</span>
                 </button>
               </div>
             </div>
-          ) : (
-            onQuickMasterLogin && (
-              <button
-                onClick={onQuickMasterLogin}
-                className="w-full py-1.5 px-3 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-lg text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Crown className="w-3.5 h-3.5" />
-                <span>मास्टर एडमिन प्रीव्यू अनलॉक करें (3-रोल स्विचर)</span>
-              </button>
-            )
           )}
         </div>
 
@@ -340,18 +334,70 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
 
                   {isAdmin && (
                     <>
-                      <button
-                        onClick={() => navigateTo('epaper')}
-                        className={`w-full flex items-center justify-between px-3 py-1.5 rounded-lg font-bold transition-colors ${
-                          activeTab === 'epaper' ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-white'
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <Newspaper className="w-3.5 h-3.5 text-[#344FD6]" />
-                          दैनिक डिजिटल ई-पेपर
-                        </span>
-                        <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">एडिशन</span>
-                      </button>
+                      {/* E-PAPER MANAGEMENT ENTRY POINT IN SIDEBAR */}
+                      <div className="p-2.5 bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-xl space-y-1.5 shadow-2xs">
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[10px] font-black text-red-700 uppercase tracking-wider flex items-center gap-1">
+                            <Newspaper className="w-3.5 h-3.5 text-red-600" />
+                            ई-पेपर प्रबंधन (E-PAPER)
+                          </span>
+                          <span className="text-[9px] bg-red-600 text-white font-extrabold px-1.5 py-0.5 rounded">
+                            कंट्रोल
+                          </span>
+                        </div>
+
+                        {/* Primary Prominent Action */}
+                        <button
+                          onClick={() => {
+                            if (onNavigateAdminTab) {
+                              onNavigateAdminTab('epaper_studio', 'create');
+                            } else {
+                              navigateTo('admin');
+                            }
+                            onClose();
+                          }}
+                          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-black text-xs shadow-xs transition-colors"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Plus className="w-3.5 h-3.5" />
+                            + नया ई-पेपर बनाएँ
+                          </span>
+                          <span className="text-[10px] bg-white/20 text-white px-1.5 py-0.5 rounded font-mono">
+                            New
+                          </span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            if (onNavigateAdminTab) {
+                              onNavigateAdminTab('epaper_studio');
+                            } else {
+                              navigateTo('admin');
+                            }
+                            onClose();
+                          }}
+                          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-800 hover:text-red-700 hover:bg-white text-xs font-bold transition-colors"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span>⚙️</span>
+                            <span>ई-पेपर प्रबंधन डेस्क</span>
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                        </button>
+
+                        <button
+                          onClick={() => navigateTo('epaper')}
+                          className="w-full flex items-center justify-between px-2.5 py-1 rounded-lg text-slate-600 hover:text-[#344FD6] hover:bg-white text-[11px] font-semibold transition-colors"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Newspaper className="w-3.5 h-3.5 text-[#344FD6]" />
+                            <span>डिजिटल अख़बार वाचक (Reader)</span>
+                          </span>
+                          <span className="text-[9px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold">
+                            लाइव
+                          </span>
+                        </button>
+                      </div>
 
                       <div className="grid grid-cols-3 gap-1.5 pt-1">
                         <button
@@ -407,7 +453,33 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
                 >
                   <span className="flex items-center gap-2.5">
                     <Home className="w-4 h-4 text-red-600" />
-                    होम व ताज़ा खबरें
+                    होम पेज (मुख्य समाचार प्रवाह)
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => navigateTo('taza')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
+                    activeTab === 'taza' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Flame className="w-4 h-4 text-amber-500" />
+                    ताज़ा खबरें (Full-Screen Swipe Feed)
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => navigateTo('video-feed')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
+                    activeTab === 'video-feed' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Video className="w-4 h-4 text-red-600" />
+                    वीडियो डेस्क (Video Feed)
                   </span>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                 </button>
@@ -421,6 +493,19 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
                   <span className="flex items-center gap-2.5">
                     <Search className="w-4 h-4 text-slate-600" />
                     समाचार खोजें (Archive)
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                </button>
+
+                <button
+                  onClick={() => navigateTo('epaper')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-bold transition-colors ${
+                    activeTab === 'epaper' ? 'bg-red-50 text-[#ED1727]' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-2.5">
+                    <Newspaper className="w-4 h-4 text-[#344FD6]" />
+                    दैनिक डिजिटल ई-पेपर (E-Paper)
                   </span>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                 </button>
