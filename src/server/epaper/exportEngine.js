@@ -362,6 +362,12 @@ export class HighResExportEngine {
    * @returns {Buffer} PNG binary buffer
    */
   static generate300DpiPageImage(page = {}, edition = {}, options = {}) {
+    // Support both (page, edition) and (edition, page) calling conventions
+    if (page && (page.editionType || page.editionCode || page.totalPages) && (!page.pageNumber && edition?.pageNumber)) {
+      const temp = page;
+      page = edition;
+      edition = temp;
+    }
     const width = BROADSHEET_CONSTANTS.RASTER_300DPI_WIDTH;   // 3886
     const height = BROADSHEET_CONSTANTS.RASTER_300DPI_HEIGHT; // 6142
 
@@ -399,14 +405,15 @@ export class HighResExportEngine {
     // Render elements onto raster scanlines (stamping dark lines for borders and text)
     const elements = Array.isArray(page?.elements) ? page.elements : [];
     const scaleFactor = BROADSHEET_CONSTANTS.SCALE_FACTOR_300DPI;
-    const trimLeftPx = Math.round(BROADSHEET_CONSTANTS.MARGIN_LEFT_PT * scaleFactor);
-    const trimTopPx = Math.round(BROADSHEET_CONSTANTS.MARGIN_TOP_PT * scaleFactor);
 
     for (const el of elements) {
       if (!el || !el.bounds) continue;
       const b = el.bounds;
-      const elX = trimLeftPx + Math.round((b.x || 0) * scaleFactor);
-      const elY = trimTopPx + Math.round((b.y || 0) * scaleFactor);
+      const isAbsolute = (b.x || 0) >= BROADSHEET_CONSTANTS.MARGIN_LEFT_PT;
+      const baseX = isAbsolute ? (b.x || 0) : (BROADSHEET_CONSTANTS.MARGIN_LEFT_PT + (b.x || 0));
+      const baseY = isAbsolute ? (b.y || 0) : (BROADSHEET_CONSTANTS.MARGIN_TOP_PT + (b.y || 0));
+      const elX = Math.round(baseX * scaleFactor);
+      const elY = Math.round(baseY * scaleFactor);
       const elW = Math.round((b.width || 100) * scaleFactor);
       const elH = Math.round((b.height || 50) * scaleFactor);
 

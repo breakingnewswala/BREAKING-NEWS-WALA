@@ -358,11 +358,12 @@ export const EPAPER_EDITIONS = [
     {
         id: 'epaper-bhopal-today',
         title: 'भोपाल मुख्य राज्य संस्करण',
+        editionType: 'DAILY',
         editionDate: '03 नवम्बर 2026',
         districtId: 'dist-bhopal',
         districtName: 'भोपाल',
         pdfUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-        totalPages: 8,
+        totalPages: 12,
         thumbnailUrl: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=600&auto=format&fit=crop&q=80',
         pages: [
             {
@@ -397,12 +398,32 @@ export const EPAPER_EDITIONS = [
             },
             {
                 pageNumber: 7,
-                title: 'खेल एवं युवा: खेलो एमपी यूथ गेम्स व स्थानीय प्रतिभाएं',
+                title: 'विचार मंच एवं विशेष विमर्श: जनहित याचिकाएं व नीति समीक्षा',
                 imageUrl: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=900&auto=format&fit=crop&q=80'
             },
             {
                 pageNumber: 8,
-                title: 'मनोरंजन व विविध: सांस्कृतिक उत्सव व बुंदेलखंडी/मालवी रंग',
+                title: 'शिक्षा, रोजगार एवं करियर: एमपीपीएससी, व्यापम व कौशल विकास',
+                imageUrl: 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=900&auto=format&fit=crop&q=80'
+            },
+            {
+                pageNumber: 9,
+                title: 'राष्ट्रीय परिदृश्य: संसद सत्र, सर्वोच्च न्यायालय व नई दिल्ली से विशेष रपट',
+                imageUrl: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=900&auto=format&fit=crop&q=80'
+            },
+            {
+                pageNumber: 10,
+                title: 'अंतरराष्ट्रीय एवं विज्ञान: वैश्विक हलचल, इसरो अंतरिक्ष अभियान व नवाचार',
+                imageUrl: 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=900&auto=format&fit=crop&q=80'
+            },
+            {
+                pageNumber: 11,
+                title: 'खेल एवं युवा: खेलो एमपी यूथ गेम्स, रणजी ट्रॉफी व स्थानीय प्रतिभाएं',
+                imageUrl: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=900&auto=format&fit=crop&q=80'
+            },
+            {
+                pageNumber: 12,
+                title: 'अंतिम पृष्ठ: लाइफस्टाइल, सांस्कृतिक धरोहर व मप्र विजन 2047',
                 imageUrl: 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=900&auto=format&fit=crop&q=80'
             }
         ]
@@ -410,6 +431,7 @@ export const EPAPER_EDITIONS = [
     {
         id: 'epaper-indore-today',
         title: 'इंदौर महानगर व मालवा संस्करण',
+        editionType: 'SPECIAL',
         editionDate: '03 नवम्बर 2026',
         districtId: 'dist-indore',
         districtName: 'इंदौर',
@@ -442,6 +464,7 @@ export const EPAPER_EDITIONS = [
     {
         id: 'epaper-gwalior-today',
         title: 'ग्वालियर-चंबल अंचल संस्करण',
+        editionType: 'SPECIAL',
         editionDate: '03 नवम्बर 2026',
         districtId: 'dist-gwalior',
         districtName: 'ग्वालियर',
@@ -464,6 +487,7 @@ export const EPAPER_EDITIONS = [
     {
         id: 'epaper-jabalpur-today',
         title: 'जबलपुर व महाकोशल संस्करण',
+        editionType: 'SPECIAL',
         editionDate: '03 नवम्बर 2026',
         districtId: 'dist-jabalpur',
         districtName: 'जबलपुर',
@@ -481,6 +505,7 @@ export const EPAPER_EDITIONS = [
     {
         id: 'epaper-niwari-today',
         title: 'निवाड़ी व बुंदेलखंड संस्करण',
+        editionType: 'SPECIAL',
         editionDate: '03 नवम्बर 2026',
         districtId: 'dist-niwari',
         districtName: 'निवाड़ी',

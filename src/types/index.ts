@@ -104,6 +104,21 @@ export interface ArticleDetail extends ArticleItem {
     reviewerName?: string;
     comments?: string;
   }[];
+  epaperWorkflow?: {
+    status: string;
+    updatedAt: string;
+    updatedBy?: { id: string; name: string; role: string };
+    editionId?: string | null;
+    pageNumber?: number | null;
+    remarks?: string;
+    history?: Array<{
+      from: string;
+      to: string;
+      changedAt: string;
+      changedBy: string;
+      remarks?: string;
+    }>;
+  };
 }
 
 export interface CreateDraftRequest {
@@ -138,6 +153,8 @@ export interface EditorialFeedbackItem {
   createdAt: string;
 }
 
+export type EpaperEditionType = 'DAILY' | 'SPECIAL';
+
 export interface EpaperEdition {
   id: string;
   title: string;
@@ -147,6 +164,7 @@ export interface EpaperEdition {
   pdfUrl: string;
   totalPages: number;
   thumbnailUrl: string;
+  editionType?: EpaperEditionType;
   pages: {
     pageNumber: number;
     title: string;
@@ -158,14 +176,20 @@ export interface EpaperEdition {
 // E-PAPER DOMAIN MODELS (Step 2 - Step 12)
 // -------------------------------------------------------------
 
-export type EpaperEditionType = 'DAILY' | 'SPECIAL';
-
 export type EpaperEditionStatus =
   | 'DRAFT'
+  | 'DESIGN_COMPLETE'
   | 'EDITORIAL_REVIEW'
   | 'LAYOUT_IN_PROGRESS'
   | 'QUALITY_CHECK'
+  | 'QUALITY_CHECK_PENDING'
+  | 'QUALITY_CHECK_IN_PROGRESS'
+  | 'QUALITY_CHECK_FAILED'
+  | 'QUALITY_CHECK_PASSED'
+  | 'FINAL_EDITORIAL_APPROVAL_PENDING'
   | 'APPROVED'
+  | 'FINAL_APPROVED'
+  | 'SCHEDULED'
   | 'PUBLISHED'
   | 'ARCHIVED';
 
@@ -173,6 +197,7 @@ export interface EpaperEditionDoc {
   id: string;
   editionCode: string;
   title: string;
+  editionName?: string;
   publicationDate: string; // YYYY-MM-DD
   editionType: EpaperEditionType;
   status: EpaperEditionStatus;
@@ -190,6 +215,13 @@ export interface EpaperEditionDoc {
   publishedAt?: string;
   publishedBy?: string;
   archivedAt?: string;
+  finalApprovedAt?: string;
+  finalApprovedBy?: string;
+  scheduledPublishAt?: string;
+  scheduledPublishAtIst?: string;
+  scheduledBy?: string;
+  qualityCheckResult?: any;
+  isQualityStale?: boolean;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -215,25 +247,46 @@ export type EpaperElementType =
   | 'COLUMN';
 
 export type EpaperAdSlotType =
-  | 'L_SHAPE'
-  | 'BOTTOM_STRIP'
-  | 'FOOTER'
-  | 'VERTICAL_EAR'
-  | 'QUARTER_PAGE'
+  | 'FULL_PAGE'
   | 'HALF_PAGE'
   | 'HALF_PAGE_HORIZONTAL'
   | 'HALF_PAGE_VERTICAL'
-  | 'FULL_PAGE'
-  | 'CLASSIFIED';
+  | 'QUARTER_PAGE'
+  | 'ONE_EIGHTH_PAGE'
+  | 'HORIZONTAL_BANNER'
+  | 'VERTICAL_STRIP'
+  | 'CLASSIFIED'
+  | 'SPONSORED_FEATURE'
+  | 'L_SHAPE'
+  | 'BOTTOM_STRIP'
+  | 'FOOTER'
+  | 'VERTICAL_EAR';
 
 export type EpaperAdCategory =
+  | 'COMMERCIAL'
   | 'CLASSIFIED'
   | 'OBITUARY'
   | 'TENDER'
-  | 'COMMERCIAL'
   | 'ANNOUNCEMENT'
   | 'MATRIMONIAL'
-  | 'PROPERTY';
+  | 'PROPERTY'
+  | 'EDUCATION'
+  | 'POLITICAL'
+  | 'GOVERNMENT'
+  | 'SPONSORED_FEATURE';
+
+export type EpaperAdStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'APPROVED'
+  | 'SCHEDULED'
+  | 'PUBLISHED'
+  | 'COMPLETED'
+  | 'REJECTED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'PENDING';
 
 export interface EpaperPageElementBounds {
   x: number;
@@ -255,6 +308,9 @@ export interface EpaperPageElement {
   customBodyText?: string;
   byline?: string;
   photoCredit?: string;
+  editorCredit?: string;
+  missingReporterCredit?: boolean;
+  missingEditorCredit?: boolean;
   sourceAttribution?: string;
   columnType?: string;
   asciBadge?: boolean;
@@ -287,6 +343,31 @@ export interface EpaperPageDoc {
   updatedAt: string;
 }
 
+export type EpaperTemplateStatus = 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
+
+export interface EpaperTemplateVersionHistory {
+  version: number;
+  status: EpaperTemplateStatus;
+  changedAt: string;
+  changedBy: { id: string; name: string; role: string };
+  changeSummary: string;
+  snapshot: any;
+}
+
+export interface EpaperTemplateValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  metrics?: {
+    regionCount: number;
+    totalCoveragePercent: number;
+    hasMasthead: boolean;
+    hasAdSlot: boolean;
+    hasStorySlots: boolean;
+    collisionCount: number;
+  };
+}
+
 export interface EpaperTemplateRegion {
   id: string;
   name: string;
@@ -309,34 +390,154 @@ export interface EpaperTemplateDoc {
   regions: EpaperTemplateRegion[];
   isSystem: boolean;
   version: number;
+  status?: EpaperTemplateStatus;
+  isPublished?: boolean;
+  publishedAt?: string;
+  publishedBy?: { id?: string; name?: string; role?: string };
+  lastModifiedBy?: { id?: string; name?: string; role?: string };
+  archivedAt?: string;
+  archivedBy?: { id?: string; name?: string; role?: string };
+  pageDimensions?: { widthPt: number; heightPt: number };
+  margins?: { left: number; right: number; top: number; bottom: number };
+  gutter?: number;
+  typography?: {
+    mastheadFont?: string;
+    headlineFont?: string;
+    bodyFont?: string;
+  };
+  headerArea?: {
+    height: number;
+    showDateBar?: boolean;
+    showPageNumber?: boolean;
+  };
+  footerArea?: {
+    height: number;
+    showEpaperBranding?: boolean;
+  };
+  history?: EpaperTemplateVersionHistory[];
+  usedByEditionsCount?: number;
+  usedByEditions?: Array<{ editionId: string; editionTitle: string; pageNumber: number }>;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface EpaperAdHistoryEntry {
+  status: EpaperAdStatus;
+  changedAt: string;
+  changedBy: { id: string; name: string; role: string };
+  changeSummary: string;
+  notes?: string;
+}
+
+export interface EpaperAiAdCreative {
+  isAiAssisted: boolean;
+  promptDetails?: string;
+  businessName?: string;
+  language?: string;
+  headlineVariants?: string[];
+  suggestedHeadlines?: string[];
+  copyVariants?: string[];
+  suggestedCopy?: string[];
+  ctaVariants?: string[];
+  suggestedCtas?: string[];
+  layoutConcept?: {
+    slotType: EpaperAdSlotType;
+    dimensionsMm: string;
+    suggestedPage?: number;
+    colSpan?: number;
+    widthPt?: number;
+    heightPt?: number;
+  };
+  creativeConcepts?: string[];
+  selectedVariantIndex?: number;
+  generatedAt?: string;
 }
 
 export interface EpaperAdSubmissionDoc {
   id: string;
   submissionNumber: string;
+  title?: string;
   advertiserName: string;
   contactPhone: string;
+  contactEmail?: string;
+  contactAddress?: string;
+  contactPerson?: string;
+  businessName?: string;
   category: EpaperAdCategory;
-  text: string;
+  slotType: EpaperAdSlotType;
+  format?: string;
+  dimensionsMm?: string;
+  widthPt?: number;
+  heightPt?: number;
+  text?: string;
+  headline?: string;
+  bodyText?: string;
+  ctaText?: string;
   imageUrl?: string;
+  brandLogoUrl?: string;
+  productImageUrl?: string;
   receiptNumber?: string;
   amount?: number;
-  targetDistrict: string;
+  billingStatus?: 'PENDING' | 'PAID' | 'WAIVED';
+  targetDistrict?: string;
   targetDistrictName?: string;
+  targetEditionId?: string;
+  targetEditionTitle?: string;
   targetPage?: number;
-  slotType: EpaperAdSlotType;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  reporterId: string;
+  targetRegionId?: string;
+  assignedEditionId?: string | null;
+  assignedPageNumber?: number | null;
+  startDate?: string;
+  endDate?: string;
+  publicationDate?: string;
+  publishedAt?: string;
+  placementPriority?: 'NORMAL' | 'HIGH' | 'PREMIUM';
+  isSponsored?: boolean;
+  isSponsoredContent?: boolean;
+  sponsoredLabel?: 'विज्ञापन' | 'प्रायोजित सामग्री' | 'Sponsored';
+  sponsoredDisclaimer?: string;
+  asciBadge?: boolean;
+  badgeText?: string;
+  status: EpaperAdStatus;
+  reporterId?: string;
   reporterName?: string;
   reporterBadge?: string;
+  assignedReporterId?: string;
+  assignedReporterName?: string;
+  submittedBy?: { id: string; name: string; role: string } | string;
   reviewedBy?: string;
   reviewedAt?: string;
   reviewNotes?: string;
+  rejectionReason?: string;
+  history?: EpaperAdHistoryEntry[];
+  statusHistory?: EpaperAdHistoryEntry[];
+  aiGenerated?: EpaperAiAdCreative;
   createdAt: string;
   updatedAt: string;
   version: number;
+}
+
+export type EpaperAdvertisementDoc = EpaperAdSubmissionDoc;
+
+export interface EpaperAdReportSummary {
+  totalAds: number;
+  statusCounts: Record<string, number>;
+  statusBreakdown?: Record<string, number>;
+  byCategory: Record<string, number>;
+  categoryBreakdown?: Record<string, number>;
+  bySlotType: Record<string, number>;
+  slotBreakdown?: Record<string, number>;
+  byReporter: Record<string, { total: number; approved: number; published: number }>;
+  byEdition: Record<string, number>;
+  totalAmountPaise?: number;
+  slotOccupancy: {
+    totalConfiguredSlots?: number;
+    totalSlots?: number;
+    occupiedSlots: number;
+    availableSlots: number;
+    occupancyPercent?: number;
+    occupancyRatePct?: number;
+  };
 }
 
 export interface EpaperRateCardItem {
@@ -385,6 +586,86 @@ export interface ArticleClippingRenderOptions {
   date?: string;
   district?: string;
   editionTitle?: string;
+  format?: WhatsAppCardFormat;
+  category?: string;
+}
+
+export interface EpaperWhatsAppEditionCardItem {
+  id: string;
+  packageId?: string;
+  cardIndex: number;
+  articleId: string;
+  headline: string;
+  body: string;
+  imageUrl?: string;
+  category?: string;
+  districtName?: string;
+  reporterId: string;
+  reporterName?: string;
+  reporterBadge?: string;
+  format: WhatsAppCardFormat;
+  storagePath: string;
+  isPrivate: true;
+  version?: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface EpaperWhatsAppEditionPackageDoc {
+  id: string;
+  editionTitle: string;
+  format: WhatsAppCardFormat;
+  reporterId: string;
+  reporterName?: string;
+  reporterBadge?: string;
+  cardCount: number;
+  articleIds: string[];
+  cards: EpaperWhatsAppEditionCardItem[];
+  quotaConsumed: number;
+  status: 'GENERATED' | 'FAILED';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface WhatsAppEligibleArticleItem {
+  id: string;
+  title: string;
+  summary?: string;
+  content?: string;
+  district?: string;
+  districtName?: string;
+  category?: string;
+  priority?: string;
+  status: string;
+  authorId?: string;
+  reporterId?: string;
+  authorName?: string;
+  reporterName?: string;
+  reporterBadge?: string;
+  featuredImage?: string;
+  imageUrl?: string;
+  publishedAt?: string;
+  createdAt?: string;
+  epaperWorkflowStatus?: string;
+}
+
+export interface GenerateWhatsAppEditionRequest {
+  editionTitle?: string;
+  format: WhatsAppCardFormat;
+  articleIds: string[];
+  idempotencyKey?: string;
+}
+
+export interface RegenerateWhatsAppCardRequest {
+  packageId?: string;
+  cardId: string;
+  articleId?: string;
+  headline?: string;
+  body?: string;
+  imageUrl?: string;
+  districtName?: string;
+  format?: WhatsAppCardFormat;
+  idempotencyKey?: string;
 }
 
 export interface EpaperWhatsAppGenerationDoc {
@@ -429,14 +710,19 @@ export interface EpaperEditionVersionDoc {
   id: string;
   editionId: string;
   versionNumber: number;
+  versionTag?: string;
   snapshotData: {
     edition: EpaperEditionDoc;
     pages: EpaperPageDoc[];
+    qualityReport?: any;
   };
+  editionSnapshot?: EpaperEditionDoc;
+  pagesSnapshot?: EpaperPageDoc[];
   publishedBy: string;
   publishedAt: string;
   pdfUrl?: string;
-  version: number;
+  version?: number;
+  immutable?: boolean;
 }
 
 export interface FactCheckEvaluationItem {
@@ -477,8 +763,11 @@ export interface ReporterProfile {
   badgeNumber: string;
   joinedDate: string;
   avatar: string;
-  status: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'TRAINEE';
-  verificationStatus?: 'VERIFIED' | 'PENDING' | 'TRAINEE' | 'SUSPENDED';
+  status: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'TRAINEE' | string;
+  verificationStatus?: 'VERIFIED' | 'PENDING' | 'TRAINEE' | 'SUSPENDED' | string;
+  bureau?: string;
+  bio?: string;
+  totalPoints?: number;
 }
 
 export type GraphicAspectRatio = '4:5' | '1:1' | '9:16' | '16:9' | '3:4';
@@ -2085,7 +2374,469 @@ export interface ContentPerformanceSummary {
   generatedAt: string;
 }
 
+// =========================================================================
+// STEP 7: E-PAPER REPORTER WORKSPACE & PROFILE INTEGRATION TYPES
+// =========================================================================
 
+export interface EpaperReporterContributionItem {
+  articleId: string;
+  headline: string;
+  summary: string;
+  category: string;
+  categoryId?: string;
+  district: string;
+  districtId?: string;
+  submissionDate: string;
+  status: string;
+  workflowStatus?: string;
+  hasImage: boolean;
+  imageUrl?: string;
+  imageStatus: 'VALID' | 'MISSING' | 'INVALID';
+  epaperAssignment?: {
+    editionId: string;
+    editionTitle: string;
+    editionDate: string;
+    editionStatus: string;
+    editionType?: 'DAILY' | 'SPECIAL';
+    pageNumber: number;
+    pageId?: string;
+    slotId?: string;
+    bylineCredit: string;
+    readerUrl?: string;
+  };
+  editorialRemarks?: string;
+  rejectionReason?: string;
+  characterCount: number;
+  wordCount: number;
+  priority?: string;
+  byline?: string;
+  publishedAt?: string;
+}
+
+export interface EpaperReporterPublishedItem {
+  articleId: string;
+  headline: string;
+  bylineCredit: string;
+  publicationDate: string;
+  editionId: string;
+  editionTitle: string;
+  editionType: 'DAILY' | 'SPECIAL' | string;
+  pageNumber: number;
+  pageId?: string;
+  imageUrl?: string;
+  readerUrl: string;
+  pageThumbnailUrl?: string;
+  isReadOnly: boolean;
+  districtName?: string;
+  categoryName?: string;
+  publishedAt?: string;
+}
+
+export interface EpaperReporterActivityItem {
+  id: string;
+  reporterId: string;
+  type:
+    | 'ARTICLE_SUBMITTED'
+    | 'ARTICLE_APPROVED'
+    | 'ARTICLE_RETURNED'
+    | 'EPAPER_SELECTED'
+    | 'EPAPER_PAGE_ASSIGNED'
+    | 'EPAPER_PUBLISHED'
+    | 'AD_ASSIGNED'
+    | 'AD_APPROVED'
+    | 'AD_REJECTED'
+    | 'WHATSAPP_GENERATED'
+    | string;
+  title: string;
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
+}
+
+export interface EpaperReporterWhatsAppStatus {
+  quota: EpaperWhatsAppQuotaResponse;
+  recentGenerations: Array<{
+    id: string;
+    format: '1:1' | '4:5';
+    headline: string;
+    imageUrl?: string;
+    timestamp: string;
+    previewUrl?: string;
+  }>;
+  canGenerate: boolean;
+}
+
+export interface EpaperReporterWorkspaceMetrics {
+  totalSubmittedNews: number;
+  approvedNews: number;
+  epaperSelectedNews: number;
+  publishedEpaperStories: number;
+  pendingReviewNews: number;
+  returnedNews: number;
+  assignedAds: number;
+  publishedAds: number;
+  recentActivityCount: number;
+}
+
+export interface EpaperReporterWorkspaceSummary {
+  profile: ReporterProfile;
+  metrics: EpaperReporterWorkspaceMetrics;
+  contributions: EpaperReporterContributionItem[];
+  publishedHistory: EpaperReporterPublishedItem[];
+  assignedAds: EpaperAdSubmissionDoc[];
+  activities: EpaperReporterActivityItem[];
+  whatsappStatus: EpaperReporterWhatsAppStatus;
+  generatedAt: string;
+}
+
+export interface ReporterProfileUpdateInput {
+  phone?: string;
+  avatar?: string;
+  bio?: string;
+  bureau?: string;
+  email?: string;
+}
+
+// =========================================================================
+// STEP 9: AI NEWSROOM & AI DESIGN TOOLS TYPES
+// =========================================================================
+
+export interface EpaperAiHeadlineSuggestion {
+  optionNumber: number;
+  targetRange: string;
+  minChars: number;
+  maxChars: number;
+  headline: string;
+  characterCount: number;
+  isValidLength: boolean;
+  style: string;
+  hasTrailingPunctuation: boolean;
+}
+
+export interface EpaperAiHeadlineResult {
+  headlines: EpaperAiHeadlineSuggestion[];
+  articleTitle: string;
+  sourceArticleId?: string;
+  allOptionsInRange: boolean;
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiSummaryResult {
+  summary: string;
+  bulletPoints: string[];
+  keyTakeaway: string;
+  wordCount: number;
+  mode: 'SHORT' | 'DETAILED' | 'BULLETS';
+  missingDetailsFlags: string[];
+  sourceArticleId?: string;
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiCopyEditCorrection {
+  type: string;
+  before: string;
+  after: string;
+  rule?: string;
+  reason: string;
+}
+
+export interface EpaperAiCopyEditResult {
+  originalContent: string;
+  revisedContent: string;
+  correctionsMade: EpaperAiCopyEditCorrection[];
+  toneApplied: string;
+  readabilityScore: string;
+  wordCount: number;
+  sourceArticleId?: string;
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiStructureSection {
+  type: 'HEADLINE' | 'SUBHEAD' | 'LEAD' | 'BODY' | 'CONCLUSION' | 'ATTRIBUTION';
+  titleHi: string;
+  text: string;
+  wordCount: number;
+  assessment: string;
+}
+
+export interface EpaperAiStructureSuggestion {
+  sections: EpaperAiStructureSection[];
+  repetitivePassages: string[];
+  unclearSentences: string[];
+  recommendations: string[];
+  overallStructureScore: number;
+  sourceArticleId?: string;
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiTranslationResult {
+  sourceLanguage: string;
+  targetLanguage: string;
+  sourceText: string;
+  translatedText: string;
+  preservedEntities: string[];
+  requiresHumanReview: true;
+  sourceArticleId?: string;
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiClaimVerificationItem {
+  claimNumber: number;
+  claimText: string;
+  type: 'FIGURE' | 'DATE' | 'NAME' | 'LOCATION' | 'STATEMENT' | 'GENERAL';
+  status: 'VERIFIED' | 'PARTIALLY_VERIFIED' | 'UNVERIFIED' | 'CONTRADICTED' | 'INSUFFICIENT_EVIDENCE';
+  evidenceSummary: string;
+  matchedSourceSnippet?: string;
+  confidencePercent: number;
+  recommendation: string;
+}
+
+export interface EpaperAiVerificationResult {
+  claims: EpaperAiClaimVerificationItem[];
+  checklistEvaluation: Array<{ id: string; name: string; passed: boolean; notes: string }>;
+  overallVerificationScore: number;
+  overallStatus: 'VERIFIED' | 'PARTIALLY_VERIFIED' | 'UNVERIFIED' | 'CONTRADICTED' | 'INSUFFICIENT_EVIDENCE';
+  contradictionsFound: string[];
+  missingSourceFlags: string[];
+  editorialActionRequired: string;
+  autoApprovalPrevented: true;
+  sourceArticleId?: string;
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiDesignSuggestion {
+  recommendedTemplateId: string;
+  recommendedTemplateName: string;
+  recommendedCategory: string;
+  reasoning: string;
+  visualBalanceScore: number;
+  layoutDensity: 'LOW' | 'MEDIUM' | 'HIGH' | 'BROADSHEET_STANDARD';
+  overcrowdedAreas: string[];
+  underutilizedAreas: string[];
+  textOverflowRisks: Array<{
+    elementId?: string;
+    headlineOrSnippet: string;
+    estimatedLines: number;
+    riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+    mitigation: string;
+  }>;
+  recommendations: string[];
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiCompositionStoryPlacement {
+  articleId: string;
+  title: string;
+  regionId?: string;
+  columnSpan: number;
+  positionDesc: string;
+  rationale: string;
+  suggestedCrop?: string;
+  bounds?: { x: number; y: number; width: number; height: number };
+}
+
+export interface EpaperAiCompositionProposal {
+  templateId: string;
+  templateName: string;
+  pageNumber: number;
+  gridColumns: number;
+  storyPlacements: EpaperAiCompositionStoryPlacement[];
+  reservedAdSlotsProtected: boolean;
+  totalStoriesPlaced: number;
+  unplacedStories: string[];
+  estimatedPageDensity: string;
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiGraphicSuggestion {
+  visualConcepts: string[];
+  recommendedCropAspectRatios: Array<{ ratio: '1:1' | '4:3' | '16:9' | '3:2'; description: string }>;
+  suggestedCaptions: string[];
+  isSymbolicOnly: boolean;
+  disclaimerRequired: boolean;
+  disclaimerText: string;
+  fakeDocumentaryProhibited: true;
+  sourceArticleId?: string;
+  isAiSuggestion: true;
+  provider: string;
+  model: string;
+  timestamp: string;
+  generationTimeMs?: number;
+}
+
+export interface EpaperAiApplySuggestionInput {
+  sourceArticleId?: string;
+  editionId?: string;
+  pageNumber?: number;
+  suggestionType: 'HEADLINE' | 'SUMMARY' | 'COPY_EDIT' | 'TRANSLATION' | 'DESIGN_TEMPLATE' | 'COMPOSITION';
+  selectedContent: any;
+  notes?: string;
+}
+
+export interface EpaperAiApplySuggestionResult {
+  applied: boolean;
+  suggestionType: string;
+  updatedFields: string[];
+  appliedBy: string;
+  timestamp: string;
+  auditLogId: string;
+}
+
+export interface EpaperAiNewsroomHistoryItem {
+  id: string;
+  category: string;
+  articleId?: string;
+  articleTitle?: string;
+  headline?: string;
+  provider: string;
+  model: string;
+  userId: string;
+  userRole: string;
+  timestamp: string;
+  summary: string;
+  wasApplied: boolean;
+}
+
+// =========================================================================
+// STEP 10: E-PAPER QUALITY CHECKER & PUBLISHING WORKFLOW TYPES
+// =========================================================================
+
+export type EpaperQualitySeverity = 'CRITICAL' | 'ERROR' | 'WARNING' | 'INFO';
+
+export type EpaperQualityCategory =
+  | 'STRUCTURE'
+  | 'EDITORIAL'
+  | 'LAYOUT'
+  | 'ADVERTISEMENT'
+  | 'METADATA'
+  | 'EXPORT';
+
+export interface EpaperQualityIssue {
+  id: string;
+  editionId: string;
+  pageNumber?: number;
+  elementId?: string;
+  articleId?: string;
+  adId?: string;
+  category: EpaperQualityCategory;
+  severity: EpaperQualitySeverity;
+  code: string;
+  titleHi: string;
+  descriptionHi: string;
+  recommendationHi: string;
+  timestamp: string;
+  resolutionStatus: 'UNRESOLVED' | 'RESOLVED' | 'EXCEPTION_GRANTED';
+  resolvedBy?: string;
+  resolvedAt?: string;
+  exceptionReason?: string;
+}
+
+export interface EpaperQualityCategorySummary {
+  category: EpaperQualityCategory;
+  nameHi: string;
+  criticalCount: number;
+  errorCount: number;
+  warningCount: number;
+  infoCount: number;
+  passed: boolean;
+  status?: string;
+  issueCount?: number;
+  passPercentage?: number;
+}
+
+export interface EpaperQualityScoreBreakdown {
+  baseScore: number;
+  criticalDeduction: number;
+  errorDeduction: number;
+  warningDeduction: number;
+  finalScore: number;
+  formula: string;
+}
+
+export interface EpaperQualityCheckReport {
+  editionId: string;
+  editionVersion: number;
+  canPublish: boolean;
+  canApprove: boolean;
+  overallStatus: 'PASSED' | 'FAILED' | 'WARNINGS_PENDING';
+  qualityScore: number;
+  scoreBreakdown: EpaperQualityScoreBreakdown;
+  totalPagesChecked: number;
+  totalIssues?: number;
+  criticalCount: number;
+  errorCount: number;
+  warningCount: number;
+  infoCount: number;
+  unresolvedCount: number;
+  resolvedCount: number;
+  exceptionCount: number;
+  issues: EpaperQualityIssue[];
+  categories: Record<EpaperQualityCategory, EpaperQualityCategorySummary>;
+  pageStatus: Array<{
+    pageNumber: number;
+    passed: boolean;
+    criticalCount: number;
+    errorCount: number;
+    warningCount: number;
+    issueCount: number;
+  }>;
+  scannedAt: string;
+  scannedBy?: string;
+  isStale?: boolean;
+}
+
+export interface EpaperGrantExceptionInput {
+  editionId?: string;
+  issueId: string;
+  reason: string;
+}
+
+export interface EpaperFinalApprovalInput {
+  editionId?: string;
+  expectedVersion?: number;
+  version?: number;
+  remarks?: string;
+}
+
+export interface EpaperSchedulePublishInput {
+  editionId?: string;
+  scheduledTimeIst?: string;
+  scheduledPublishAtIst?: string;
+  expectedVersion?: number;
+  version?: number;
+}
 
 
 

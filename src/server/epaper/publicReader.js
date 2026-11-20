@@ -13,8 +13,11 @@
 
 export class PublicReaderEngine {
   static getZoomModel(initialZoom = 1.0, pan = { x: 0, y: 0 }) {
+    const current = Math.min(4.0, Math.max(0.5, initialZoom));
     return {
-      currentZoom: Math.min(4.0, Math.max(0.5, initialZoom)),
+      currentZoom: current,
+      scale: current,
+      percent: Math.round(current * 100),
       minZoom: 0.5,
       maxZoom: 4.0,
       panX: pan.x || 0,
@@ -25,13 +28,17 @@ export class PublicReaderEngine {
 
   static computeZoom(current, delta) {
     const next = Number((current + delta).toFixed(2));
-    return { zoom: Math.min(4.0, Math.max(0.5, next)) };
+    const clamped = Math.min(4.0, Math.max(0.5, next));
+    const result = { zoom: clamped };
+    result.valueOf = () => clamped;
+    result.toString = () => String(clamped);
+    return result;
   }
 
   static formatReadingModeArticle(elementOrArticle, options = { fontSize: 18 }) {
     const fontSize = Math.min(32, Math.max(12, options.fontSize || 18));
-    const headline = elementOrArticle.customHeadline || elementOrArticle.title || 'प्रमुख समाचार';
-    const body = elementOrArticle.customBodyText || elementOrArticle.content || elementOrArticle.summary || '';
+    const headline = elementOrArticle.customHeadline || elementOrArticle.headline || elementOrArticle.title || 'प्रमुख समाचार';
+    const body = elementOrArticle.customBodyText || elementOrArticle.content || elementOrArticle.summary || elementOrArticle.body || '';
     const words = body.trim().split(/\s+/).filter(Boolean);
     const wordCount = words.length;
     const isDevanagari = /[\u0900-\u097F]/.test(body) && /[\u094D\u093E-\u094C\u0902\u0903\u093C]/.test(body);
@@ -50,13 +57,16 @@ export class PublicReaderEngine {
     }
     if (cur) lines.push(cur);
 
+    const readingMinutes = Math.max(1, Math.ceil(wordCount / 180));
+
     return {
       headline,
       fontSize,
       lineHeight: Number((fontSize * 1.6).toFixed(1)),
       lines,
       wordCount,
-      readingTimeMinutes: Math.max(1, Math.ceil(wordCount / 180)),
+      readingTimeMinutes: readingMinutes,
+      estimatedReadingTimeMinutes: readingMinutes,
       isDevanagari,
       body,
       byline: elementOrArticle.byline || elementOrArticle.authorName || 'विशेष संवाददाता',

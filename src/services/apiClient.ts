@@ -94,15 +94,51 @@ import {
   EpaperEditionVersionDoc,
   EpaperPageDoc,
   EpaperTemplateDoc,
+  EpaperTemplateVersionHistory,
+  EpaperTemplateValidationResult,
   EpaperWhatsAppGenerationDoc,
+  EpaperWhatsAppEditionPackageDoc,
+  EpaperWhatsAppEditionCardItem,
+  WhatsAppEligibleArticleItem,
+  GenerateWhatsAppEditionRequest,
+  RegenerateWhatsAppCardRequest,
   EpaperEditionStatus,
   EpaperCheckArticlePlacementResponse,
   EpaperWhatsAppQuotaResponse,
   EpaperAdSubmissionDoc,
+  EpaperAiAdCreative,
+  EpaperAdReportSummary,
+  EpaperAdStatus,
   EpaperRateCardItem,
   TemplateAnalysisResult,
   EpaperPageElement,
   EpaperAdSlotType,
+  EpaperReporterWorkspaceSummary,
+  EpaperReporterContributionItem,
+  EpaperReporterPublishedItem,
+  EpaperReporterActivityItem,
+  ReporterProfileUpdateInput,
+  EpaperAiHeadlineResult,
+  EpaperAiSummaryResult,
+  EpaperAiCopyEditResult,
+  EpaperAiStructureSuggestion,
+  EpaperAiTranslationResult,
+  EpaperAiVerificationResult,
+  EpaperAiDesignSuggestion,
+  EpaperAiCompositionProposal,
+  EpaperAiGraphicSuggestion,
+  EpaperAiApplySuggestionInput,
+  EpaperAiApplySuggestionResult,
+  EpaperAiNewsroomHistoryItem,
+  EpaperQualitySeverity,
+  EpaperQualityCategory,
+  EpaperQualityIssue,
+  EpaperQualityCategorySummary,
+  EpaperQualityScoreBreakdown,
+  EpaperQualityCheckReport,
+  EpaperGrantExceptionInput,
+  EpaperFinalApprovalInput,
+  EpaperSchedulePublishInput,
 } from '../types';
 
 export interface EpaperEditionsFilter {
@@ -2411,13 +2447,17 @@ export const apiClient = {
       };
     },
 
-    async getEditionById(id: string): Promise<EpaperEditionDoc | null> {
-      const res = await request<EpaperEditionDoc>(`/epaper/editions/${encodeURIComponent(id)}`);
+    async getEditionById(id: string, version?: number | string): Promise<EpaperEditionDoc | null> {
+      const q = version !== undefined ? `?version=${encodeURIComponent(String(version))}` : '';
+      const res = await request<EpaperEditionDoc>(`/epaper/editions/${encodeURIComponent(id)}${q}`);
       return res.success && res.data ? res.data : null;
     },
 
-    async getLatestEdition(districtId?: string): Promise<EpaperEditionDoc | null> {
-      const endpoint = districtId ? `/epaper/latest?districtId=${encodeURIComponent(districtId)}` : '/epaper/latest';
+    async getLatestEdition(districtId?: string, editionType?: string): Promise<EpaperEditionDoc | null> {
+      const q = new URLSearchParams();
+      if (districtId) q.set('districtId', districtId);
+      if (editionType && editionType !== 'all') q.set('editionType', editionType);
+      const endpoint = `/epaper/latest${q.toString() ? `?${q.toString()}` : ''}`;
       const res = await request<EpaperEditionDoc>(endpoint);
       return res.success && res.data ? res.data : null;
     },
@@ -2477,8 +2517,9 @@ export const apiClient = {
       return res.data;
     },
 
-    async getEditionPages(editionId: string): Promise<EpaperPageDoc[]> {
-      const res = await request<EpaperPageDoc[]>(`/epaper/editions/${encodeURIComponent(editionId)}/pages`);
+    async getEditionPages(editionId: string, version?: number | string): Promise<EpaperPageDoc[]> {
+      const q = version !== undefined ? `?version=${encodeURIComponent(String(version))}` : '';
+      const res = await request<EpaperPageDoc[]>(`/epaper/editions/${encodeURIComponent(editionId)}/pages${q}`);
       return res.success && Array.isArray(res.data) ? res.data : [];
     },
 
@@ -2510,10 +2551,105 @@ export const apiClient = {
       return { placed: false, pageNumber: null, pageId: null, elementId: null, articleId };
     },
 
-    async getTemplates(params?: { category?: string; search?: string }): Promise<EpaperTemplateDoc[]> {
+    async getEligibleArticles(params?: {
+      search?: string;
+      districtId?: string;
+      district?: string;
+      constituency?: string;
+      categoryId?: string;
+      category?: string;
+      reporterId?: string;
+      reporter?: string;
+      date?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      priority?: string;
+      approvalStatus?: string;
+      hasImage?: boolean | string;
+      length?: 'SHORT' | 'MEDIUM' | 'LONG' | string;
+      sort?: 'latest' | 'priority' | 'relevance';
+      page?: number;
+      limit?: number;
+    }): Promise<{ items: ArticleDetail[]; articles: ArticleDetail[]; total: number; page: number; limit: number; totalPages: number }> {
+      const queryParams = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') {
+            queryParams.set(k, String(v));
+          }
+        });
+      }
+      const endpoint = `/epaper/eligible-articles${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      const res = await request<{ items: ArticleDetail[]; articles: ArticleDetail[]; total: number; page: number; limit: number; totalPages: number }>(endpoint);
+      if (res.success && res.data) {
+        return res.data;
+      }
+      return { items: [], articles: [], total: 0, page: 1, limit: 20, totalPages: 1 };
+    },
+
+    async updateArticleWorkflowStatus(articleId: string, payload: {
+      targetStatus: string;
+      remarks?: string;
+      editionId?: string;
+      pageNumber?: number;
+    }): Promise<any> {
+      const res = await request<any>(`/epaper/articles/${encodeURIComponent(articleId)}/workflow-status`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success) {
+        const err = new Error(res.error?.message || 'कार्यप्रवाह स्थिति अद्यतन विफल रहा');
+        (err as any).code = res.error?.code;
+        (err as any).statusCode = res.error?.code === 'ERR_FORBIDDEN' ? 403 : 400;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async assignArticlesToPage(editionId: string, payload: {
+      pageNumber: number;
+      articleIds: string[];
+      editorCredit?: string;
+      colSpan?: number;
+      role?: string;
+      forceDuplicate?: boolean;
+    }): Promise<any> {
+      const res = await request<any>(`/epaper/editions/${encodeURIComponent(editionId)}/assign-articles`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success) {
+        const err = new Error(res.error?.message || 'समाचार पृष्ठ पर असाइन करना विफल रहा');
+        (err as any).code = res.error?.code;
+        (err as any).details = res.error?.details;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async removeArticleFromPage(editionId: string, pageNumber: number, articleId: string): Promise<any> {
+      const res = await request<any>(`/epaper/editions/${encodeURIComponent(editionId)}/pages/${pageNumber}/articles/${encodeURIComponent(articleId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.success) {
+        const err = new Error(res.error?.message || 'समाचार पृष्ठ से हटाना विफल रहा');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async getStaffCredits(): Promise<Array<{ id: string; fullName: string; email: string; role: string; badgeNumber?: string | null }>> {
+      const res = await request<Array<{ id: string; fullName: string; email: string; role: string; badgeNumber?: string | null }>>('/epaper/staff-credits');
+      return res.success && Array.isArray(res.data) ? res.data : [];
+    },
+
+    async getTemplates(params?: { category?: string; status?: string; search?: string; gridColumns?: number }): Promise<EpaperTemplateDoc[]> {
       const queryParams = new URLSearchParams();
       if (params?.category) queryParams.set('category', params.category);
+      if (params?.status) queryParams.set('status', params.status);
       if (params?.search) queryParams.set('search', params.search);
+      if (params?.gridColumns) queryParams.set('gridColumns', String(params.gridColumns));
       const res = await request<EpaperTemplateDoc[]>(`/epaper/templates${queryParams.toString() ? `?${queryParams.toString()}` : ''}`);
       return res.success && Array.isArray(res.data) ? res.data : [];
     },
@@ -2521,6 +2657,84 @@ export const apiClient = {
     async getTemplateById(id: string): Promise<EpaperTemplateDoc | null> {
       const res = await request<EpaperTemplateDoc>(`/epaper/templates/${encodeURIComponent(id)}`);
       return res.success && res.data ? res.data : null;
+    },
+
+    async validateTemplate(templateData: Partial<EpaperTemplateDoc>): Promise<EpaperTemplateValidationResult> {
+      const res = await request<EpaperTemplateValidationResult>('/epaper/templates/validate', {
+        method: 'POST',
+        body: JSON.stringify(templateData),
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'टेम्पलेट सत्यापन विफल रहा');
+      }
+      return res.data;
+    },
+
+    async duplicateTemplate(id: string, name?: string): Promise<EpaperTemplateDoc> {
+      const res = await request<EpaperTemplateDoc>(`/epaper/templates/${encodeURIComponent(id)}/duplicate`, {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'टेम्पलेट क्लोन करना विफल रहा');
+      }
+      return res.data;
+    },
+
+    async publishTemplate(id: string): Promise<EpaperTemplateDoc> {
+      const res = await request<EpaperTemplateDoc>(`/epaper/templates/${encodeURIComponent(id)}/publish`, {
+        method: 'POST',
+      });
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'टेम्पलेट प्रकाशित करना विफल रहा');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async archiveTemplate(id: string): Promise<EpaperTemplateDoc> {
+      const res = await request<EpaperTemplateDoc>(`/epaper/templates/${encodeURIComponent(id)}/archive`, {
+        method: 'POST',
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'टेम्पलेट अभिलेखागार में भेजना विफल रहा');
+      }
+      return res.data;
+    },
+
+    async restoreTemplate(id: string): Promise<EpaperTemplateDoc> {
+      const res = await request<EpaperTemplateDoc>(`/epaper/templates/${encodeURIComponent(id)}/restore`, {
+        method: 'POST',
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'टेम्पलेट पुनर्स्थापित करना विफल रहा');
+      }
+      return res.data;
+    },
+
+    async rollbackTemplate(id: string, targetVersion: number): Promise<EpaperTemplateDoc> {
+      const res = await request<EpaperTemplateDoc>(`/epaper/templates/${encodeURIComponent(id)}/rollback`, {
+        method: 'POST',
+        body: JSON.stringify({ targetVersion }),
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'टेम्पलेट संस्करण रोलबैक विफल रहा');
+      }
+      return res.data;
+    },
+
+    async getTemplateVersions(id: string): Promise<EpaperTemplateVersionHistory[]> {
+      const res = await request<EpaperTemplateVersionHistory[]>(`/epaper/templates/${encodeURIComponent(id)}/versions`);
+      return res.success && Array.isArray(res.data) ? res.data : [];
+    },
+
+    async getTemplateUsage(id: string): Promise<{ templateId: string; totalEditions: number; editions: Array<{ editionId: string; editionTitle: string; pageNumber: number }> }> {
+      const res = await request<{ templateId: string; totalEditions: number; editions: Array<{ editionId: string; editionTitle: string; pageNumber: number }> }>(`/epaper/templates/${encodeURIComponent(id)}/usage`);
+      if (res.success && res.data) {
+        return res.data;
+      }
+      return { templateId: id, totalEditions: 0, editions: [] };
     },
 
     async generateWhatsAppCard(payload: { editionId?: string; format: '1:1' | '4:5'; headline: string; body: string; imageUrl?: string; articleId?: string }): Promise<EpaperWhatsAppGenerationDoc> {
@@ -2576,6 +2790,63 @@ export const apiClient = {
       return res.data;
     },
 
+    async getWhatsAppEligibleArticles(params?: { search?: string; district?: string; category?: string; reporterId?: string }): Promise<{ items: WhatsAppEligibleArticleItem[]; total: number }> {
+      const q = new URLSearchParams();
+      if (params?.search) q.set('search', params.search);
+      if (params?.district) q.set('district', params.district);
+      if (params?.category) q.set('category', params.category);
+      if (params?.reporterId) q.set('reporterId', params.reporterId);
+      const res = await request<WhatsAppEligibleArticleItem[]>(`/epaper/whatsapp/eligible-articles${q.toString() ? `?${q.toString()}` : ''}`);
+      return {
+        items: res.success && Array.isArray(res.data) ? res.data : [],
+        total: (res as any).total || (res.success && Array.isArray(res.data) ? res.data.length : 0),
+      };
+    },
+
+    async generateWhatsAppEdition(payload: GenerateWhatsAppEditionRequest): Promise<EpaperWhatsAppEditionPackageDoc> {
+      const res = await request<EpaperWhatsAppEditionPackageDoc>('/epaper/whatsapp/edition/generate', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'व्हाट्सएप एडिशन पैकेज निर्माण विफल रहा');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async getWhatsAppEditionPackages(params?: { reporterId?: string; format?: string }): Promise<EpaperWhatsAppEditionPackageDoc[]> {
+      const q = new URLSearchParams();
+      if (params?.reporterId) q.set('reporterId', params.reporterId);
+      if (params?.format) q.set('format', params.format);
+      const res = await request<EpaperWhatsAppEditionPackageDoc[]>(`/epaper/whatsapp/editions${q.toString() ? `?${q.toString()}` : ''}`);
+      return res.success && Array.isArray(res.data) ? res.data : [];
+    },
+
+    async getWhatsAppEditionPackageById(packageId: string): Promise<EpaperWhatsAppEditionPackageDoc> {
+      const res = await request<EpaperWhatsAppEditionPackageDoc>(`/epaper/whatsapp/edition/${encodeURIComponent(packageId)}`);
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'व्हाट्सएप एडिशन पैकेज नहीं मिला');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async regenerateWhatsAppCard(payload: RegenerateWhatsAppCardRequest): Promise<{ card: EpaperWhatsAppEditionCardItem; package: EpaperWhatsAppEditionPackageDoc }> {
+      const res = await request<{ card: EpaperWhatsAppEditionCardItem; package: EpaperWhatsAppEditionPackageDoc }>('/epaper/whatsapp/card/regenerate', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'व्हाट्सएप कार्ड पुनः निर्माण विफल रहा');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
     async analyzeTemplateLayout(payload: { elements?: EpaperPageElement[]; pageId?: string; gridColumns?: number }): Promise<TemplateAnalysisResult> {
       const res = await request<TemplateAnalysisResult>('/epaper/templates/analyze', {
         method: 'POST',
@@ -2614,7 +2885,7 @@ export const apiClient = {
     },
 
     async submitClassifiedAd(payload: Partial<EpaperAdSubmissionDoc>): Promise<EpaperAdSubmissionDoc> {
-      const res = await request<EpaperAdSubmissionDoc>('/epaper/ads/submissions', {
+      const res = await request<EpaperAdSubmissionDoc>('/epaper/ads', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
@@ -2626,18 +2897,127 @@ export const apiClient = {
       return res.data;
     },
 
-    async getClassifiedSubmissions(params?: { status?: string; districtId?: string; reporterId?: string; slotType?: string }): Promise<EpaperAdSubmissionDoc[]> {
+    async submitAd(payload: Partial<EpaperAdSubmissionDoc>): Promise<EpaperAdSubmissionDoc> {
+      return this.submitClassifiedAd(payload);
+    },
+
+    async getClassifiedSubmissions(params?: {
+      status?: string;
+      districtId?: string;
+      reporterId?: string;
+      assignedReporterId?: string;
+      slotType?: string;
+      category?: string;
+      editionId?: string;
+      search?: string;
+      sponsoredOnly?: boolean;
+    }): Promise<EpaperAdSubmissionDoc[]> {
       const queryParams = new URLSearchParams();
       if (params?.status) queryParams.set('status', params.status);
       if (params?.districtId) queryParams.set('districtId', params.districtId);
       if (params?.reporterId) queryParams.set('reporterId', params.reporterId);
+      if (params?.assignedReporterId) queryParams.set('assignedReporterId', params.assignedReporterId);
       if (params?.slotType) queryParams.set('slotType', params.slotType);
-      const res = await request<EpaperAdSubmissionDoc[]>(`/epaper/ads/submissions${queryParams.toString() ? `?${queryParams.toString()}` : ''}`);
+      if (params?.category) queryParams.set('category', params.category);
+      if (params?.editionId) queryParams.set('editionId', params.editionId);
+      if (params?.search) queryParams.set('search', params.search);
+      if (params?.sponsoredOnly) queryParams.set('sponsoredOnly', 'true');
+      const res = await request<EpaperAdSubmissionDoc[]>(`/epaper/ads${queryParams.toString() ? `?${queryParams.toString()}` : ''}`);
       return res.success && Array.isArray(res.data) ? res.data : [];
     },
 
+    async getAds(params?: {
+      status?: string;
+      districtId?: string;
+      reporterId?: string;
+      assignedReporterId?: string;
+      slotType?: string;
+      category?: string;
+      editionId?: string;
+      search?: string;
+      sponsoredOnly?: boolean;
+    }): Promise<EpaperAdSubmissionDoc[]> {
+      return this.getClassifiedSubmissions(params);
+    },
+
+    async getAdById(id: string): Promise<EpaperAdSubmissionDoc> {
+      const res = await request<EpaperAdSubmissionDoc>(`/epaper/ads/${encodeURIComponent(id)}`);
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'विज्ञापन नहीं मिला');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async updateAd(id: string, payload: Partial<EpaperAdSubmissionDoc>): Promise<EpaperAdSubmissionDoc> {
+      const res = await request<EpaperAdSubmissionDoc>(`/epaper/ads/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'विज्ञापन अद्यतन विफल रहा');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async updateAdStatus(id: string, payload: { status: EpaperAdStatus; notes?: string }): Promise<EpaperAdSubmissionDoc> {
+      const res = await request<EpaperAdSubmissionDoc>(`/epaper/ads/${encodeURIComponent(id)}/status`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'विज्ञापन स्थिति परिवर्तन विफल रहा');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async assignAdToSlot(adId: string, payload: {
+      editionId: string;
+      pageNumber: number;
+      slotDetails?: {
+        slotType?: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+        customBadgeText?: string;
+      };
+    }): Promise<EpaperAdSubmissionDoc> {
+      const res = await request<EpaperAdSubmissionDoc>(`/epaper/ads/${encodeURIComponent(adId)}/assign-slot`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'विज्ञापन स्लॉट आवंटन विफल रहा');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
+    async removeAdFromSlot(adId: string, payload: {
+      editionId: string;
+      pageNumber: number;
+    }): Promise<EpaperAdSubmissionDoc> {
+      const res = await request<EpaperAdSubmissionDoc>(`/epaper/ads/${encodeURIComponent(adId)}/remove-slot`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        const err = new Error(res.error?.message || 'विज्ञापन स्लॉट निष्कासन विफल रहा');
+        (err as any).code = res.error?.code;
+        throw err;
+      }
+      return res.data;
+    },
+
     async reviewClassifiedSubmission(id: string, payload: { action: 'APPROVE' | 'REJECT'; notes?: string; reviewNotes?: string }): Promise<EpaperAdSubmissionDoc> {
-      const res = await request<EpaperAdSubmissionDoc>(`/epaper/ads/submissions/${encodeURIComponent(id)}/review`, {
+      const res = await request<EpaperAdSubmissionDoc>(`/epaper/ads/${encodeURIComponent(id)}/review`, {
         method: 'PATCH',
         body: JSON.stringify(payload),
       });
@@ -2654,6 +3034,73 @@ export const apiClient = {
       });
       if (!res.success || !res.data) {
         throw new Error(res.error?.message || 'विज्ञापन कॉपी निर्माण विफल रहा');
+      }
+      return res.data;
+    },
+
+    async generateAiAdStudio(payload: {
+      businessName: string;
+      category?: string;
+      offerDetails?: string;
+      targetAudience?: string;
+      contactInfo?: string;
+      tone?: string;
+      language?: string;
+    }): Promise<EpaperAiAdCreative> {
+      const res = await request<EpaperAiAdCreative>('/epaper/ads/ai-studio/generate', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'AI Ad Studio विज्ञापन निर्माण विफल रहा');
+      }
+      return res.data;
+    },
+
+    async getAdReports(params?: {
+      districtId?: string;
+      editionId?: string;
+      startDate?: string;
+      endDate?: string;
+    }): Promise<EpaperAdReportSummary> {
+      const queryParams = new URLSearchParams();
+      if (params?.districtId) queryParams.set('districtId', params.districtId);
+      if (params?.editionId) queryParams.set('editionId', params.editionId);
+      if (params?.startDate) queryParams.set('startDate', params.startDate);
+      if (params?.endDate) queryParams.set('endDate', params.endDate);
+      const res = await request<EpaperAdReportSummary>(`/epaper/ads/reports/summary${queryParams.toString() ? `?${queryParams.toString()}` : ''}`);
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'विज्ञापन रिपोर्ट प्राप्त करना विफल रहा');
+      }
+      return res.data;
+    },
+
+    async getAvailableAdSlots(editionId: string, pageNumber: number): Promise<{
+      editionId: string;
+      pageNumber: number;
+      availableSlots: Array<{
+        slotType: string;
+        titleHindi: string;
+        dimensionsMm: string;
+        ratePaise: number;
+        rateRupees: number;
+        boundsPt: { x: number; y: number; width: number; height: number };
+      }>;
+      occupiedSlots: Array<{
+        adId: string;
+        businessName: string;
+        slotType: string;
+        boundsPt: { x: number; y: number; width: number; height: number };
+      }>;
+    }> {
+      const res = await request<{
+        editionId: string;
+        pageNumber: number;
+        availableSlots: any[];
+        occupiedSlots: any[];
+      }>(`/epaper/ads/slots/available?editionId=${encodeURIComponent(editionId)}&pageNumber=${pageNumber}`);
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'उपलब्ध विज्ञापन स्लॉट प्राप्त करना विफल रहा');
       }
       return res.data;
     },
@@ -2725,6 +3172,187 @@ export const apiClient = {
       async getPermanentColumnTypes(): Promise<Array<{ type: string; titleHi: string; titleEn: string; defaultSection: string; attribution: string; description: string }>> {
         const res = await request<Array<{ type: string; titleHi: string; titleEn: string; defaultSection: string; attribution: string; description: string }>>('/epaper/ai/permanent-columns/types');
         return res.success && Array.isArray(res.data) ? res.data : [];
+      },
+
+      // STEP 9: Full E-Paper AI Newsroom Suite
+      async generateHeadlines(payload: {
+        title?: string;
+        content?: string;
+        summary?: string;
+        district?: string;
+        isBreaking?: boolean;
+        articleId?: string;
+        provider?: string;
+      }): Promise<EpaperAiHeadlineResult> {
+        const res = await request<EpaperAiHeadlineResult>('/epaper/ai/headlines', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'हेडलाइन सुझाव तैयार करने में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async generateSummary(payload: {
+        content?: string;
+        headline?: string;
+        mode?: 'SHORT' | 'DETAILED' | 'BULLETS';
+        maxWords?: number;
+        district?: string;
+        articleId?: string;
+        provider?: string;
+      }): Promise<EpaperAiSummaryResult> {
+        const res = await request<EpaperAiSummaryResult>('/epaper/ai/summarize', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'सारांश तैयार करने में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async copyEditHindi(payload: {
+        content: string;
+        tone?: string;
+        fixGrammarAndSpelling?: boolean;
+        articleId?: string;
+        provider?: string;
+      }): Promise<EpaperAiCopyEditResult> {
+        const res = await request<EpaperAiCopyEditResult>('/epaper/ai/copy-edit', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'भाषा सुधार में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async analyzeStructure(payload: {
+        title?: string;
+        content: string;
+        articleId?: string;
+        provider?: string;
+      }): Promise<EpaperAiStructureSuggestion> {
+        const res = await request<EpaperAiStructureSuggestion>('/epaper/ai/structure', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'संरचना विश्लेषण में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async translateContent(payload: {
+        content: string;
+        sourceLanguage?: string;
+        targetLanguage?: string;
+        articleId?: string;
+        provider?: string;
+      }): Promise<EpaperAiTranslationResult> {
+        const res = await request<EpaperAiTranslationResult>('/epaper/ai/translate', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'अनुवाद में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async verifyClaims(payload: {
+        headline?: string;
+        content?: string;
+        district?: string;
+        sources?: string[];
+        evidenceNotes?: string;
+        articleId?: string;
+        provider?: string;
+      }): Promise<EpaperAiVerificationResult> {
+        const res = await request<EpaperAiVerificationResult>('/epaper/ai/verify', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'तथ्य परीक्षण में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async getDesignSuggestions(payload: {
+        pageNumber?: number;
+        articles?: any[];
+        availableTemplates?: any[];
+        currentElements?: any[];
+        gridColumns?: number;
+      }): Promise<EpaperAiDesignSuggestion> {
+        const res = await request<EpaperAiDesignSuggestion>('/epaper/ai/design-suggestions', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'डिज़ाइन सुझाव प्राप्त करने में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async proposeComposition(payload: {
+        pageNumber?: number;
+        selectedArticles?: any[];
+        availableTemplates?: any[];
+        reservedAdSlots?: any[];
+        templateId?: string;
+      }): Promise<EpaperAiCompositionProposal> {
+        const res = await request<EpaperAiCompositionProposal>('/epaper/ai/propose-composition', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'पेज कम्पोज़िशन प्रस्ताव प्राप्त करने में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async getGraphicSuggestions(payload: {
+        headline?: string;
+        content?: string;
+        category?: string;
+        district?: string;
+        articleId?: string;
+        provider?: string;
+      }): Promise<EpaperAiGraphicSuggestion> {
+        const res = await request<EpaperAiGraphicSuggestion>('/epaper/ai/graphic-suggestions', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'ग्राफिक सुझाव प्राप्त करने में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async applySuggestion(payload: EpaperAiApplySuggestionInput): Promise<EpaperAiApplySuggestionResult> {
+        const res = await request<EpaperAiApplySuggestionResult>('/epaper/ai/apply-suggestion', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'सुझाव लागू करने में त्रुटि हुई');
+        }
+        return res.data;
+      },
+
+      async getHistory(): Promise<{ history: EpaperAiNewsroomHistoryItem[]; count: number }> {
+        const res = await request<{ history: EpaperAiNewsroomHistoryItem[]; count: number }>('/epaper/ai/history');
+        return res.success && res.data ? res.data : { history: [], count: 0 };
+      },
+
+      async getUsage(): Promise<any> {
+        const res = await request<any>('/epaper/ai/usage');
+        return res.success && res.data ? res.data : { todayRequests: 0, dailyLimit: 50, remainingRequests: 50 };
       },
     },
 
@@ -2826,16 +3454,247 @@ export const apiClient = {
       return res.success ? res.data : null;
     },
 
-    async getArchiveEditions(filters?: { date?: string; districtId?: string; page?: number; limit?: number }): Promise<EpaperEditionDoc[]> {
+    async getArchiveEditions(filters?: {
+      year?: string | number;
+      month?: string | number;
+      date?: string;
+      publicationDate?: string;
+      districtId?: string;
+      editionType?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    }): Promise<any> {
       const queryParams = new URLSearchParams();
+      if (filters?.year && filters.year !== 'all') queryParams.set('year', String(filters.year));
+      if (filters?.month && filters.month !== 'all') queryParams.set('month', String(filters.month));
       if (filters?.date) queryParams.set('date', filters.date);
+      if (filters?.publicationDate) queryParams.set('publicationDate', filters.publicationDate);
       if (filters?.districtId && filters.districtId !== 'all') queryParams.set('districtId', filters.districtId);
+      if (filters?.editionType && filters.editionType !== 'all') queryParams.set('editionType', filters.editionType);
+      if (filters?.search) queryParams.set('search', filters.search);
       if (filters?.page) queryParams.set('page', String(filters.page));
       if (filters?.limit) queryParams.set('limit', String(filters.limit));
 
       const endpoint = `/epaper/archive${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-      const res = await request<EpaperEditionDoc[]>(endpoint);
-      return res.success && Array.isArray(res.data) ? res.data : [];
+      const res = await request<any>(endpoint);
+      const list: EpaperEditionDoc[] = Array.isArray(res.data) ? res.data : (res.data?.editions || res.data?.items || []);
+      const total = res.data?.total ?? list.length;
+      const page = res.data?.page ?? (filters?.page || 1);
+      const limit = res.data?.limit ?? (filters?.limit || 24);
+      const totalPages = res.data?.totalPages ?? (Math.ceil(total / limit) || 1);
+
+      const result: any = list;
+      result.editions = list;
+      result.items = list;
+      result.total = total;
+      result.page = page;
+      result.limit = limit;
+      result.totalPages = totalPages;
+      return result;
+    },
+
+    // Step 7: E-Paper Reporter Workspace & Profile Integration
+    reporter: {
+      async getWorkspaceSummary(reporterId?: string): Promise<EpaperReporterWorkspaceSummary> {
+        const endpoint = reporterId
+          ? `/epaper/reporter/workspace?reporterId=${encodeURIComponent(reporterId)}`
+          : '/epaper/reporter/workspace';
+        const res = await request<EpaperReporterWorkspaceSummary>(endpoint);
+        if (!res.success || !res.data) {
+          const err = new Error(res.error?.message || 'संवाददाता कार्यक्षेत्र लोड करने में विफल।');
+          (err as any).code = res.error?.code || 'ERR_WORKSPACE_FAILED';
+          throw err;
+        }
+        return res.data;
+      },
+
+      async getContributions(params?: {
+        reporterId?: string;
+        status?: string;
+        districtId?: string;
+        categoryId?: string;
+        search?: string;
+        page?: number;
+        limit?: number;
+      }): Promise<{ items: EpaperReporterContributionItem[]; total: number; page: number; limit: number; totalPages: number }> {
+        const queryParams = new URLSearchParams();
+        if (params?.reporterId) queryParams.set('reporterId', params.reporterId);
+        if (params?.status && params.status !== 'all') queryParams.set('status', params.status);
+        if (params?.districtId && params.districtId !== 'all') queryParams.set('districtId', params.districtId);
+        if (params?.categoryId && params.categoryId !== 'all') queryParams.set('categoryId', params.categoryId);
+        if (params?.search) queryParams.set('search', params.search);
+        if (params?.page) queryParams.set('page', String(params.page));
+        if (params?.limit) queryParams.set('limit', String(params.limit));
+
+        const endpoint = `/epaper/reporter/contributions${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+        const res = await request<{ items: EpaperReporterContributionItem[]; total: number; page: number; limit: number; totalPages: number }>(endpoint);
+        if (!res.success || !res.data) {
+          return { items: [], total: 0, page: 1, limit: 20, totalPages: 1 };
+        }
+        return res.data;
+      },
+
+      async getPublishedStories(params?: {
+        reporterId?: string;
+        editionId?: string;
+        startDate?: string;
+        endDate?: string;
+        search?: string;
+      }): Promise<{ items: EpaperReporterPublishedItem[]; total: number }> {
+        const queryParams = new URLSearchParams();
+        if (params?.reporterId) queryParams.set('reporterId', params.reporterId);
+        if (params?.editionId && params.editionId !== 'all') queryParams.set('editionId', params.editionId);
+        if (params?.startDate) queryParams.set('startDate', params.startDate);
+        if (params?.endDate) queryParams.set('endDate', params.endDate);
+        if (params?.search) queryParams.set('search', params.search);
+
+        const endpoint = `/epaper/reporter/published${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+        const res = await request<{ items: EpaperReporterPublishedItem[]; total: number }>(endpoint);
+        if (!res.success || !res.data) {
+          return { items: [], total: 0 };
+        }
+        return res.data;
+      },
+
+      async updateProfile(updates: ReporterProfileUpdateInput, reporterId?: string): Promise<ReporterProfile> {
+        const endpoint = reporterId
+          ? `/epaper/reporter/profile?reporterId=${encodeURIComponent(reporterId)}`
+          : '/epaper/reporter/profile';
+        const res = await request<ReporterProfile>(endpoint, {
+          method: 'PUT',
+          body: JSON.stringify(updates),
+        });
+        if (!res.success || !res.data) {
+          const err = new Error(res.error?.message || 'प्रोफाइल अद्यतन विफल रहा।');
+          (err as any).code = res.error?.code || 'ERR_PROFILE_UPDATE_FAILED';
+          throw err;
+        }
+        return res.data;
+      },
+
+      async getAssignedAds(params?: {
+        reporterId?: string;
+        status?: string;
+        search?: string;
+      }): Promise<EpaperAdSubmissionDoc[]> {
+        const queryParams = new URLSearchParams();
+        if (params?.reporterId) queryParams.set('reporterId', params.reporterId);
+        if (params?.status && params.status !== 'all') queryParams.set('status', params.status);
+        if (params?.search) queryParams.set('search', params.search);
+
+        const endpoint = `/epaper/reporter/ads${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+        const res = await request<EpaperAdSubmissionDoc[]>(endpoint);
+        return res.success && Array.isArray(res.data) ? res.data : [];
+      },
+
+      async getActivityFeed(reporterId?: string): Promise<{ activities: EpaperReporterActivityItem[]; total: number }> {
+        const endpoint = reporterId
+          ? `/epaper/reporter/activity?reporterId=${encodeURIComponent(reporterId)}`
+          : '/epaper/reporter/activity';
+        const res = await request<{ activities: EpaperReporterActivityItem[]; total: number }>(endpoint);
+        if (!res.success || !res.data) {
+          return { activities: [], total: 0 };
+        }
+        return res.data;
+      },
+    },
+
+    // Step 10: Authoritative E-Paper Quality Assurance & Controlled Publishing
+    quality: {
+      async runQualityCheck(editionId: string, skipExportCheck = false): Promise<EpaperQualityCheckReport> {
+        const res = await request<EpaperQualityCheckReport>(`/epaper/editions/${encodeURIComponent(editionId)}/quality-check`, {
+          method: 'POST',
+          body: JSON.stringify({ skipExportCheck }),
+        });
+        if (!res.success || !res.data) {
+          const err = new Error(res.error?.message || 'गुणवत्ता परीक्षण विफल रहा');
+          (err as any).code = res.error?.code;
+          throw err;
+        }
+        return res.data;
+      },
+
+      async getQualityReport(editionId: string): Promise<EpaperQualityCheckReport> {
+        const res = await request<EpaperQualityCheckReport>(`/epaper/editions/${encodeURIComponent(editionId)}/quality-check`);
+        if (!res.success || !res.data) {
+          const err = new Error(res.error?.message || 'गुणवत्ता रिपोर्ट प्राप्त करना विफल रहा');
+          (err as any).code = res.error?.code;
+          throw err;
+        }
+        return res.data;
+      },
+
+      async grantException(editionId: string, payload: EpaperGrantExceptionInput): Promise<{ success: boolean; issue: EpaperQualityIssue; updatedReport: EpaperQualityCheckReport }> {
+        const res = await request<{ success: boolean; issue: EpaperQualityIssue; updatedReport: EpaperQualityCheckReport }>(`/epaper/editions/${encodeURIComponent(editionId)}/quality/grant-exception`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          const err = new Error(res.error?.message || 'अपवाद प्रदान करना विफल रहा');
+          (err as any).code = res.error?.code;
+          (err as any).statusCode = res.error?.code === 'ERR_CRITICAL_CANNOT_BE_BYPASSED' ? 403 : 400;
+          throw err;
+        }
+        return res.data;
+      },
+
+      async approveEdition(editionId: string, payload: EpaperFinalApprovalInput): Promise<{ success: boolean; edition: EpaperEditionDoc; qualityReport: EpaperQualityCheckReport }> {
+        const res = await request<{ success: boolean; edition: EpaperEditionDoc; qualityReport: EpaperQualityCheckReport }>(`/epaper/editions/${encodeURIComponent(editionId)}/approve`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          const err = new Error(res.error?.message || 'अंतिम अनुमोदन विफल रहा');
+          (err as any).code = res.error?.code;
+          (err as any).qualityReport = (res.error as any)?.qualityReport;
+          throw err;
+        }
+        return res.data;
+      },
+
+      async scheduleEdition(editionId: string, payload: EpaperSchedulePublishInput): Promise<{ success: boolean; edition: EpaperEditionDoc }> {
+        const res = await request<{ success: boolean; edition: EpaperEditionDoc }>(`/epaper/editions/${encodeURIComponent(editionId)}/schedule`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          const err = new Error(res.error?.message || 'ई-पेपर शेड्यूलिंग विफल रही');
+          (err as any).code = res.error?.code;
+          throw err;
+        }
+        return res.data;
+      },
+
+      async createCorrection(editionId: string, remarks?: string): Promise<{ success: boolean; edition: EpaperEditionDoc; previousPublishedVersion: number; message: string }> {
+        const res = await request<{ success: boolean; edition: EpaperEditionDoc; previousPublishedVersion: number; message: string }>(`/epaper/editions/${encodeURIComponent(editionId)}/correction`, {
+          method: 'POST',
+          body: JSON.stringify({ remarks }),
+        });
+        if (!res.success || !res.data) {
+          const err = new Error(res.error?.message || 'प्रकाशन उपरांत सुधार आरंभ करना विफल रहा');
+          (err as any).code = res.error?.code;
+          throw err;
+        }
+        return res.data;
+      },
+    },
+
+    // Convenience delegates
+    runQualityCheck(editionId: string, skipExportCheck = false) {
+      return this.quality.runQualityCheck(editionId, skipExportCheck);
+    },
+    grantQualityException(editionId: string, payload: EpaperGrantExceptionInput) {
+      return this.quality.grantException(editionId, payload);
+    },
+    approveEdition(editionId: string, payload: EpaperFinalApprovalInput) {
+      return this.quality.approveEdition(editionId, payload);
+    },
+    scheduleEdition(editionId: string, payload: EpaperSchedulePublishInput) {
+      return this.quality.scheduleEdition(editionId, payload);
+    },
+    createEditionCorrection(editionId: string, remarks?: string) {
+      return this.quality.createCorrection(editionId, remarks);
     },
   },
 };

@@ -89,10 +89,13 @@ import {
   BROADSHEET_RATE_CARDS,
   PAGE_PLACEMENT_MULTIPLIERS,
   SUPPORTED_ASPECT_RATIOS,
+  ALL_SUPPORTED_SLOTS,
+  AD_LIFECYCLE_STATES,
 } from './monetization/epaperAds.js';
 import { QualityPreflightScanner, SEVERITY } from './epaper/preflightScanner.js';
 import { defaultCloudStorageService } from './storage/cloudStorageService.js';
 import { HighResExportEngine, BROADSHEET_CONSTANTS } from './epaper/exportEngine.js';
+import { EpaperAiNewsroomEngine } from './epaper/aiNewsroomEngine.js';
 
 // Initialize the active persistence adapter
 export let adapter = getPersistenceAdapter();
@@ -100,6 +103,29 @@ export let adapter = getPersistenceAdapter();
 export function setApiEngineAdapter(newAdapter) {
   if (newAdapter) {
     adapter = newAdapter;
+    try {
+      if (typeof providerRegistry !== 'undefined' && providerRegistry) providerRegistry.adapter = newAdapter;
+      if (typeof rssManager !== 'undefined' && rssManager) rssManager.adapter = newAdapter;
+      if (typeof socialPublisher !== 'undefined' && socialPublisher) socialPublisher.adapter = newAdapter;
+      if (typeof whatsappManager !== 'undefined' && whatsappManager) whatsappManager.adapter = newAdapter;
+      if (typeof youtubeManager !== 'undefined' && youtubeManager) youtubeManager.adapter = newAdapter;
+
+      if (typeof paymentGatewayManager !== 'undefined' && paymentGatewayManager) paymentGatewayManager.adapter = newAdapter;
+      if (typeof subscriptionManager !== 'undefined' && subscriptionManager) subscriptionManager.adapter = newAdapter;
+      if (typeof adManager !== 'undefined' && adManager) adManager.adapter = newAdapter;
+      if (typeof sponsoredContentManager !== 'undefined' && sponsoredContentManager) sponsoredContentManager.adapter = newAdapter;
+      if (typeof crmManager !== 'undefined' && crmManager) crmManager.adapter = newAdapter;
+      if (typeof billingManager !== 'undefined' && billingManager) billingManager.adapter = newAdapter;
+
+      if (typeof preferenceManager !== 'undefined' && preferenceManager) preferenceManager.adapter = newAdapter;
+      if (typeof engagementManager !== 'undefined' && engagementManager) engagementManager.adapter = newAdapter;
+      if (typeof recommendationEngine !== 'undefined' && recommendationEngine) recommendationEngine.adapter = newAdapter;
+      if (typeof commentManager !== 'undefined' && commentManager) commentManager.adapter = newAdapter;
+      if (typeof notificationManager !== 'undefined' && notificationManager) notificationManager.adapter = newAdapter;
+      if (typeof audienceAnalyticsEngine !== 'undefined' && audienceAnalyticsEngine) audienceAnalyticsEngine.adapter = newAdapter;
+    } catch {
+      // safe fallback
+    }
   }
 }
 
@@ -195,11 +221,14 @@ export function sendError(res, statusCode, code, message, details = null, custom
     statusCode,
     {
       success: false,
+      code,
+      message,
       error: {
         code,
         message,
         ...(details ? { details } : {}),
       },
+      ...(details ? { details } : {}),
     },
     customHeaders
   );
@@ -1017,14 +1046,16 @@ export async function handleApiRequest(req, res) {
     if (!u) return false;
     if (isMasterAdminEmail(u.identifier || u.email)) return true;
     const roles = normalizeEpaperRoles(u);
-    return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CHIEF_EDITOR', 'MANAGING_EDITOR', 'EDITOR'].includes(r));
+    // Canonical approved roles ONLY: READER, REPORTER, EDITOR, ADMIN, MASTER_ADMIN, SUPER_ADMIN (DEC-048)
+    return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'EDITOR'].includes(r));
   };
 
   const isChiefEditorOrMasterAdmin = (u) => {
     if (!u) return false;
     if (isMasterAdminEmail(u.identifier || u.email)) return true;
     const roles = normalizeEpaperRoles(u);
-    return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'CHIEF_EDITOR'].includes(r));
+    // Canonical approved roles ONLY (DEC-048)
+    return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN'].includes(r));
   };
 
   const isEpaperAdmin = (u) => {
@@ -1034,24 +1065,242 @@ export async function handleApiRequest(req, res) {
     return roles.some((r) => ['MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN'].includes(r));
   };
 
+  // Public E-Paper Sanitization Helpers (Step 11)
+  const sanitizePublicEdition = (ed) => {
+    if (!ed) return null;
+    return {
+      id: ed.id,
+      title: ed.title || 'दैनिक ई-पेपर',
+      publicationDate: ed.publicationDate || ed.createdAt?.split('T')[0] || '',
+      editionType: ed.editionType || 'DAILY',
+      editionCode: ed.editionCode || '',
+      districtId: ed.districtId || 'dist-bhopal',
+      districtName: ed.districtName || 'मध्य प्रदेश',
+      divisionId: ed.divisionId || '',
+      divisionName: ed.divisionName || '',
+      totalPages: (ed.editionType === 'DAILY' || !ed.editionType) ? 12 : (ed.totalPages || 4),
+      pdfUrl: ed.pdfUrl || `/api/v1/epaper/editions/${ed.id}/export/pdf`,
+      coverImageUrl: ed.coverImageUrl || `/api/v1/epaper/editions/${ed.id}/pages/1/export/png`,
+      status: 'PUBLISHED',
+      version: ed.version || 1,
+      versionTag: ed.versionTag || `v${ed.version || 1}.0.0`,
+      publishedAt: ed.publishedAt || ed.createdAt || '',
+      publishedBy: ed.publishedBy || 'संपादक',
+    };
+  };
+
+  const sanitizePublicPages = (pages) => {
+    if (!Array.isArray(pages)) return [];
+    return pages.map((p) => {
+      const sanitizedElements = Array.isArray(p.elements)
+        ? p.elements.map((el) => {
+            const clean = { ...el };
+            for (const k of Object.keys(clean)) {
+              if (/(reporter.*phone|reporter.*email|reporter.*contact|internal|private|secret|notes|billing|adrate|adprice|reviewcomment)/i.test(k)) {
+                delete clean[k];
+              }
+            }
+            return clean;
+          })
+        : [];
+      return {
+        id: p.id,
+        editionId: p.editionId,
+        pageNumber: p.pageNumber,
+        pageTitle: p.pageTitle,
+        sectionType: p.sectionType,
+        gridColumns: p.gridColumns || 8,
+        elements: sanitizedElements,
+        version: p.version || 1,
+        width: p.width,
+        height: p.height,
+        templateId: p.templateId,
+      };
+    });
+  };
+
   // Route Regex Matchers (Ordered by specificity)
   const epaperCheckArticleMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/check-article\/([^/]+)$/);
+  const epaperQualityCheckMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/quality-check$/);
+  const epaperGrantExceptionMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/quality\/grant-exception$/);
+  const epaperApproveMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/approve$/);
+  const epaperScheduleMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/schedule$/);
+  const epaperCorrectionMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/correction$/);
   const epaperPreflightMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/preflight$/);
   const epaperPublishMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/publish$/);
   const epaperVersionsMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/versions$/);
   const epaperExportPdfMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/export\/pdf$/);
-  const epaperExportPageImageMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/export\/page\/(\d+)\/image$/);
+  const epaperExportPageImageMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/(?:export\/page\/(\d+)\/image|pages\/(\d+)\/export\/png)$/);
   const epaperExportMetadataMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/export\/metadata$/);
   const epaperArchiveMatch = (pathname === '/api/v1/epaper/archive');
+  const epaperEligibleArticlesMatch = (pathname === '/api/v1/epaper/eligible-articles');
+  const epaperArticleWorkflowMatch = pathname.match(/^\/api\/v1\/epaper\/articles\/([^/]+)\/workflow-status$/);
+  const epaperAssignArticlesMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/assign-articles$/);
+  const epaperRemoveArticleMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/pages\/(\d+)\/articles\/([^/]+)$/);
+  const epaperStaffCreditsMatch = (pathname === '/api/v1/epaper/staff-credits');
   const epaperEditionPagesMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/pages$/);
   const epaperEditionStatusMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/status$/);
   const epaperEditionViewDownloadMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)\/(view|download)$/);
   const epaperEditionIdMatch = pathname.match(/^\/api\/v1\/epaper\/editions\/([^/]+)$/);
   const epaperPageIdMatch = pathname.match(/^\/api\/v1\/epaper\/pages\/([^/]+)$/);
   const epaperTemplateIdMatch = pathname.match(/^\/api\/v1\/epaper\/templates\/([^/]+)$/);
-  const epaperAdReviewMatch = pathname.match(/^\/api\/v1\/epaper\/ads\/submissions\/([^/]+)\/review$/);
-  const epaperAdSubmissionIdMatch = pathname.match(/^\/api\/v1\/epaper\/ads\/submissions\/([^/]+)$/);
+  const epaperTemplateActionMatch = pathname.match(/^\/api\/v1\/epaper\/templates\/([^/]+)\/(duplicate|publish|archive|restore|rollback|versions|usage)$/);
+  const epaperAdReportsMatch = (pathname === '/api/v1/epaper/ads/reports/summary' || pathname === '/api/v1/epaper/ads/reports');
+  const epaperAdSlotsAvailableMatch = (pathname === '/api/v1/epaper/ads/slots/available');
+  const epaperAdAiStudioMatch = (pathname === '/api/v1/epaper/ads/ai-studio/generate');
+  const epaperAdStatusMatch = pathname.match(/^\/api\/v1\/epaper\/ads(?:\/submissions)?\/([^/]+)\/status$/);
+  const epaperAdAssignSlotMatch = pathname.match(/^\/api\/v1\/epaper\/ads(?:\/submissions)?\/([^/]+)\/assign-slot$/);
+  const epaperAdRemoveSlotMatch = pathname.match(/^\/api\/v1\/epaper\/ads(?:\/submissions)?\/([^/]+)\/remove-slot$/);
+  const epaperAdReviewMatch = pathname.match(/^\/api\/v1\/epaper\/ads(?:\/submissions)?\/([^/]+)\/review$/);
+  const epaperAdIdMatch = pathname.match(/^\/api\/v1\/epaper\/ads(?:\/submissions)?\/([^/]+)$/);
   const epaperWhatsappQuotaReporterMatch = pathname.match(/^\/api\/v1\/epaper\/whatsapp\/quota\/([^/]+)$/);
+  const epaperWhatsappEditionIdMatch = pathname.match(/^\/api\/v1\/epaper\/whatsapp\/edition\/([^/]+)$/);
+  const epaperReporterWorkspaceMatch = (pathname === '/api/v1/epaper/reporter/workspace');
+  const epaperReporterContributionsMatch = (pathname === '/api/v1/epaper/reporter/contributions');
+  const epaperReporterPublishedMatch = (pathname === '/api/v1/epaper/reporter/published');
+  const epaperReporterProfileMatch = (pathname === '/api/v1/epaper/reporter/profile');
+  const epaperReporterAdsMatch = (pathname === '/api/v1/epaper/reporter/ads');
+  const epaperReporterActivityMatch = (pathname === '/api/v1/epaper/reporter/activity');
+
+  // 1a. Eligible Articles Query (News Selection Desk)
+  if (epaperEligibleArticlesMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    try {
+      const filters = {
+        search: query.get('search') || undefined,
+        districtId: query.get('districtId') || query.get('district') || undefined,
+        constituency: query.get('constituency') || undefined,
+        categoryId: query.get('categoryId') || query.get('category') || undefined,
+        reporterId: query.get('reporterId') || query.get('reporter') || undefined,
+        date: query.get('date') || undefined,
+        dateFrom: query.get('dateFrom') || undefined,
+        dateTo: query.get('dateTo') || undefined,
+        priority: query.get('priority') || undefined,
+        approvalStatus: query.get('approvalStatus') || query.get('status') || undefined,
+        hasImage: query.get('hasImage') !== null ? query.get('hasImage') : undefined,
+        length: query.get('length') || undefined,
+        sort: query.get('sort') || 'latest',
+        page: Math.max(1, parseInt(query.get('page') || '1', 10)),
+        limit: Math.min(100, Math.max(1, parseInt(query.get('limit') || '20', 10))),
+      };
+      const result = await adapter.getEligibleEpaperArticles(filters);
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_GET_ELIGIBLE_ARTICLES', err.message);
+    }
+  }
+
+  // 1b. Editorial Staff Credits List
+  if (epaperStaffCreditsMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    try {
+      const staffList = await adapter.getEditorialStaffCredits(user);
+      return sendSuccess(res, staffList);
+    } catch (err) {
+      return sendError(res, 500, 'ERR_STAFF_CREDITS', err.message);
+    }
+  }
+
+  // 1c. Article E-Paper Workflow Status Transition
+  if (epaperArticleWorkflowMatch && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    const articleId = epaperArticleWorkflowMatch[1];
+    const body = await parseRequestBody(req);
+    const targetStatus = body.targetStatus || body.status;
+    if (!targetStatus) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'लक्ष्य स्थिति (targetStatus) अनिवार्य है।');
+    }
+    try {
+      const result = await adapter.updateArticleWorkflowStatus(articleId, targetStatus, user, body);
+      adapter.addAuditLog(
+        user?.fullName || 'संपादक',
+        'EDITOR',
+        'EPAPER_WORKFLOW_CHANGED',
+        `ई-पेपर कार्यप्रवाह अद्यतन: [${articleId}] -> ${result.currentStatus}`,
+        req
+      );
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_WORKFLOW_UPDATE', err.message);
+    }
+  }
+
+  // 1d. Assign Articles to Edition Page (Bulk & Single)
+  if (epaperAssignArticlesMatch && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    const editionId = epaperAssignArticlesMatch[1];
+    const body = await parseRequestBody(req);
+    const pageNumber = body.pageNumber !== undefined ? body.pageNumber : body.page;
+    const articleIds = body.articleIds || (body.articleId ? [body.articleId] : []);
+
+    if (pageNumber === undefined || pageNumber === null) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'पृष्ठ संख्या (pageNumber) अनिवार्य है।');
+    }
+    if (!Array.isArray(articleIds) || articleIds.length === 0) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'कम से कम एक समाचार ID (articleIds) आवश्यक है।');
+    }
+
+    try {
+      const result = await adapter.assignArticlesToEditionPage(editionId, pageNumber, articleIds, user, body);
+      adapter.addAuditLog(
+        user?.fullName || 'संपादक',
+        'EDITOR',
+        'EPAPER_ARTICLES_ASSIGNED',
+        `ई-पेपर पृष्ठ ${pageNumber} पर ${result.assignedCount} समाचार असाइन किए गए (${result.edition?.title || editionId})`,
+        req
+      );
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_ASSIGN_ARTICLES', err.message, err.details);
+    }
+  }
+
+  // 1e. Remove Article from Edition Page (Source Article Immutability)
+  if (epaperRemoveArticleMatch && req.method === 'DELETE') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    const editionId = epaperRemoveArticleMatch[1];
+    const pageNum = parseInt(epaperRemoveArticleMatch[2], 10);
+    const articleId = epaperRemoveArticleMatch[3];
+
+    try {
+      const result = await adapter.removeArticleFromEditionPage(editionId, pageNum, articleId, user);
+      adapter.addAuditLog(
+        user?.fullName || 'संपादक',
+        'EDITOR',
+        'EPAPER_ARTICLE_REMOVED',
+        `ई-पेपर पृष्ठ ${pageNum} से समाचार [${articleId}] हटाया गया`,
+        req
+      );
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_REMOVE_ARTICLE', err.message);
+    }
+  }
 
   // 1. Duplicate Article Check (News Selection Desk)
   if (epaperCheckArticleMatch && req.method === 'GET') {
@@ -1071,16 +1320,48 @@ export async function handleApiRequest(req, res) {
     }
   }
 
-  // 2. Get All Pages for an Edition
+  // 2. Get All Pages for an Edition (Snapshot-backed for Public Readers)
   if (epaperEditionPagesMatch && req.method === 'GET') {
     const editionId = epaperEditionPagesMatch[1];
-    const edition = await adapter.getEpaperEditionById(editionId);
-    if (!edition) {
+    const isEditor = isEpaperEditor(user);
+    const requestedVersion = query.get('version') || query.get('versionId') || undefined;
+
+    const existingEdition = await adapter.getEpaperEditionById(editionId);
+    if (!existingEdition) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
     }
-    if (edition.status !== 'PUBLISHED' && !isEpaperEditor(user)) {
-      return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
+
+    // Check published snapshot first for public readers or version-specific queries
+    const publishedSnapshot = await adapter.getPublishedEpaperSnapshot(editionId, requestedVersion);
+
+    if (!isEditor) {
+      if (!publishedSnapshot) {
+        if (requestedVersion) {
+          return sendError(res, 404, 'ERR_NOT_FOUND', 'अनुरोधित संस्करण स्नैपशॉट नहीं मिला।');
+        }
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
+      }
+      const publicPages = sanitizePublicPages(publishedSnapshot.pagesSnapshot || []);
+      return sendSuccess(res, publicPages, {
+        isSnapshot: true,
+        version: publishedSnapshot.versionNumber,
+        versionTag: publishedSnapshot.versionTag,
+        publishedAt: publishedSnapshot.publishedAt,
+      });
     }
+
+    // For Editors requesting a specific snapshot:
+    if (requestedVersion) {
+      if (publishedSnapshot) {
+        return sendSuccess(res, publishedSnapshot.pagesSnapshot || [], {
+          isSnapshot: true,
+          version: publishedSnapshot.versionNumber,
+          versionTag: publishedSnapshot.versionTag,
+        });
+      }
+      return sendError(res, 404, 'ERR_NOT_FOUND', 'अनुरोधित संस्करण स्नैपशॉट नहीं मिला।');
+    }
+
     const pages = await adapter.getEpaperPagesByEditionId(editionId);
     return sendSuccess(res, pages);
   }
@@ -1140,7 +1421,119 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, { recorded: true, timestamp: new Date().toISOString() });
   }
 
-  // 4a. Quality Preflight Evaluation
+  // 4a. STEP 10: Authoritative E-Paper Quality Check Engine
+  if (epaperQualityCheckMatch && (req.method === 'POST' || req.method === 'GET')) {
+    const editionId = epaperQualityCheckMatch[1];
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'गुणवत्ता परीक्षण हेतु संपादकीय अधिकार आवश्यक हैं।');
+    }
+    try {
+      const body = req.method === 'POST' ? await parseRequestBody(req) : {};
+      const report = await adapter.runEpaperQualityCheck(editionId, user, body.skipExportCheck ?? false);
+      return sendSuccess(res, report);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_QUALITY_CHECK', err.message);
+    }
+  }
+
+  // 4b. STEP 10: Grant Editorial Quality Exception
+  if (epaperGrantExceptionMatch && req.method === 'POST') {
+    const editionId = epaperGrantExceptionMatch[1];
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'अपवाद प्रदान करने हेतु संपादकीय अधिकार आवश्यक हैं।');
+    }
+    try {
+      const body = await parseRequestBody(req);
+      const { issueId, reason } = body;
+      const result = await adapter.grantEpaperQualityException(editionId, issueId, reason, user);
+      adapter.addAuditLog(user?.fullName || 'संपादक', 'EDITOR', 'EPAPER_QUALITY_EXCEPTION_GRANTED', `गुणवत्ता अपवाद स्वीकृत: मुद्दा ${issueId} कारण "${reason}" (${editionId})`, req);
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_EXCEPTION_FAILED', err.message);
+    }
+  }
+
+  // 4c. STEP 10: Final Editorial Approval (Human-in-the-Loop Gate)
+  if (epaperApproveMatch && req.method === 'POST') {
+    const editionId = epaperApproveMatch[1];
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (user.isAi || user.role === 'AI') {
+      return sendError(res, 403, 'ERR_AI_CANNOT_APPROVE', 'AI एजेंट को संस्करण अनुमोदित करने की अनुमति नहीं है। केवल अधिकृत मानव संपादक ही अंतिम अनुमोदन दे सकते हैं।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'अंतिम अनुमोदन हेतु संपादकीय अधिकार आवश्यक हैं।');
+    }
+    try {
+      const body = await parseRequestBody(req);
+      const expectedVersion = body.version !== undefined ? Number(body.version) : undefined;
+      const remarks = body.remarks || '';
+      const result = await adapter.approveEpaperEdition(editionId, expectedVersion, user, remarks);
+      adapter.addAuditLog(user?.fullName || 'संपादक', 'EDITOR', 'EPAPER_EDITION_APPROVED', `ई-पेपर अंतिम रूप से स्वीकृत: "${result.edition?.title}" (v${result.edition?.version})`, req);
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendJson(res, err.statusCode || 400, {
+        success: false,
+        code: err.code || 'ERR_APPROVE_FAILED',
+        message: err.message,
+        error: err.message,
+        qualityReport: err.qualityReport,
+      });
+    }
+  }
+
+  // 4d. STEP 10: Schedule E-Paper Publication
+  if (epaperScheduleMatch && req.method === 'POST') {
+    const editionId = epaperScheduleMatch[1];
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (user.isAi || user.role === 'AI') {
+      return sendError(res, 403, 'ERR_AI_CANNOT_SCHEDULE', 'AI एजेंट को संस्करण शेड्यूल करने की अनुमति नहीं है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'शेड्यूलिंग हेतु संपादकीय अधिकार आवश्यक हैं।');
+    }
+    try {
+      const body = await parseRequestBody(req);
+      const expectedVersion = body.version !== undefined ? Number(body.version) : undefined;
+      const scheduledTimeIst = body.scheduledPublishAtIst || body.scheduledTimeIst;
+      const result = await adapter.scheduleEpaperEdition(editionId, scheduledTimeIst, expectedVersion, user);
+      adapter.addAuditLog(user?.fullName || 'संपादक', 'EDITOR', 'EPAPER_EDITION_SCHEDULED', `ई-पेपर शेड्यूलिंग: "${result.edition?.title}" @ ${scheduledTimeIst}`, req);
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_SCHEDULE_FAILED', err.message);
+    }
+  }
+
+  // 4e. STEP 10: Post-Publication Correction Request (New Revision Draft)
+  if (epaperCorrectionMatch && req.method === 'POST') {
+    const editionId = epaperCorrectionMatch[1];
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'प्रकाशन उपरांत सुधार हेतु संपादकीय अधिकार आवश्यक हैं।');
+    }
+    try {
+      const body = await parseRequestBody(req);
+      const remarks = body.remarks || '';
+      const result = await adapter.createEpaperPostPublicationCorrection(editionId, user, remarks);
+      adapter.addAuditLog(user?.fullName || 'संपादक', 'EDITOR', 'EPAPER_POST_PUB_CORRECTION', `ई-पेपर संशोधन आरंभ: "${result.edition?.title}" (v${result.edition?.version})`, req);
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_CORRECTION_FAILED', err.message);
+    }
+  }
+
+  // Legacy Quality Preflight Evaluation
   if (epaperPreflightMatch && (req.method === 'POST' || req.method === 'GET')) {
     const editionId = epaperPreflightMatch[1];
     const edition = await adapter.getEpaperEditionById(editionId);
@@ -1152,10 +1545,13 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, results);
   }
 
-  // 4b. Atomic Publishing Gate (Step 10, F18)
+  // 4f. STEP 10: Atomic Publishing Gate with Multi-Category Quality Assurance
   if (epaperPublishMatch && req.method === 'POST') {
     if (!user) {
       return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (user.isAi || user.role === 'AI') {
+      return sendError(res, 403, 'ERR_AI_CANNOT_PUBLISH', 'AI एजेंट को संस्करण प्रकाशित करने की अनुमति नहीं है। केवल अधिकृत मानव संपादक ही प्रकाशित कर सकते हैं।');
     }
     if (!isEpaperEditor(user)) {
       return sendError(res, 403, 'ERR_FORBIDDEN', 'ERR_FORBIDDEN: Publishing requires Editor/Admin authority.');
@@ -1166,22 +1562,7 @@ export async function handleApiRequest(req, res) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
     }
     const body = await parseRequestBody(req);
-    const expectedVersion = body.version !== undefined ? Number(body.version) : edition.version;
-    if (edition.version !== undefined && expectedVersion !== edition.version) {
-      return sendError(res, 409, 'ERR_CONCURRENCY_CONFLICT', `ERR_OCC_COLLISION: Version conflict. Current: ${edition.version}, Expected: ${expectedVersion}`);
-    }
-
-    const pages = await adapter.getEpaperPagesByEditionId(editionId);
-    const preflight = QualityPreflightScanner.evaluate(edition, pages);
-    if (!preflight.canPublish) {
-      return sendJson(res, 422, {
-        success: false,
-        error: 'ERR_PREFLIGHT_BLOCKER: Publishing blocked due to critical preflight errors.',
-        code: 'ERR_PREFLIGHT_BLOCKER',
-        message: 'Publishing blocked due to critical preflight errors.',
-        diagnostics: preflight,
-      });
-    }
+    const expectedVersion = body.version !== undefined ? Number(body.version) : undefined;
 
     try {
       const result = await adapter.publishEpaperEdition(editionId, expectedVersion, user);
@@ -1191,8 +1572,14 @@ export async function handleApiRequest(req, res) {
         data: result.edition,
         snapshot: result.snapshot,
       });
-    } catch (occErr) {
-      return sendError(res, occErr.statusCode || 409, occErr.code || 'ERR_OCC_COLLISION', occErr.message);
+    } catch (pubErr) {
+      return sendJson(res, pubErr.statusCode || 400, {
+        success: false,
+        code: pubErr.code || 'ERR_PUBLISH_FAILED',
+        message: pubErr.message,
+        error: pubErr.message,
+        qualityReport: pubErr.qualityReport,
+      });
     }
   }
 
@@ -1203,35 +1590,39 @@ export async function handleApiRequest(req, res) {
     if (!edition) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
     }
-    if (edition.status !== 'PUBLISHED' && !isEpaperEditor(user)) {
+    const versions = await adapter.getEpaperEditionVersions(editionId);
+    if (edition.status !== 'PUBLISHED' && (!versions || versions.length === 0) && !isEpaperEditor(user)) {
       return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
     }
-    const versions = await adapter.getEpaperEditionVersions(editionId);
     return sendSuccess(res, versions);
   }
 
   // 4d. 300 DPI High-Resolution PDF Export (Step 12, F21)
   if (epaperExportPdfMatch && (req.method === 'POST' || req.method === 'GET')) {
     const editionId = epaperExportPdfMatch[1];
+    const isEditor = isEpaperEditor(user);
     const edition = await adapter.getEpaperEditionById(editionId);
-    if (!edition) {
+    const snapshot = await adapter.getPublishedEpaperSnapshot(editionId);
+
+    if (!edition && !snapshot) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
     }
-    if (edition.status !== 'PUBLISHED' && !isEpaperEditor(user)) {
+    if ((!edition || edition.status !== 'PUBLISHED') && !snapshot && !isEditor) {
       return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
     }
     const options = req.method === 'POST' ? await parseRequestBody(req) : {};
-    const pages = await adapter.getEpaperPagesByEditionId(editionId);
-    const pdfBuffer = HighResExportEngine.buildPrintReadyPdf(edition, pages, options);
+    const exportEdition = snapshot?.editionSnapshot || edition;
+    const exportPages = snapshot?.pagesSnapshot || (await adapter.getEpaperPagesByEditionId(editionId));
+    const pdfBuffer = HighResExportEngine.buildPrintReadyPdf(exportEdition, exportPages, options);
 
     res.writeHead(200, {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${edition.editionCode || edition.id}.pdf"`,
+      'Content-Disposition': `attachment; filename="${exportEdition.editionCode || exportEdition.id}.pdf"`,
       'X-Content-Type-Options': 'nosniff',
       'X-Epaper-DPI': '300',
       'X-Epaper-Width-Px': '3886',
       'X-Epaper-Height-Px': '6142',
-      'X-Epaper-Pages': String(pages.length),
+      'X-Epaper-Pages': String(exportPages.length),
       'X-Epaper-Print-Ready': 'true',
       'Content-Length': pdfBuffer.length,
     });
@@ -1242,24 +1633,29 @@ export async function handleApiRequest(req, res) {
   // 4e. 300 DPI High-Resolution Single Page Image Export (Step 12, F21)
   if (epaperExportPageImageMatch && (req.method === 'POST' || req.method === 'GET')) {
     const editionId = epaperExportPageImageMatch[1];
-    const pageNum = parseInt(epaperExportPageImageMatch[2], 10);
+    const pageNum = parseInt(epaperExportPageImageMatch[2] || epaperExportPageImageMatch[3] || '1', 10);
+    const isEditor = isEpaperEditor(user);
     const edition = await adapter.getEpaperEditionById(editionId);
-    if (!edition) {
+    const snapshot = await adapter.getPublishedEpaperSnapshot(editionId);
+
+    if (!edition && !snapshot) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
     }
-    if (edition.status !== 'PUBLISHED' && !isEpaperEditor(user)) {
+    if ((!edition || edition.status !== 'PUBLISHED') && !snapshot && !isEditor) {
       return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
     }
-    const page = await adapter.getEpaperPageByNumber(editionId, pageNum);
+    const exportEdition = snapshot?.editionSnapshot || edition;
+    const exportPages = snapshot?.pagesSnapshot || (await adapter.getEpaperPagesByEditionId(editionId));
+    const page = exportPages.find((p) => Number(p.pageNumber) === pageNum) || (await adapter.getEpaperPageByNumber(editionId, pageNum));
     if (!page) {
       return sendError(res, 404, 'ERR_PAGE_NOT_FOUND', `पृष्ठ ${pageNum} नहीं मिला।`);
     }
     const options = req.method === 'POST' ? await parseRequestBody(req) : {};
-    const pngBuffer = HighResExportEngine.generate300DpiPageImage(page, edition, options);
+    const pngBuffer = HighResExportEngine.generate300DpiPageImage(page, exportEdition, options);
 
     res.writeHead(200, {
       'Content-Type': 'image/png',
-      'Content-Disposition': `inline; filename="${edition.editionCode || edition.id}_p${pageNum}.png"`,
+      'Content-Disposition': `inline; filename="${exportEdition.editionCode || exportEdition.id}_p${pageNum}.png"`,
       'X-Content-Type-Options': 'nosniff',
       'X-Epaper-DPI': '300',
       'X-Epaper-Width-Px': '3886',
@@ -1290,20 +1686,40 @@ export async function handleApiRequest(req, res) {
   if (epaperArchiveMatch && req.method === 'GET') {
     const targetDate = query.get('date') || query.get('publicationDate') || undefined;
     const targetDistrict = query.get('districtId') || query.get('district') || undefined;
+    const targetYear = query.get('year') || undefined;
+    const targetMonth = query.get('month') || undefined;
+    const targetEditionType = query.get('editionType') || query.get('type') || undefined;
+    const targetSearch = query.get('search') || query.get('q') || undefined;
+
     const filters = {
       status: 'PUBLISHED',
       publicationDate: targetDate,
       districtId: targetDistrict !== 'all' ? targetDistrict : undefined,
+      year: targetYear !== 'all' ? targetYear : undefined,
+      month: targetMonth !== 'all' ? targetMonth : undefined,
+      editionType: targetEditionType !== 'all' ? targetEditionType : undefined,
+      search: targetSearch,
       page: Math.max(1, parseInt(query.get('page') || '1', 10)),
-      limit: Math.min(100, Math.max(1, parseInt(query.get('limit') || '50', 10))),
+      limit: Math.min(100, Math.max(1, parseInt(query.get('limit') || '24', 10))),
     };
     const result = await adapter.getEpaperEditions(filters);
     const list = result.editions || result.items || [];
+    const sanitizedList = list.map(sanitizePublicEdition);
+
+    const payload = {
+      items: sanitizedList,
+      editions: sanitizedList,
+      count: sanitizedList.length,
+      total: result.total !== undefined ? result.total : sanitizedList.length,
+      page: result.page || filters.page || 1,
+      limit: result.limit || filters.limit || 24,
+      totalPages: result.totalPages || Math.ceil((result.total || sanitizedList.length) / (result.limit || filters.limit || 24)) || 1,
+    };
+
     return sendJson(res, 200, {
       success: true,
-      data: list,
-      count: list.length,
-      total: result.total || list.length,
+      data: payload,
+      ...payload,
       meta: {
         timestamp: new Date().toISOString(),
       },
@@ -1347,7 +1763,17 @@ export async function handleApiRequest(req, res) {
         return sendError(res, 400, 'ERR_INVALID_OPERATION', 'नया ई-पेपर संस्करण सीधे "PUBLISHED" स्थिति में निर्मित नहीं किया जा सकता। सभी नए संस्करण "DRAFT" स्थिति में प्रारंभ होने चाहिए।');
       }
     }
-    const creationPayload = { ...body, status: 'DRAFT' };
+
+    // Backend Invariant: Daily Edition must always contain exactly 12 pages; Special Editions have independent configurable page counts (1-48)
+    const rawType = body.editionType ? String(body.editionType).trim().toUpperCase() : 'DAILY';
+    const editionType = rawType === 'SPECIAL' ? 'SPECIAL' : 'DAILY';
+    let totalPages = 12;
+    if (editionType === 'SPECIAL') {
+      const parsedPages = parseInt(body.totalPages, 10);
+      totalPages = Number.isInteger(parsedPages) ? Math.min(48, Math.max(1, parsedPages)) : 4;
+    }
+
+    const creationPayload = { ...body, editionType, totalPages, status: 'DRAFT' };
     const result = await adapter.createEpaperEditionWithPages(creationPayload, user);
     if (result?.error) {
       return sendError(res, result.statusCode || 400, result.code, result.message);
@@ -1356,16 +1782,46 @@ export async function handleApiRequest(req, res) {
     return sendJson(res, 201, { success: true, data: result, meta: { timestamp: new Date().toISOString() } });
   }
 
-  // 7. Get Single Edition
+  // 7. Get Single Edition (Snapshot-backed for Public Readers)
   if (epaperEditionIdMatch && req.method === 'GET') {
     const editionId = epaperEditionIdMatch[1];
+    const isEditor = isEpaperEditor(user);
+    const requestedVersion = query.get('version') || query.get('versionId') || undefined;
+
     const edition = await adapter.getEpaperEditionById(editionId);
     if (!edition) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर संस्करण नहीं मिला।');
     }
-    if (edition.status !== 'PUBLISHED' && !isEpaperEditor(user)) {
-      return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
+
+    if (!isEditor) {
+      const publishedSnapshot = await adapter.getPublishedEpaperSnapshot(editionId, requestedVersion);
+      if (!publishedSnapshot) {
+        if (requestedVersion) {
+          return sendError(res, 404, 'ERR_NOT_FOUND', 'अनुरोधित संस्करण स्नैपशॉट नहीं मिला।');
+        }
+        return sendError(res, 403, 'ERR_FORBIDDEN', 'यह संस्करण अभी प्रकाशित नहीं हुआ है।');
+      }
+      const sanitized = sanitizePublicEdition(publishedSnapshot.editionSnapshot);
+      return sendSuccess(res, sanitized, {
+        isSnapshot: true,
+        version: publishedSnapshot.versionNumber,
+        versionTag: publishedSnapshot.versionTag,
+        publishedAt: publishedSnapshot.publishedAt,
+      });
     }
+
+    if (requestedVersion) {
+      const snapshot = await adapter.getPublishedEpaperSnapshot(editionId, requestedVersion);
+      if (snapshot) {
+        return sendSuccess(res, snapshot.editionSnapshot, {
+          isSnapshot: true,
+          version: snapshot.versionNumber,
+          versionTag: snapshot.versionTag,
+        });
+      }
+      return sendError(res, 404, 'ERR_NOT_FOUND', 'अनुरोधित संस्करण स्नैपशॉट नहीं मिला।');
+    }
+
     return sendSuccess(res, edition);
   }
 
@@ -1399,6 +1855,20 @@ export async function handleApiRequest(req, res) {
       }
       body.status = normStatus;
     }
+
+    // Invariant: Enforce page count rules on update (Daily = 12 pages strictly; Special = 1-48 pages independently)
+    const effectiveType = (body.editionType ? String(body.editionType).trim().toUpperCase() : (existing.editionType || 'DAILY')).toUpperCase();
+    if (effectiveType === 'DAILY') {
+      body.editionType = 'DAILY';
+      body.totalPages = 12; // Invariant: Daily Edition must strictly remain 12 pages
+    } else if (effectiveType === 'SPECIAL') {
+      body.editionType = 'SPECIAL';
+      if (body.totalPages !== undefined) {
+        const parsedPages = parseInt(body.totalPages, 10);
+        body.totalPages = Number.isInteger(parsedPages) ? Math.min(48, Math.max(1, parsedPages)) : (existing.totalPages || 4);
+      }
+    }
+
     const expectedVersion = Number(body.version !== undefined ? body.version : body.expectedVersion);
     if (existing.version !== undefined && (Number.isNaN(expectedVersion) || expectedVersion !== existing.version)) {
       return sendError(res, 409, 'ERR_CONCURRENCY_CONFLICT', `संस्करण विरोध (OCC Conflict): वर्तमान संस्करण ${existing.version} है, प्राप्त संस्करण ${expectedVersion} है।`, {
@@ -1463,6 +1933,10 @@ export async function handleApiRequest(req, res) {
     if (!existingPage) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'ई-पेपर पृष्ठ नहीं मिला।');
     }
+    const parentEdition = await adapter.getEpaperEditionById(existingPage.editionId);
+    if (parentEdition && parentEdition.status === 'PUBLISHED') {
+      return sendError(res, 400, 'ERR_EDITION_ALREADY_PUBLISHED', 'प्रकाशित संस्करण का लेआउट संशोधित नहीं किया जा सकता।');
+    }
     const body = await parseRequestBody(req);
     // Auto-stamp mandatory ASCI 'विज्ञापन' badge on all AD elements
     if (Array.isArray(body.elements)) {
@@ -1496,7 +1970,10 @@ export async function handleApiRequest(req, res) {
   if (pathname === '/api/v1/epaper/templates' && req.method === 'GET') {
     const templates = await adapter.getEpaperTemplates({
       category: query.get('category') || undefined,
+      status: query.get('status') || undefined,
       search: query.get('search') || undefined,
+      gridColumns: query.get('gridColumns') || undefined,
+      isSystem: query.get('isSystem') || undefined,
     });
     return sendSuccess(res, templates);
   }
@@ -1516,7 +1993,20 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, analysis);
   }
 
-  // 12b. Save Custom Template (with Duplicate Name Check)
+  // 12b. Template Preflight Validation Engine
+  if (pathname === '/api/v1/epaper/templates/validate' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    const body = await parseRequestBody(req);
+    const result = await adapter.validateEpaperTemplate(body);
+    return sendSuccess(res, result);
+  }
+
+  // 12c. Save Custom Template (with Validation and Duplicate Name Check)
   if (pathname === '/api/v1/epaper/templates' && req.method === 'POST') {
     if (!user) {
       return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
@@ -1530,9 +2020,83 @@ export async function handleApiRequest(req, res) {
     }
     const saved = await adapter.saveEpaperTemplate(body, user, { throwOnError: false });
     if (saved?.error) {
-      return sendError(res, saved.statusCode || 400, saved.code || 'ERR_VALIDATION', saved.message);
+      return sendError(res, saved.statusCode || 400, saved.code || 'ERR_VALIDATION', saved.message, saved.details);
     }
     return sendJson(res, 201, { success: true, data: saved, meta: { timestamp: new Date().toISOString() } });
+  }
+
+  // 12d. Template Lifecycle Actions (Duplicate, Publish, Archive, Restore, Rollback, Versions, Usage)
+  if (epaperTemplateActionMatch) {
+    const tplId = epaperTemplateActionMatch[1];
+    const action = epaperTemplateActionMatch[2];
+
+    if (action === 'versions' && req.method === 'GET') {
+      const history = await adapter.getTemplateVersionHistory(tplId);
+      return sendSuccess(res, history);
+    }
+
+    if (action === 'usage' && req.method === 'GET') {
+      const usage = await adapter.getTemplateUsage(tplId);
+      return sendSuccess(res, usage);
+    }
+
+    // Mutating actions require authenticated editor/admin
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+
+    if (action === 'duplicate' && req.method === 'POST') {
+      const body = await parseRequestBody(req);
+      try {
+        const cloned = await adapter.duplicateEpaperTemplate(tplId, body.name || body.newName, user);
+        return sendJson(res, 201, { success: true, data: cloned });
+      } catch (err) {
+        return sendError(res, err.statusCode || 400, err.code || 'ERR_DUPLICATE_FAILED', err.message);
+      }
+    }
+
+    if (action === 'publish' && req.method === 'POST') {
+      try {
+        const pub = await adapter.publishEpaperTemplate(tplId, user);
+        return sendSuccess(res, pub);
+      } catch (err) {
+        return sendError(res, err.statusCode || 400, err.code || 'ERR_PUBLISH_FAILED', err.message, err.details);
+      }
+    }
+
+    if (action === 'archive' && req.method === 'POST') {
+      try {
+        const arch = await adapter.archiveEpaperTemplate(tplId, user);
+        return sendSuccess(res, arch);
+      } catch (err) {
+        return sendError(res, err.statusCode || 400, err.code || 'ERR_ARCHIVE_FAILED', err.message);
+      }
+    }
+
+    if (action === 'restore' && req.method === 'POST') {
+      try {
+        const rest = await adapter.restoreEpaperTemplate(tplId, user);
+        return sendSuccess(res, rest);
+      } catch (err) {
+        return sendError(res, err.statusCode || 400, err.code || 'ERR_RESTORE_FAILED', err.message);
+      }
+    }
+
+    if (action === 'rollback' && req.method === 'POST') {
+      const body = await parseRequestBody(req);
+      if (!body.targetVersion) {
+        return sendError(res, 400, 'ERR_VALIDATION', 'लक्षित संस्करण संख्या (targetVersion) अनिवार्य है।');
+      }
+      try {
+        const rolled = await adapter.rollbackEpaperTemplate(tplId, body.targetVersion, user);
+        return sendSuccess(res, rolled);
+      } catch (err) {
+        return sendError(res, err.statusCode || 400, err.code || 'ERR_ROLLBACK_FAILED', err.message);
+      }
+    }
   }
 
   if (epaperTemplateIdMatch && req.method === 'GET') {
@@ -1555,7 +2119,7 @@ export async function handleApiRequest(req, res) {
     const body = await parseRequestBody(req);
     const saved = await adapter.saveEpaperTemplate({ ...body, id: tplId }, user, { throwOnError: false });
     if (saved?.error) {
-      return sendError(res, saved.statusCode || 400, saved.code || 'ERR_VALIDATION', saved.message);
+      return sendError(res, saved.statusCode || 400, saved.code || 'ERR_VALIDATION', saved.message, saved.details);
     }
     return sendSuccess(res, saved);
   }
@@ -1578,16 +2142,18 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, { deleted: true, id: tplId });
   }
 
-  // 12c. Broadsheet Ad Rate Cards
+  // 12c. Broadsheet Ad Rate Cards & Configurations
   if (pathname === '/api/v1/epaper/ads/rate-cards' && req.method === 'GET') {
     return sendSuccess(res, {
       rateCards: BROADSHEET_RATE_CARDS,
       pageMultipliers: PAGE_PLACEMENT_MULTIPLIERS,
       supportedAspectRatios: SUPPORTED_ASPECT_RATIOS,
+      supportedSlots: ALL_SUPPORTED_SLOTS,
+      lifecycleStates: AD_LIFECYCLE_STATES,
     });
   }
 
-  // 12d. AI Classified Devanagari Copywriter
+  // 12d. AI Classified Devanagari Copywriter (Legacy)
   if (pathname === '/api/v1/epaper/ads/generate-copy' && req.method === 'POST') {
     if (!user) {
       return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
@@ -1601,7 +2167,60 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, copy);
   }
 
-  // 12e. Classified Ad Review (Approve / Reject)
+  // 12e. AI Ad Studio Creative Generation (Step 6)
+  if (epaperAdAiStudioMatch && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      const creatives = BroadsheetAdManager.generateAiAdStudioCreatives(body);
+      return sendSuccess(res, creatives);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_AI_STUDIO_FAILED', err.message);
+    }
+  }
+
+  // 12f. Ad Reporting Summary & Analytics (Step 6)
+  if (epaperAdReportsMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    try {
+      const summary = await adapter.getAdReportingSummary({
+        districtId: query.get('districtId') || undefined,
+        editionId: query.get('editionId') || undefined,
+        startDate: query.get('startDate') || undefined,
+        endDate: query.get('endDate') || undefined,
+      });
+      return sendSuccess(res, summary);
+    } catch (err) {
+      return sendError(res, 500, 'ERR_REPORT_FAILED', err.message);
+    }
+  }
+
+  // 12g. Available Ad Slots on Edition Page (Step 6)
+  if (epaperAdSlotsAvailableMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const editionId = query.get('editionId');
+    const pageNumber = parseInt(query.get('pageNumber') || '1', 10);
+    if (!editionId) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'editionId अनिवार्य है।');
+    }
+    try {
+      const slots = await adapter.getAvailableAdSlots(editionId, pageNumber);
+      return sendSuccess(res, slots);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_SLOTS_FAILED', err.message);
+    }
+  }
+
+  // 12h. Classified / Broadsheet Ad Review (Approve / Reject)
   if (epaperAdReviewMatch && (req.method === 'PATCH' || req.method === 'POST')) {
     if (!user) {
       return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
@@ -1622,7 +2241,120 @@ export async function handleApiRequest(req, res) {
     }
   }
 
-  // 12f. Reporter Classified Ad Submission (POST /submissions and alias POST /ads)
+  // 12i. Ad Lifecycle State Machine Transition (Step 6)
+  if (epaperAdStatusMatch && (req.method === 'PATCH' || req.method === 'POST')) {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const adId = epaperAdStatusMatch[1];
+    const body = await parseRequestBody(req);
+    if (!body.status) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'स्थिति (status) अनिवार्य है।');
+    }
+    try {
+      const updated = await adapter.updateAdLifecycleStatus(adId, body.status, user, body.notes || '');
+      return sendSuccess(res, updated);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_STATUS_TRANSITION_FAILED', err.message);
+    }
+  }
+
+  // 12j. Assign Ad to Edition Page Slot (Step 6)
+  if (epaperAdAssignSlotMatch && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    const adId = epaperAdAssignSlotMatch[1];
+    const body = await parseRequestBody(req);
+    if (!body.editionId || !body.pageNumber) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'editionId और pageNumber अनिवार्य हैं।');
+    }
+    try {
+      const assigned = await adapter.assignAdToEditionSlot(adId, body.editionId, body.pageNumber, body.slotDetails || {}, user);
+      return sendSuccess(res, assigned);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_SLOT_ASSIGNMENT_FAILED', err.message);
+    }
+  }
+
+  // 12k. Remove Ad from Edition Page Slot (Step 6)
+  if (epaperAdRemoveSlotMatch && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditor(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संपादकीय अधिकार अनिवार्य हैं।');
+    }
+    const adId = epaperAdRemoveSlotMatch[1];
+    const body = await parseRequestBody(req);
+    if (!body.editionId || !body.pageNumber) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'editionId और pageNumber अनिवार्य हैं।');
+    }
+    try {
+      const removed = await adapter.removeAdFromEditionSlot(adId, body.editionId, body.pageNumber, user);
+      return sendSuccess(res, removed);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_SLOT_REMOVAL_FAILED', err.message);
+    }
+  }
+
+  // 12l. Get Single Ad Details (GET /api/v1/epaper/ads/:id or /submissions/:id)
+  if (epaperAdIdMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const adId = epaperAdIdMatch[1];
+    try {
+      const ad = await adapter.getEpaperAdById(adId);
+      if (!ad) {
+        return sendError(res, 404, 'ERR_NOT_FOUND', 'विज्ञापन नहीं मिला।');
+      }
+      // Reporter isolation check: if not editor/admin, ensure user is author or assigned reporter
+      if (!isEpaperEditor(user)) {
+        const uId = user.id || user.uid;
+        if (ad.reporterId !== uId && ad.assignedReporterId !== uId && ad.submittedBy !== uId) {
+          return sendError(res, 403, 'ERR_FORBIDDEN', 'इस विज्ञापन को देखने का अधिकार नहीं है।');
+        }
+      }
+      return sendSuccess(res, ad);
+    } catch (err) {
+      return sendError(res, 500, 'ERR_INTERNAL', err.message);
+    }
+  }
+
+  // 12m. Update Ad Details (PUT /api/v1/epaper/ads/:id or /submissions/:id)
+  if (epaperAdIdMatch && req.method === 'PUT') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const adId = epaperAdIdMatch[1];
+    const body = await parseRequestBody(req);
+    try {
+      const existing = await adapter.getEpaperAdById(adId);
+      if (!existing) {
+        return sendError(res, 404, 'ERR_NOT_FOUND', 'विज्ञापन नहीं मिला।');
+      }
+      // Reporter isolation: if not editor, check ownership and status
+      if (!isEpaperEditor(user)) {
+        const uId = user.id || user.uid;
+        if (existing.reporterId !== uId && existing.assignedReporterId !== uId && existing.submittedBy !== uId) {
+          return sendError(res, 403, 'ERR_FORBIDDEN', 'अन्य संवाददाता के विज्ञापन को संपादित करने का अधिकार नहीं है।');
+        }
+        if (existing.status !== 'DRAFT' && existing.status !== 'REJECTED') {
+          return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल DRAFT या REJECTED स्थिति वाले विज्ञापन ही संपादित किए जा सकते हैं।');
+        }
+      }
+      const updated = await adapter.saveEpaperAdSubmission({ ...body, id: adId }, user);
+      return sendSuccess(res, updated);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_UPDATE_FAILED', err.message);
+    }
+  }
+
+  // 12n. Create Ad Submission (POST /submissions and alias POST /ads)
   if ((pathname === '/api/v1/epaper/ads/submissions' || pathname === '/api/v1/epaper/ads') && req.method === 'POST') {
     if (!user) {
       return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
@@ -1633,20 +2365,27 @@ export async function handleApiRequest(req, res) {
       const newAd = await adapter.saveEpaperAdSubmission(body, user);
       return sendJson(res, 201, { success: true, data: newAd, meta: { timestamp: new Date().toISOString() } });
     } catch (valErr) {
-      return sendError(res, valErr.statusCode || 400, 'ERR_MISSING_AD_CONTACT_INFO', valErr.message);
+      return sendError(res, valErr.statusCode || 400, valErr.code || 'ERR_MISSING_AD_CONTACT_INFO', valErr.message);
     }
   }
 
-  // 12g. List Classified Ad Submissions
+  // 12o. List Classified / Broadsheet Ad Submissions
   if ((pathname === '/api/v1/epaper/ads/submissions' || pathname === '/api/v1/epaper/ads') && req.method === 'GET') {
     if (!user) {
       return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
     }
+    const isEditor = isEpaperEditor(user);
+    const uId = user.id || user.uid;
     const submissions = await adapter.getEpaperAdSubmissions({
       status: query.get('status') || undefined,
       districtId: query.get('districtId') || undefined,
-      reporterId: query.get('reporterId') || undefined,
+      reporterId: isEditor ? (query.get('reporterId') || undefined) : uId,
+      assignedReporterId: query.get('assignedReporterId') || undefined,
       slotType: query.get('slotType') || undefined,
+      category: query.get('category') || undefined,
+      editionId: query.get('editionId') || undefined,
+      search: query.get('search') || undefined,
+      sponsoredOnly: query.get('sponsoredOnly') === 'true',
     });
     return sendSuccess(res, submissions);
   }
@@ -1674,16 +2413,42 @@ export async function handleApiRequest(req, res) {
     let districtName = body.districtName;
 
     // Auto-resolve article from adapter if articleId is provided
-    if (body.articleId && (!headline || !bodyText || !imageUrl || !districtName)) {
+    if (body.articleId) {
       try {
         const article = await adapter.getArticleByIdOrSlug(body.articleId);
-        if (article) {
-          headline = headline || article.title;
-          bodyText = bodyText || article.summary || article.content;
-          imageUrl = imageUrl || article.featuredImage || article.imageUrl;
-          districtName = districtName || article.districtName || article.district;
+        if (!article) {
+          return sendError(res, 400, 'ERR_ARTICLE_NOT_FOUND', 'चयनित समाचार नहीं मिला।');
         }
+        const artStatus = String(article.status || '').toUpperCase();
+        const epStatus = String(article.epaperWorkflow?.status || '').toUpperCase();
+        const validStatuses = ['APPROVED_FOR_EPAPER', 'ASSIGNED_TO_PAGE', 'PAGE_DESIGNED', 'QUALITY_CHECK', 'FINAL_APPROVED'];
+        const isEligible = artStatus === 'APPROVED' || artStatus === 'PUBLISHED' || validStatuses.includes(epStatus);
+        if (!isEligible || ['REJECTED', 'DRAFT', 'PENDING'].includes(artStatus)) {
+          return sendError(res, 400, 'ERR_ARTICLE_NOT_ELIGIBLE', 'अस्वीकृत अथवा अप्रकाशित समाचार से कार्ड निर्माण निषिद्ध है।');
+        }
+
+        // Check ownership if reporter and not staff
+        const isStaff = isAdminUser(user) || isMasterAdminUser(user);
+        if (!isStaff) {
+          const currentUserId = user.id || '';
+          const currentUserName = user.fullName || user.name || '';
+          const isOwner =
+            article.authorId === currentUserId ||
+            article.reporterId === currentUserId ||
+            (currentUserName && (article.authorName === currentUserName || article.author === currentUserName));
+          if (!isOwner) {
+            return sendError(res, 403, 'ERR_FORBIDDEN', 'संवाददाता केवल अपनी स्वीकृत खबरों का चयन कर सकते हैं।');
+          }
+        }
+
+        headline = headline || article.title;
+        bodyText = bodyText || article.summary || article.content;
+        imageUrl = imageUrl || article.featuredImage || article.imageUrl;
+        districtName = districtName || article.districtName || article.district;
       } catch (err) {
+        if (err.statusCode === 400 || err.statusCode === 403) {
+          return sendError(res, err.statusCode, err.code || 'ERR_VALIDATION', err.message);
+        }
         console.warn('[apiEngine] Failed to resolve source article for whatsapp generation:', err.message);
       }
     }
@@ -1715,6 +2480,167 @@ export async function handleApiRequest(req, res) {
         return sendError(res, 503, 'ERR_DATABASE_UNAVAILABLE', quotaErr.message);
       }
       return sendError(res, quotaErr.statusCode || 400, quotaErr.code || 'ERR_GENERATION_FAILED', quotaErr.message);
+    }
+  }
+
+  // 13b. WhatsApp Eligible Articles (News Selection Desk)
+  if (pathname === '/api/v1/epaper/whatsapp/eligible-articles' && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const isReporterOrStaff = isReporterUser(user) || isEditorUser(user) || isAdminUser(user) || isMasterAdminUser(user);
+    if (!isReporterOrStaff) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल अधिकृत संवाददाता अथवा संपादकीय कर्मचारी ही पात्र समाचार देख सकते हैं।');
+    }
+    try {
+      const result = await adapter.getWhatsAppEligibleArticles({
+        search: query.get('search') || undefined,
+        district: query.get('district') || undefined,
+        category: query.get('category') || undefined,
+        reporterId: query.get('reporterId') || undefined,
+      }, user);
+      return sendSuccess(res, result.items, { total: result.total, timestamp: new Date().toISOString() });
+    } catch (err) {
+      if (err.code === 'ERR_DATABASE_UNAVAILABLE' || err.statusCode === 503) {
+        return sendError(res, 503, 'ERR_DATABASE_UNAVAILABLE', err.message);
+      }
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_INTERNAL_ERROR', err.message);
+    }
+  }
+
+  // 13c. WhatsApp Multi-Story Edition Package Generation
+  if (pathname === '/api/v1/epaper/whatsapp/edition/generate' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const isReporterOrStaff = isReporterUser(user) || isEditorUser(user) || isAdminUser(user) || isMasterAdminUser(user);
+    if (!isReporterOrStaff) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल अधिकृत संवाददाता अथवा संपादकीय कर्मचारी ही व्हाट्सएप एडिशन पैकेज बना सकते हैं।');
+    }
+    const body = await parseRequestBody(req);
+
+    if (!body.format || !['1:1', '4:5'].includes(body.format)) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'format (1:1 या 4:5) अनिवार्य और मान्य होना चाहिए।');
+    }
+    if (!body.articleIds || !Array.isArray(body.articleIds) || body.articleIds.length === 0) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'एडिशन पैकेज हेतु कम से कम एक समाचार (articleId) चुनना अनिवार्य है।');
+    }
+
+    try {
+      const generatedPkg = await adapter.saveEpaperWhatsAppEditionPackage({
+        ...body,
+        reporterId: user.id,
+        reporterName: user.fullName || user.name || 'संवाददाता',
+      }, user);
+
+      adapter.addAuditLog(
+        user?.fullName || 'संवाददाता',
+        user?.role || 'REPORTER',
+        'WHATSAPP_EDITION_GENERATED',
+        `व्हाट्सएप एडिशन पैकेज निर्मित (${generatedPkg.id}): ${generatedPkg.cardCount} कार्ड्स, प्रारूप ${generatedPkg.format}`,
+        req
+      );
+
+      return sendJson(res, 201, { success: true, data: generatedPkg, meta: { timestamp: new Date().toISOString() } });
+    } catch (err) {
+      if (err.code === 'ERR_QUOTA_EXHAUSTED' || err.statusCode === 429) {
+        return sendError(res, 429, 'ERR_QUOTA_EXHAUSTED', err.message, err.details);
+      }
+      if (err.code === 'ERR_FORBIDDEN' || err.statusCode === 403) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', err.message);
+      }
+      if (err.code === 'ERR_ARTICLE_NOT_ELIGIBLE' || err.code === 'ERR_ARTICLE_NOT_FOUND' || err.statusCode === 400) {
+        return sendError(res, 400, err.code || 'ERR_VALIDATION', err.message);
+      }
+      if (err.code === 'ERR_DATABASE_UNAVAILABLE' || err.statusCode === 503) {
+        return sendError(res, 503, 'ERR_DATABASE_UNAVAILABLE', err.message);
+      }
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_GENERATION_FAILED', err.message);
+    }
+  }
+
+  // 13d. WhatsApp Edition Packages History
+  if (pathname === '/api/v1/epaper/whatsapp/editions' && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    try {
+      const packages = await adapter.getEpaperWhatsAppEditionPackages({
+        reporterId: query.get('reporterId') || undefined,
+        format: query.get('format') || undefined,
+      }, user);
+      return sendSuccess(res, packages);
+    } catch (err) {
+      if (err.code === 'ERR_DATABASE_UNAVAILABLE' || err.statusCode === 503) {
+        return sendError(res, 503, 'ERR_DATABASE_UNAVAILABLE', err.message);
+      }
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_INTERNAL_ERROR', err.message);
+    }
+  }
+
+  // 13e. WhatsApp Single Edition Details
+  if (epaperWhatsappEditionIdMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const packageId = epaperWhatsappEditionIdMatch[1];
+    try {
+      const pkg = await adapter.getEpaperWhatsAppEditionPackageById(packageId, user);
+      if (!pkg) {
+        return sendError(res, 404, 'ERR_NOT_FOUND', 'व्हाट्सएप एडिशन पैकेज नहीं मिला।');
+      }
+      return sendSuccess(res, pkg);
+    } catch (err) {
+      if (err.statusCode === 403 || err.code === 'ERR_FORBIDDEN') {
+        return sendError(res, 403, 'ERR_FORBIDDEN', err.message);
+      }
+      if (err.code === 'ERR_DATABASE_UNAVAILABLE' || err.statusCode === 503) {
+        return sendError(res, 503, 'ERR_DATABASE_UNAVAILABLE', err.message);
+      }
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_INTERNAL_ERROR', err.message);
+    }
+  }
+
+  // 13f. WhatsApp Single Card Regeneration
+  if (pathname === '/api/v1/epaper/whatsapp/card/regenerate' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const isReporterOrStaff = isReporterUser(user) || isEditorUser(user) || isAdminUser(user) || isMasterAdminUser(user);
+    if (!isReporterOrStaff) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'केवल अधिकृत संवाददाता अथवा संपादकीय कर्मचारी ही कार्ड पुनः निर्मित कर सकते हैं।');
+    }
+    const body = await parseRequestBody(req);
+    if (!body.cardId) {
+      return sendError(res, 400, 'ERR_VALIDATION', 'cardId अनिवार्य है।');
+    }
+
+    try {
+      const result = await adapter.regenerateEpaperWhatsAppCard(body.packageId, body.cardId, {
+        ...body,
+        reporterId: user.id,
+      }, user);
+
+      adapter.addAuditLog(
+        user?.fullName || 'संवाददाता',
+        user?.role || 'REPORTER',
+        'WHATSAPP_CARD_REGENERATED',
+        `व्हाट्सएप कार्ड पुनः निर्मित (${body.cardId}), पैकेज ID: ${body.packageId || 'स्वतंत्र'}`,
+        req
+      );
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      if (err.code === 'ERR_QUOTA_EXHAUSTED' || err.statusCode === 429) {
+        return sendError(res, 429, 'ERR_QUOTA_EXHAUSTED', err.message, err.details);
+      }
+      if (err.code === 'ERR_FORBIDDEN' || err.statusCode === 403) {
+        return sendError(res, 403, 'ERR_FORBIDDEN', err.message);
+      }
+      if (err.code === 'ERR_DATABASE_UNAVAILABLE' || err.statusCode === 503) {
+        return sendError(res, 503, 'ERR_DATABASE_UNAVAILABLE', err.message);
+      }
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_REGENERATION_FAILED', err.message);
     }
   }
 
@@ -1799,6 +2725,116 @@ export async function handleApiRequest(req, res) {
     }
   }
 
+  // =========================================================================
+  // 14. E-Paper Reporter Workspace & Profile Integration Endpoints (Step 7)
+  // =========================================================================
+
+  // 14a. Reporter Workspace Dashboard Summary
+  if (epaperReporterWorkspaceMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const targetReporterId = query.get('reporterId') || user.id || user.uid;
+    try {
+      const summary = await adapter.getReporterWorkspaceSummary(targetReporterId, user);
+      return sendSuccess(res, summary);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_WORKSPACE_FAILED', err.message);
+    }
+  }
+
+  // 14b. Reporter's News & E-Paper Contributions
+  if (epaperReporterContributionsMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const targetReporterId = query.get('reporterId') || user.id || user.uid;
+    try {
+      const contributions = await adapter.getReporterContributions(targetReporterId, {
+        status: query.get('status') || undefined,
+        districtId: query.get('districtId') || undefined,
+        categoryId: query.get('categoryId') || undefined,
+        search: query.get('search') || undefined,
+        page: query.get('page') || undefined,
+        limit: query.get('limit') || undefined,
+      }, user);
+      return sendSuccess(res, contributions);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_CONTRIBUTIONS_FAILED', err.message);
+    }
+  }
+
+  // 14c. Reporter's Published Stories in E-Paper Editions (Read-Only)
+  if (epaperReporterPublishedMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const targetReporterId = query.get('reporterId') || user.id || user.uid;
+    try {
+      const published = await adapter.getReporterPublishedStories(targetReporterId, {
+        editionId: query.get('editionId') || undefined,
+        startDate: query.get('startDate') || undefined,
+        endDate: query.get('endDate') || undefined,
+        search: query.get('search') || undefined,
+      }, user);
+      return sendSuccess(res, published);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_PUBLISHED_STORIES_FAILED', err.message);
+    }
+  }
+
+  // 14d. Reporter Profile Update (Restricted)
+  if (epaperReporterProfileMatch && (req.method === 'PUT' || req.method === 'PATCH')) {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const targetReporterId = query.get('reporterId') || user.id || user.uid;
+    const body = await parseRequestBody(req);
+    try {
+      const updated = await adapter.updateReporterProfileRestricted(targetReporterId, body, user);
+      return sendSuccess(res, updated);
+    } catch (err) {
+      return sendError(res, err.statusCode || 400, err.code || 'ERR_PROFILE_UPDATE_FAILED', err.message);
+    }
+  }
+
+  // 14e. Reporter's Assigned Advertisements (Step 6 Integration)
+  if (epaperReporterAdsMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const targetReporterId = query.get('reporterId') || user.id || user.uid;
+    const isStaff = isEpaperEditor(user);
+    if (!isStaff && targetReporterId !== user.id && targetReporterId !== user.uid) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'संवाददाता केवल अपने स्वयं के विज्ञापन देख सकते हैं।');
+    }
+    try {
+      const ads = await adapter.getEpaperAdSubmissions({
+        reporterId: targetReporterId,
+        assignedReporterId: targetReporterId,
+        status: query.get('status') || undefined,
+        search: query.get('search') || undefined,
+      });
+      return sendSuccess(res, ads);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_REPORTER_ADS_FAILED', err.message);
+    }
+  }
+
+  // 14f. Reporter Activity Feed
+  if (epaperReporterActivityMatch && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    const targetReporterId = query.get('reporterId') || user.id || user.uid;
+    try {
+      const summary = await adapter.getReporterWorkspaceSummary(targetReporterId, user);
+      return sendSuccess(res, { activities: summary.activities, total: summary.activities.length });
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_ACTIVITY_FEED_FAILED', err.message);
+    }
+  }
+
   // 13b. AI Newsroom Assistants & Permanent Columns (Step 9)
   if (pathname === '/api/v1/epaper/ai/auto-layout' && req.method === 'POST') {
     if (!user) {
@@ -1873,14 +2909,540 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, types);
   }
 
-  // 14. Latest Published Edition (Backward Compatibility)
+  // -------------------------------------------------------------
+  // 13c. STEP 9: AI NEWSROOM & AI DESIGN TOOLS (/api/v1/epaper/ai/*)
+  // -------------------------------------------------------------
+  const isEpaperAiAuthorized = (u) => {
+    if (!u) return false;
+    const roles = Array.isArray(u.roles) ? u.roles.map((r) => r.toUpperCase()) : [String(u.role || '').toUpperCase()];
+    return roles.some((r) => ['REPORTER', 'EDITOR', 'ADMIN', 'MASTER_ADMIN', 'SUPER_ADMIN'].includes(r));
+  };
+
+  const isEpaperEditorOrAdmin = (u) => {
+    if (!u) return false;
+    const roles = Array.isArray(u.roles) ? u.roles.map((r) => r.toUpperCase()) : [String(u.role || '').toUpperCase()];
+    return roles.some((r) => ['EDITOR', 'ADMIN', 'MASTER_ADMIN', 'SUPER_ADMIN'].includes(r));
+  };
+
+  // 1. Headline Suggestions (Strictly 5 Options, Bounded, No Trailing Punctuation)
+  if (pathname === '/api/v1/epaper/ai/headlines' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'AI हेडलाइन सुझाव केवल अधिकृत संवाददाताओं व संपादकों हेतु अनुमत है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let articleTitle = body.title;
+      let articleContent = body.content;
+      let articleSummary = body.summary;
+      let articleDistrict = body.district;
+
+      if (body.articleId && (!articleTitle || !articleContent)) {
+        try {
+          const art = await adapter.getArticleByIdOrSlug(body.articleId);
+          if (art) {
+            articleTitle = articleTitle || art.title;
+            articleContent = articleContent || art.content;
+            articleSummary = articleSummary || art.summary;
+            articleDistrict = articleDistrict || art.districtName || art.district;
+          }
+        } catch (_e) {}
+      }
+
+      const result = await EpaperAiNewsroomEngine.generateHeadlines({
+        title: articleTitle,
+        content: articleContent,
+        summary: articleSummary,
+        district: articleDistrict,
+        isBreaking: Boolean(body.isBreaking),
+        articleId: body.articleId || null,
+        provider: body.provider || null,
+        user,
+      });
+
+      // Record AI usage
+      try {
+        await adapter.recordAiUsage({
+          userId: user.id,
+          userRole: user.role || 'EDITOR',
+          promptCategory: 'EPAPER_HEADLINES',
+          provider: result.provider,
+          model: result.model,
+          inputTokens: 150,
+          outputTokens: 250,
+          totalTokens: 400,
+          estimatedCostInr: 0.05,
+          executionTimeMs: result.generationTimeMs,
+          success: true,
+        });
+        await adapter.saveAiHistoryItem({
+          userId: user.id,
+          userRole: user.role || 'EDITOR',
+          category: 'EPAPER_HEADLINES',
+          headline: result.headlines?.[0]?.headline || articleTitle,
+          inputSnippet: (articleTitle || articleContent || '').slice(0, 150),
+          outputData: result,
+          isDraftSaved: false,
+        }, user);
+      } catch (_e) {}
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_HEADLINES_FAILED', err.message);
+    }
+  }
+
+  // 2. Structured Summary Generator with Missing Detail Flags
+  if (pathname === '/api/v1/epaper/ai/summarize' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'AI सारांश केवल अधिकृत संवाददाताओं व संपादकों हेतु अनुमत है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let articleHeadline = body.headline || body.title;
+      let articleContent = body.content;
+      let articleDistrict = body.district;
+
+      if (body.articleId && (!articleContent || !articleHeadline)) {
+        try {
+          const art = await adapter.getArticleByIdOrSlug(body.articleId);
+          if (art) {
+            articleHeadline = articleHeadline || art.title;
+            articleContent = articleContent || art.content;
+            articleDistrict = articleDistrict || art.districtName || art.district;
+          }
+        } catch (_e) {}
+      }
+
+      const result = await EpaperAiNewsroomEngine.generateSummary({
+        content: articleContent,
+        headline: articleHeadline,
+        mode: body.mode || 'BULLETS',
+        maxWords: body.maxWords || 150,
+        district: articleDistrict,
+        articleId: body.articleId || null,
+        provider: body.provider || null,
+        user,
+      });
+
+      try {
+        await adapter.recordAiUsage({
+          userId: user.id,
+          userRole: user.role || 'EDITOR',
+          promptCategory: 'EPAPER_SUMMARIZER',
+          provider: result.provider,
+          model: result.model,
+          inputTokens: 250,
+          outputTokens: 200,
+          totalTokens: 450,
+          estimatedCostInr: 0.06,
+          executionTimeMs: result.generationTimeMs,
+          success: true,
+        });
+        await adapter.saveAiHistoryItem({
+          userId: user.id,
+          userRole: user.role || 'EDITOR',
+          category: 'EPAPER_SUMMARIZER',
+          headline: articleHeadline || 'समाचार सारांश',
+          inputSnippet: (articleContent || '').slice(0, 150),
+          outputData: result,
+          isDraftSaved: false,
+        }, user);
+      } catch (_e) {}
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_SUMMARY_FAILED', err.message);
+    }
+  }
+
+  // 3. Indic Devanagari Copy-Editing & Grammar Correction
+  if (pathname === '/api/v1/epaper/ai/copy-edit' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'AI वर्तनी व भाषा सुधार केवल अधिकृत संवाददाताओं व संपादकों हेतु अनुमत है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let articleContent = body.content;
+      if (body.articleId && !articleContent) {
+        try {
+          const art = await adapter.getArticleByIdOrSlug(body.articleId);
+          if (art) articleContent = art.content;
+        } catch (_e) {}
+      }
+
+      const result = await EpaperAiNewsroomEngine.copyEditHindi({
+        content: articleContent,
+        tone: body.tone || 'NEUTRAL',
+        fixGrammarAndSpelling: body.fixGrammarAndSpelling !== false,
+        articleId: body.articleId || null,
+        provider: body.provider || null,
+        user,
+      });
+
+      try {
+        await adapter.recordAiUsage({
+          userId: user.id,
+          userRole: user.role || 'EDITOR',
+          promptCategory: 'EPAPER_COPY_EDIT',
+          provider: result.provider,
+          model: result.model,
+          inputTokens: 300,
+          outputTokens: 300,
+          totalTokens: 600,
+          estimatedCostInr: 0.08,
+          executionTimeMs: result.generationTimeMs,
+          success: true,
+        });
+      } catch (_e) {}
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_COPY_EDIT_FAILED', err.message);
+    }
+  }
+
+  // 4. Inverted Pyramid Structure & Readability Analysis
+  if (pathname === '/api/v1/epaper/ai/structure' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'AI संरचना विश्लेषण अधिकृत संवाददाताओं व संपादकों हेतु अनुमत है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let articleTitle = body.title;
+      let articleContent = body.content;
+      if (body.articleId && (!articleTitle || !articleContent)) {
+        try {
+          const art = await adapter.getArticleByIdOrSlug(body.articleId);
+          if (art) {
+            articleTitle = articleTitle || art.title;
+            articleContent = articleContent || art.content;
+          }
+        } catch (_e) {}
+      }
+
+      const result = await EpaperAiNewsroomEngine.analyzeStructure({
+        title: articleTitle,
+        content: articleContent,
+        articleId: body.articleId || null,
+        provider: body.provider || null,
+        user,
+      });
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_STRUCTURE_FAILED', err.message);
+    }
+  }
+
+  // 5. Bidirectional Hindi <-> English Translation with Entity Preservation
+  if (pathname === '/api/v1/epaper/ai/translate' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'AI अनुवाद केवल अधिकृत संवाददाताओं व संपादकों हेतु अनुमत है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let textToTranslate = body.content || body.text;
+      if (body.articleId && !textToTranslate) {
+        try {
+          const art = await adapter.getArticleByIdOrSlug(body.articleId);
+          if (art) textToTranslate = art.content || art.title;
+        } catch (_e) {}
+      }
+
+      const result = await EpaperAiNewsroomEngine.translateContent({
+        content: textToTranslate,
+        sourceLanguage: body.sourceLanguage || 'hi',
+        targetLanguage: body.targetLanguage || 'en',
+        articleId: body.articleId || null,
+        provider: body.provider || null,
+        user,
+      });
+
+      try {
+        await adapter.recordAiUsage({
+          userId: user.id,
+          userRole: user.role || 'EDITOR',
+          promptCategory: 'EPAPER_TRANSLATION',
+          provider: result.provider,
+          model: result.model,
+          inputTokens: 350,
+          outputTokens: 400,
+          totalTokens: 750,
+          estimatedCostInr: 0.10,
+          executionTimeMs: result.generationTimeMs,
+          success: true,
+        });
+      } catch (_e) {}
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_TRANSLATE_FAILED', err.message);
+    }
+  }
+
+  // 6. Fact-Checking Panel with Claim Decomposition & Auto-Approval Prevention
+  if (pathname === '/api/v1/epaper/ai/verify' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'AI तथ्य परीक्षण केवल अधिकृत संपादकों व संवाददाताओं हेतु अनुमत है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let headline = body.headline || body.title;
+      let content = body.content;
+      let district = body.district;
+
+      if (body.articleId && (!content || !headline)) {
+        try {
+          const art = await adapter.getArticleByIdOrSlug(body.articleId);
+          if (art) {
+            headline = headline || art.title;
+            content = content || art.content;
+            district = district || art.districtName || art.district;
+          }
+        } catch (_e) {}
+      }
+
+      const result = await EpaperAiNewsroomEngine.verifyClaimsAndSources({
+        headline,
+        content,
+        district,
+        sources: body.sources || [],
+        evidenceNotes: body.evidenceNotes || '',
+        articleId: body.articleId || null,
+        provider: body.provider || null,
+        user,
+      });
+
+      try {
+        await adapter.recordAiUsage({
+          userId: user.id,
+          userRole: user.role || 'EDITOR',
+          promptCategory: 'EPAPER_FACT_CHECK',
+          provider: result.provider,
+          model: result.model,
+          inputTokens: 400,
+          outputTokens: 350,
+          totalTokens: 750,
+          estimatedCostInr: 0.10,
+          executionTimeMs: result.generationTimeMs,
+          success: true,
+        });
+      } catch (_e) {}
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_VERIFY_FAILED', err.message);
+    }
+  }
+
+  // 7. Template Recommendations, Visual Balance & Typography Overflow
+  if (pathname === '/api/v1/epaper/ai/design-suggestions' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditorOrAdmin(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'डिज़ाइन सुझाव केवल संपादकों एवं प्रशासकों हेतु अनुमत हैं।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let availableTemplates = body.availableTemplates || [];
+      if (!availableTemplates.length && typeof adapter.getEpaperTemplates === 'function') {
+        try {
+          availableTemplates = await adapter.getEpaperTemplates();
+        } catch (_e) {}
+      }
+
+      const result = EpaperAiNewsroomEngine.suggestPageDesign({
+        pageNumber: Number(body.pageNumber) || 1,
+        articles: body.articles || [],
+        availableTemplates,
+        currentElements: body.currentElements || [],
+        gridColumns: body.gridColumns || 8,
+      });
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_DESIGN_FAILED', err.message);
+    }
+  }
+
+  // 8. Full-Page Composition & Story Placement Proposal
+  if (pathname === '/api/v1/epaper/ai/propose-composition' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperEditorOrAdmin(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'पेज कम्पोज़िशन प्रस्ताव केवल संपादकों एवं प्रशासकों हेतु अनुमत है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let availableTemplates = body.availableTemplates || [];
+      if (!availableTemplates.length && typeof adapter.getEpaperTemplates === 'function') {
+        try {
+          availableTemplates = await adapter.getEpaperTemplates();
+        } catch (_e) {}
+      }
+
+      const result = EpaperAiNewsroomEngine.proposePageComposition({
+        pageNumber: Number(body.pageNumber) || 1,
+        selectedArticles: body.selectedArticles || body.articles || [],
+        availableTemplates,
+        reservedAdSlots: body.reservedAdSlots || [],
+        templateId: body.templateId || null,
+      });
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_COMPOSITION_FAILED', err.message);
+    }
+  }
+
+  // 9. Graphic & Visual Assistance (Crop Ratios, Captions, Symbolic Disclaimers)
+  if (pathname === '/api/v1/epaper/ai/graphic-suggestions' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'ग्राफिक सहायता केवल अधिकृत संवाददाताओं व संपादकों हेतु अनुमत है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      let headline = body.headline || body.title;
+      let content = body.content;
+      let category = body.category;
+      let district = body.district;
+
+      if (body.articleId && (!content || !headline)) {
+        try {
+          const art = await adapter.getArticleByIdOrSlug(body.articleId);
+          if (art) {
+            headline = headline || art.title;
+            content = content || art.content;
+            category = category || art.categoryName || art.category;
+            district = district || art.districtName || art.district;
+          }
+        } catch (_e) {}
+      }
+
+      const result = EpaperAiNewsroomEngine.suggestGraphicAssistance({
+        headline,
+        content,
+        category,
+        district,
+        articleId: body.articleId || null,
+        provider: body.provider || null,
+        user,
+      });
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_GRAPHICS_FAILED', err.message);
+    }
+  }
+
+  // 10. Human-in-the-Loop Apply Suggestion Workflow (Audit: AI_SUGGESTION_APPLIED)
+  if (pathname === '/api/v1/epaper/ai/apply-suggestion' && req.method === 'POST') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'AI सुझाव लागू करने हेतु संपादकीय अनुमति आवश्यक है।');
+    }
+    const body = await parseRequestBody(req);
+    try {
+      const result = await EpaperAiNewsroomEngine.applySuggestion({
+        suggestionType: body.suggestionType,
+        selectedContent: body.selectedContent,
+        sourceArticleId: body.sourceArticleId || null,
+        editionId: body.editionId || null,
+        pageNumber: body.pageNumber || null,
+        notes: body.notes || '',
+        adapter,
+        user,
+        req,
+      });
+
+      return sendSuccess(res, result);
+    } catch (err) {
+      return sendError(res, err.statusCode || 500, err.code || 'ERR_AI_APPLY_FAILED', err.message);
+    }
+  }
+
+  // 11. AI Newsroom History
+  if (pathname === '/api/v1/epaper/ai/history' && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'अनुमति नहीं है।');
+    }
+    try {
+      const history = typeof adapter.getAiHistory === 'function' ? await adapter.getAiHistory(user.id, 50) : [];
+      return sendSuccess(res, { history: Array.isArray(history) ? history : [], count: history.length || 0 });
+    } catch (err) {
+      return sendError(res, 500, 'ERR_AI_HISTORY_FAILED', err.message);
+    }
+  }
+
+  // 12. AI Newsroom Usage & Quotas
+  if (pathname === '/api/v1/epaper/ai/usage' && req.method === 'GET') {
+    if (!user) {
+      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
+    }
+    if (!isEpaperAiAuthorized(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'अनुमति नहीं है।');
+    }
+    try {
+      const usage = typeof adapter.getAiUsage === 'function' ? await adapter.getAiUsage(user.id) : null;
+      return sendSuccess(res, usage || { todayRequests: 0, dailyLimit: 50, remainingRequests: 50 });
+    } catch (err) {
+      return sendError(res, 500, 'ERR_AI_USAGE_FAILED', err.message);
+    }
+  }
+
+
+  // 14. Latest Published Edition (Step 11 Public E-Paper)
   if (pathname === '/api/v1/epaper/latest' && req.method === 'GET') {
     const districtId = query.get('districtId');
-    const edition = await adapter.getLatestEpaperEdition(districtId);
+    const editionType = query.get('editionType') || query.get('type') || undefined;
+    let edition = await adapter.getLatestEpaperEdition(districtId);
+
+    if (editionType && editionType !== 'all') {
+      const editionsRes = await adapter.getEpaperEditions({
+        status: 'PUBLISHED',
+        districtId: districtId || undefined,
+        editionType,
+        limit: 1,
+      });
+      if (editionsRes.editions && editionsRes.editions.length > 0) {
+        edition = editionsRes.editions[0];
+      }
+    }
+
     if (!edition) {
       return sendError(res, 404, 'ERR_NOT_FOUND', 'कोई प्रकाशित ई-पेपर उपलब्ध नहीं है।');
     }
-    return sendSuccess(res, edition);
+    const isEditor = isEpaperEditor(user);
+    const payload = isEditor ? edition : sanitizePublicEdition(edition);
+    return sendSuccess(res, payload);
   }
 
   // 4c. Real-Time Push Notification Stream (SSE), Device Tokens & Preferences

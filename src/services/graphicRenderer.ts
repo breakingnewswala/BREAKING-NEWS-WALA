@@ -59,6 +59,8 @@ export interface ArticleClippingRenderOptions {
   date?: string;
   district?: string;
   editionTitle?: string;
+  format?: '1:1' | '4:5';
+  category?: string;
 }
 
 export const ASPECT_RATIO_DIMENSIONS: Record<
@@ -305,6 +307,7 @@ export interface BroadsheetRenderOptions {
   renderTarget?: 'screen' | 'export_print' | 'thumbnail';
   showTrimAndBleedMarks?: boolean; // Draw prepress corner trim marks, registration targets & CMYK swatches
   dpi?: number;
+  onImageLoaded?: () => void;
 }
 
 // Image element cache to avoid repeated network fetches
@@ -877,12 +880,19 @@ export class GraphicRenderer {
     );
 
     for (const el of sortedElements) {
-      const bounds =
+      const rawBounds =
         el.id === options.selectedElementId && options.draggedBounds
           ? options.draggedBounds
           : el.bounds;
 
-      this.renderBroadsheetElement(ctx, el, bounds);
+      const bounds: EpaperPageElementBounds = {
+        x: rawBounds.x >= BROADSHEET_CONSTANTS.MARGIN_LEFT_PT ? rawBounds.x : BROADSHEET_CONSTANTS.MARGIN_LEFT_PT + (rawBounds.x || 0),
+        y: rawBounds.y >= BROADSHEET_CONSTANTS.MARGIN_TOP_PT ? rawBounds.y : BROADSHEET_CONSTANTS.MARGIN_TOP_PT + (rawBounds.y || 0),
+        width: rawBounds.width,
+        height: rawBounds.height,
+      };
+
+      this.renderBroadsheetElement(ctx, el, bounds, options.onImageLoaded);
     }
 
     // 6. Interactive Overlays (Selection, Handles, Collisions, Snap Guidelines)
@@ -897,9 +907,15 @@ export class GraphicRenderer {
 
         for (const el of sortedElements) {
           if (options.collidingElementIds.includes(el.id)) {
-            const b = el.id === options.selectedElementId && options.draggedBounds
+            const rawB = el.id === options.selectedElementId && options.draggedBounds
               ? options.draggedBounds
               : el.bounds;
+            const b: EpaperPageElementBounds = {
+              x: rawB.x >= BROADSHEET_CONSTANTS.MARGIN_LEFT_PT ? rawB.x : BROADSHEET_CONSTANTS.MARGIN_LEFT_PT + (rawB.x || 0),
+              y: rawB.y >= BROADSHEET_CONSTANTS.MARGIN_TOP_PT ? rawB.y : BROADSHEET_CONSTANTS.MARGIN_TOP_PT + (rawB.y || 0),
+              width: rawB.width,
+              height: rawB.height,
+            };
             ctx.fillRect(b.x, b.y, b.width, b.height);
             ctx.strokeRect(b.x, b.y, b.width, b.height);
 
@@ -1018,12 +1034,71 @@ export class GraphicRenderer {
   }
 
   /**
+   * Preloads all image and advertisement assets for an epaper page to ensure
+   * instant, flicker-free canvas rendering.
+   */
+  public static async preloadPageImages(page: EpaperPageDoc): Promise<void> {
+    if (!page || !Array.isArray(page.elements)) return;
+    const urls: string[] = [];
+    for (const el of page.elements) {
+      if ((el.elementType === 'IMAGE' || el.elementType === 'AD') && el.imageUrl) {
+        urls.push(el.imageUrl);
+      }
+    }
+    if (urls.length === 0) return;
+    await Promise.all(
+      urls.map((url) => loadImage(url).catch(() => null))
+    );
+  }
+
+  /**
+   * Breaks text into lines strictly bounded by maxWidth.
+   * Protects Indic conjuncts and word boundaries.
+   */
+  public static wrapTextToLines(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    maxWidth: number
+  ): string[] {
+    if (!text) return [];
+    const paragraphs = text.split('\n');
+    const allLines: string[] = [];
+
+    for (const para of paragraphs) {
+      const words = para.split(/\s+/).filter(Boolean);
+      if (words.length === 0) continue;
+
+      let currentLine = '';
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const testWidth = ctx.measureText(testLine).width;
+
+        if (testWidth > maxWidth && currentLine) {
+          allLines.push(currentLine);
+          currentLine = word;
+        } else if (testWidth > maxWidth && !currentLine) {
+          allLines.push(word);
+          currentLine = '';
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine) {
+        allLines.push(currentLine);
+      }
+    }
+
+    return allLines;
+  }
+
+  /**
    * Dispatches and renders an individual broadsheet element.
    */
   public static renderBroadsheetElement(
     ctx: CanvasRenderingContext2D,
     el: EpaperPageElement,
-    bounds: EpaperPageElementBounds
+    bounds: EpaperPageElementBounds,
+    onImageLoaded?: () => void
   ): void {
     ctx.save();
 
@@ -1043,10 +1118,10 @@ export class GraphicRenderer {
         this.renderStoryElement(ctx, el, bounds);
         break;
       case 'IMAGE':
-        this.renderImageElement(ctx, el, bounds);
+        this.renderImageElement(ctx, el, bounds, onImageLoaded);
         break;
       case 'AD':
-        this.renderAdElement(ctx, el, bounds);
+        this.renderAdElement(ctx, el, bounds, onImageLoaded);
         break;
       case 'COLUMN':
         this.renderColumnElement(ctx, el, bounds);
@@ -1120,7 +1195,8 @@ export class GraphicRenderer {
   }
 
   /**
-   * Renders bold newspaper Headline block with deck/kicker.
+   * Renders bold newspaper Headline block with deck/kicker, dynamic font sizing,
+   * Indic line-wrapping, and ellipsis protection against overflow.
    */
   private static renderHeadlineElement(
     ctx: CanvasRenderingContext2D,
@@ -1138,39 +1214,52 @@ export class GraphicRenderer {
       ctx.font = '800 12px "Noto Sans Devanagari", sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText(el.customSubheadline, b.x + 2, curY + 2);
+      ctx.fillText(el.customSubheadline, b.x + 3, curY + 2);
       curY += 18;
     }
 
-    // Headline Text
-    const text = el.customHeadline || 'मुख्य समाचार का प्रमुख शीर्षक';
-    const initialSize = el.fontSize || Math.min(36, Math.max(18, Math.round(b.height * 0.5)));
-    const lineHeight = initialSize * 1.25;
+    const availableH = Math.max(16, b.y + b.height - curY - 4);
+    const text = (el.customHeadline || 'मुख्य समाचार का प्रमुख शीर्षक').trim();
+    const isCenter = el.textAlign === 'center';
+    const textX = isCenter ? b.x + b.width / 2 : b.x + 3;
+    const maxW = Math.max(40, b.width - 6);
 
-    ctx.font = `800 ${initialSize}px "Rozha One", "Noto Sans Devanagari", serif`;
-    ctx.fillStyle = '#0F172A';
-    ctx.textAlign = el.textAlign === 'center' ? 'center' : 'left';
-    ctx.textBaseline = 'top';
+    // Dynamically scale font size so entire headline fits cleanly without clipping
+    let bestFontSize = Math.min(36, Math.max(14, el.fontSize || Math.round(availableH * 0.45)));
+    let wrappedLines: string[] = [];
+    let bestLineHeight = bestFontSize * 1.25;
 
-    const words = text.split(' ');
-    let line = '';
-    const textX = el.textAlign === 'center' ? b.x + b.width / 2 : b.x + 2;
+    for (let testSize = bestFontSize; testSize >= 13; testSize -= 1.5) {
+      ctx.font = `800 ${testSize}px "Rozha One", "Noto Sans Devanagari", serif`;
+      const testLineH = testSize * 1.25;
+      const lines = this.wrapTextToLines(ctx, text, maxW);
+      const totalH = lines.length * testLineH;
 
-    for (let i = 0; i < words.length; i++) {
-      const test = line + (line ? ' ' : '') + words[i];
-      const metrics = ctx.measureText(test);
-      if (metrics.width > b.width - 4 && line) {
-        ctx.fillText(line, textX, curY);
-        curY += lineHeight;
-        line = words[i];
-        if (curY + lineHeight > b.y + b.height) break;
-      } else {
-        line = test;
+      if (totalH <= availableH || testSize <= 14) {
+        bestFontSize = testSize;
+        wrappedLines = lines;
+        bestLineHeight = testLineH;
+        break;
       }
     }
-    if (line && curY + lineHeight <= b.y + b.height + 10) {
-      ctx.fillText(line, textX, curY);
-      curY += lineHeight;
+
+    ctx.font = `800 ${bestFontSize}px "Rozha One", "Noto Sans Devanagari", serif`;
+    ctx.fillStyle = '#0F172A';
+    ctx.textAlign = isCenter ? 'center' : 'left';
+    ctx.textBaseline = 'top';
+
+    const maxLines = Math.max(1, Math.floor(availableH / bestLineHeight));
+    for (let i = 0; i < wrappedLines.length; i++) {
+      if (i >= maxLines) break;
+      let lineText = wrappedLines[i];
+      if (i === maxLines - 1 && wrappedLines.length > maxLines) {
+        while (lineText.length > 2 && ctx.measureText(`${lineText}…`).width > maxW) {
+          lineText = lineText.slice(0, -1);
+        }
+        lineText += '…';
+      }
+      ctx.fillText(lineText, textX, curY);
+      curY += bestLineHeight;
     }
 
     // Bottom hairline rule
@@ -1183,7 +1272,8 @@ export class GraphicRenderer {
   }
 
   /**
-   * Renders standard Story element with justified Devanagari text, byline, and attribution.
+   * Renders standard Story element with multi-line wrapped headline, byline,
+   * and justified Devanagari body text bounded to available area.
    */
   private static renderStoryElement(
     ctx: CanvasRenderingContext2D,
@@ -1194,19 +1284,29 @@ export class GraphicRenderer {
     ctx.fillRect(b.x, b.y, b.width, b.height);
 
     let curY = b.y + 4;
+    const maxW = Math.max(30, b.width - 6);
 
-    // 1. Headline if defined on the story
+    // 1. Headline if defined on the story with multi-line word wrapping
     if (el.customHeadline) {
-      const hSize = Math.min(22, Math.max(14, (el.fontSize || 12) * 1.35));
+      const hSize = Math.min(20, Math.max(13, Math.round((el.fontSize || 12) * 1.3)));
+      const hLineH = hSize * 1.28;
       ctx.font = `800 ${hSize}px "Rozha One", "Noto Sans Devanagari", serif`;
       ctx.fillStyle = '#0F172A';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
 
-      const hLines = el.customHeadline.split('\n');
-      for (const hl of hLines) {
-        ctx.fillText(hl, b.x + 2, curY);
-        curY += hSize * 1.3;
+      const hLines = this.wrapTextToLines(ctx, el.customHeadline.trim(), maxW);
+      const maxHeadlineLines = Math.min(3, hLines.length);
+      for (let i = 0; i < maxHeadlineLines; i++) {
+        let hl = hLines[i];
+        if (i === maxHeadlineLines - 1 && hLines.length > maxHeadlineLines) {
+          while (hl.length > 2 && ctx.measureText(`${hl}…`).width > maxW) {
+            hl = hl.slice(0, -1);
+          }
+          hl += '…';
+        }
+        ctx.fillText(hl, b.x + 3, curY);
+        curY += hLineH;
       }
       curY += 4;
     }
@@ -1217,8 +1317,8 @@ export class GraphicRenderer {
     ctx.fillStyle = '#64748B';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(`भोपाल | ${byline}`, b.x + 2, curY);
-    curY += 16;
+    ctx.fillText(`भोपाल | ${byline}`, b.x + 3, curY);
+    curY += 15;
 
     // Dividing rule
     ctx.strokeStyle = '#E2E8F0';
@@ -1227,7 +1327,7 @@ export class GraphicRenderer {
     ctx.moveTo(b.x + 2, curY);
     ctx.lineTo(b.x + b.width - 2, curY);
     ctx.stroke();
-    curY += 6;
+    curY += 5;
 
     // 3. Justified Body Text
     const bodyText =
@@ -1235,21 +1335,23 @@ export class GraphicRenderer {
       'मध्य प्रदेश में सरकार ने जनहित के लिए नए दिशा-निर्देश जारी किए हैं। ग्रामीण व शहरी क्षेत्रों में विकास कार्यों को तेजी से पूरा करने का लक्ष्य निर्धारित किया गया है। अधिकारियों को समयबद्ध क्रियान्वयन सुनिश्चित करने के निर्देश दिए गए हैं।';
 
     const fontSize = el.fontSize || 11;
-    const lineHeight = (el.lineHeight || 1.35) * fontSize;
-    const availableHeight = b.y + b.height - curY - 4;
+    const lineHeight = (el.lineHeight || 1.38) * fontSize;
+    const availableHeight = Math.max(0, b.y + b.height - curY - 4);
 
-    DevanagariTypographyEngine.renderJustifiedText(
-      ctx,
-      bodyText,
-      b.x + 2,
-      curY,
-      b.width - 4,
-      lineHeight,
-      fontSize,
-      '"Noto Sans Devanagari", sans-serif',
-      availableHeight,
-      '#1E293B'
-    );
+    if (availableHeight >= lineHeight) {
+      DevanagariTypographyEngine.renderJustifiedText(
+        ctx,
+        bodyText,
+        b.x + 3,
+        curY,
+        maxW,
+        lineHeight,
+        fontSize,
+        '"Noto Sans Devanagari", sans-serif',
+        availableHeight,
+        '#1E293B'
+      );
+    }
 
     // Subtle right border for multi-column feel
     ctx.strokeStyle = '#E2E8F0';
@@ -1261,34 +1363,114 @@ export class GraphicRenderer {
   }
 
   /**
-   * Renders Image element with photo credit.
+   * Renders Image element with photo, aspect-fill cover rendering, caption bar,
+   * photo credit, and graceful fallback when image genuinely does not exist.
    */
   private static renderImageElement(
     ctx: CanvasRenderingContext2D,
     el: EpaperPageElement,
-    b: EpaperPageElementBounds
+    b: EpaperPageElementBounds,
+    onImageLoaded?: () => void
   ): void {
-    ctx.fillStyle = '#F1F5F9';
+    ctx.fillStyle = '#F8FAFC';
     ctx.fillRect(b.x, b.y, b.width, b.height);
 
-    // Center Image Placeholder or Icon
-    ctx.fillStyle = '#94A3B8';
-    ctx.font = '600 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('📷 चित्र / फोटो (Image Block)', b.x + b.width / 2, b.y + b.height / 2 - 10);
+    const hasCaption = Boolean(el.imageCaption || el.photoCredit);
+    const captionH = hasCaption ? 24 : 0;
+    const imgAreaH = Math.max(0, b.height - captionH);
+
+    let imageDrawn = false;
+
+    // Draw Image if URL provided
+    if (el.imageUrl && imgAreaH > 0) {
+      if (imageElementCache.has(el.imageUrl)) {
+        const cachedImg = imageElementCache.get(el.imageUrl)!;
+        if (cachedImg.complete && cachedImg.naturalWidth > 0) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(b.x, b.y, b.width, imgAreaH);
+          ctx.clip();
+
+          // object-fit: cover calculation to preserve aspect ratio without stretching
+          const imgAspect = cachedImg.naturalWidth / cachedImg.naturalHeight;
+          const targetAspect = b.width / imgAreaH;
+          let sx = 0;
+          let sy = 0;
+          let sWidth = cachedImg.naturalWidth;
+          let sHeight = cachedImg.naturalHeight;
+
+          if (imgAspect > targetAspect) {
+            sWidth = cachedImg.naturalHeight * targetAspect;
+            sx = (cachedImg.naturalWidth - sWidth) / 2;
+          } else {
+            sHeight = cachedImg.naturalWidth / targetAspect;
+            sy = (cachedImg.naturalHeight - sHeight) / 2;
+          }
+
+          ctx.drawImage(cachedImg, sx, sy, sWidth, sHeight, b.x, b.y, b.width, imgAreaH);
+          ctx.restore();
+          imageDrawn = true;
+        }
+      } else if (typeof Image !== 'undefined') {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          imageElementCache.set(el.imageUrl!, img);
+          if (onImageLoaded) {
+            onImageLoaded();
+          }
+        };
+        img.src = el.imageUrl;
+      }
+    }
+
+    // Graceful Fallback ONLY when image is missing or loading
+    if (!imageDrawn) {
+      ctx.fillStyle = '#F1F5F9';
+      ctx.fillRect(b.x, b.y, b.width, imgAreaH);
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '600 12px "Noto Sans Devanagari", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const placeholderText = el.imageUrl ? '📷 चित्र लोड हो रहा है...' : '📷 चित्र / फोटो उपलब्ध नहीं';
+      ctx.fillText(placeholderText, b.x + b.width / 2, b.y + imgAreaH / 2 - 6);
+
+      if (el.imageCaption) {
+        ctx.font = '500 10px "Noto Sans Devanagari", sans-serif';
+        ctx.fillStyle = '#64748B';
+        ctx.fillText(el.imageCaption, b.x + b.width / 2, b.y + imgAreaH / 2 + 14);
+      }
+    }
 
     // Caption & Credit Bar at bottom
-    const captionH = 22;
-    ctx.fillStyle = '#0F172A';
-    ctx.fillRect(b.x, b.y + b.height - captionH, b.width, captionH);
+    if (captionH > 0) {
+      ctx.fillStyle = '#0F172A';
+      ctx.fillRect(b.x, b.y + b.height - captionH, b.width, captionH);
 
-    ctx.fillStyle = '#F8FAFC';
-    ctx.font = '600 9px "Noto Sans Devanagari", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    const credit = el.photoCredit ? `फोटो: ${el.photoCredit}` : 'फोटो: बीएनडब्ल्यू ब्यूरो';
-    ctx.fillText(credit, b.x + 6, b.y + b.height - captionH / 2);
+      ctx.fillStyle = '#F8FAFC';
+      ctx.font = '500 10px "Noto Sans Devanagari", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+
+      const captionText = el.imageCaption || '';
+      const credit = el.photoCredit ? `फोटो: ${el.photoCredit}` : 'फोटो: बीएनडब्ल्यू ब्यूरो';
+
+      if (captionText) {
+        const creditW = ctx.measureText(` | ${credit}`).width;
+        const maxCaptionW = b.width - creditW - 16;
+        let displayCaption = captionText;
+        if (ctx.measureText(displayCaption).width > maxCaptionW) {
+          while (displayCaption.length > 3 && ctx.measureText(`${displayCaption}…`).width > maxCaptionW) {
+            displayCaption = displayCaption.slice(0, -1);
+          }
+          displayCaption += '…';
+        }
+        ctx.fillText(`${displayCaption} | ${credit}`, b.x + 8, b.y + b.height - captionH / 2);
+      } else {
+        ctx.fillText(credit, b.x + 8, b.y + b.height - captionH / 2);
+      }
+    }
 
     // Frame border
     ctx.strokeStyle = '#CBD5E1';
@@ -1297,12 +1479,14 @@ export class GraphicRenderer {
   }
 
   /**
-   * Renders Advertisement element with MANDATORY ASCI 'विज्ञापन' badge.
+   * Renders Advertisement element with MANDATORY ASCI 'विज्ञापन' badge,
+   * image creative support, and wrapped copy text.
    */
   private static renderAdElement(
     ctx: CanvasRenderingContext2D,
     el: EpaperPageElement,
-    b: EpaperPageElementBounds
+    b: EpaperPageElementBounds,
+    onImageLoaded?: () => void
   ): void {
     // Ad background
     ctx.fillStyle = '#FFFBEB'; // Light warm amber
@@ -1318,7 +1502,22 @@ export class GraphicRenderer {
           ctx.beginPath();
           ctx.rect(b.x + 1, b.y + 1, b.width - 2, b.height - 2);
           ctx.clip();
-          ctx.drawImage(cachedImg, b.x + 1, b.y + 1, b.width - 2, b.height - 2);
+          const imgAspect = cachedImg.naturalWidth / cachedImg.naturalHeight;
+          const targetAspect = (b.width - 2) / (b.height - 2);
+          let sx = 0;
+          let sy = 0;
+          let sWidth = cachedImg.naturalWidth;
+          let sHeight = cachedImg.naturalHeight;
+
+          if (imgAspect > targetAspect) {
+            sWidth = cachedImg.naturalHeight * targetAspect;
+            sx = (cachedImg.naturalWidth - sWidth) / 2;
+          } else {
+            sHeight = cachedImg.naturalWidth / targetAspect;
+            sy = (cachedImg.naturalHeight - sHeight) / 2;
+          }
+
+          ctx.drawImage(cachedImg, sx, sy, sWidth, sHeight, b.x + 1, b.y + 1, b.width - 2, b.height - 2);
           ctx.restore();
           imageDrawn = true;
         }
@@ -1327,6 +1526,7 @@ export class GraphicRenderer {
         img.crossOrigin = 'anonymous';
         img.onload = () => {
           imageElementCache.set(el.imageUrl!, img);
+          if (onImageLoaded) onImageLoaded();
         };
         img.src = el.imageUrl;
       }
@@ -1337,20 +1537,27 @@ export class GraphicRenderer {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(b.x + 1, b.y + 1, b.width - 2, b.height - 2);
 
-    // If creative image was not rendered, draw title & copy text
+    // If creative image was not rendered, draw title & copy text with wrapping
     if (!imageDrawn) {
-      // Ad Content / Sponsor Text
       ctx.fillStyle = '#78350F';
       ctx.font = '700 13px "Noto Sans Devanagari", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const adTitle = el.customHeadline || 'व्यावसायिक विज्ञापन (Commercial Ad)';
-      ctx.fillText(adTitle, b.x + b.width / 2, b.y + b.height / 2);
+      const maxTextW = b.width - 20;
+      const titleLines = this.wrapTextToLines(ctx, adTitle, maxTextW);
+      const titleLineH = 16;
+      let titleY = b.y + b.height / 2 - ((titleLines.length - 1) * titleLineH) / 2 - (el.customBodyText ? 10 : 0);
+
+      for (const line of titleLines.slice(0, 3)) {
+        ctx.fillText(line, b.x + b.width / 2, titleY);
+        titleY += titleLineH;
+      }
 
       if (el.customBodyText) {
         ctx.font = '500 10px "Noto Sans Devanagari", sans-serif';
         ctx.fillStyle = '#92400E';
-        ctx.fillText(el.customBodyText, b.x + b.width / 2, b.y + b.height / 2 + 18);
+        ctx.fillText(el.customBodyText, b.x + b.width / 2, titleY + 6);
       }
     }
 
@@ -1374,7 +1581,6 @@ export class GraphicRenderer {
     ctx.restore();
   }
 
-
   /**
    * Renders Editorial Column (Op-Ed / Viewpoint) element.
    */
@@ -1395,7 +1601,16 @@ export class GraphicRenderer {
     ctx.font = '800 12px "Noto Sans Devanagari", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(el.customHeadline || 'विशेष आलेख एवं दृष्टिकोण', b.x + 8, b.y + bannerH / 2);
+    const bannerTitle = el.customHeadline || 'विशेष आलेख एवं दृष्टिकोण';
+    let displayBanner = bannerTitle;
+    const maxBannerW = b.width - 16;
+    if (ctx.measureText(displayBanner).width > maxBannerW) {
+      while (displayBanner.length > 3 && ctx.measureText(`${displayBanner}…`).width > maxBannerW) {
+        displayBanner = displayBanner.slice(0, -1);
+      }
+      displayBanner += '…';
+    }
+    ctx.fillText(displayBanner, b.x + 8, b.y + bannerH / 2);
 
     // Author circle & byline
     let curY = b.y + bannerH + 8;
@@ -1421,18 +1636,21 @@ export class GraphicRenderer {
       el.customBodyText ||
       'मध्य प्रदेश के 55 जिलों में औद्योगिक एवं आधारभूत संरचना का विस्तार ग्रामीण अर्थव्यवस्था को सशक्त कर रहा है। सुशासन और पारदर्शिता ही जन-विश्वास की सबसे मजबूत आधारशिला है।';
 
-    DevanagariTypographyEngine.renderJustifiedText(
-      ctx,
-      bodyText,
-      b.x + 4,
-      curY,
-      b.width - 8,
-      15,
-      10.5,
-      '"Noto Sans Devanagari", sans-serif',
-      b.y + b.height - curY - 4,
-      '#1E293B'
-    );
+    const availableH = Math.max(0, b.y + b.height - curY - 4);
+    if (availableH >= 15) {
+      DevanagariTypographyEngine.renderJustifiedText(
+        ctx,
+        bodyText,
+        b.x + 4,
+        curY,
+        b.width - 8,
+        15,
+        10.5,
+        '"Noto Sans Devanagari", sans-serif',
+        availableH,
+        '#1E293B'
+      );
+    }
 
     // Border
     ctx.strokeStyle = '#0F172A';
@@ -1441,14 +1659,15 @@ export class GraphicRenderer {
   }
 
   // ==========================================================================
-  // 4:5 PORTRAIT ARTICLE CLIPPING RENDERER (STEP 7)
+  // WHATSAPP ARTICLE CLIPPING RENDERER (STEP 7 & STEP 8)
+  // Supports both 4:5 Portrait (1080x1350) and 1:1 Square (1080x1080)
   // ==========================================================================
 
   /**
-   * Renders a dedicated 4:5 (1080 x 1350 px) Portrait Article Clipping with:
-   * - Top BNW branding masthead (tri-color stripe, 'ब्रेकिंग न्यूज़ वाला', date, district)
+   * Renders a dedicated 4:5 (1080 x 1350 px) or 1:1 (1080 x 1080 px) Article Clipping with:
+   * - Top BNW branding masthead (tri-color stripe, 'ब्रेकिंग न्यूज़ वाला', date, district, category)
    * - Devanagari headline with anti-clipping line height
-   * - Optional featured photo with aspect crop
+   * - Optional featured photo with aspect crop, or elegant missing-image editorial divider
    * - Justified Devanagari body text using DevanagariTypographyEngine
    * - Bottom reporter attribution card (circular avatar, name, accreditation badge, verified seal, domain)
    */
@@ -1456,8 +1675,9 @@ export class GraphicRenderer {
     canvas: HTMLCanvasElement,
     options: ArticleClippingRenderOptions
   ): Promise<void> {
+    const isSquare = options.format === '1:1';
     const W = 1080;
-    const H = 1350;
+    const H = isSquare ? 1080 : 1350;
 
     canvas.width = W;
     canvas.height = H;
@@ -1484,8 +1704,8 @@ export class GraphicRenderer {
     ctx.fillStyle = '#344FD6';
     ctx.fillRect(W * 0.66, 0, W * 0.34, 8);
 
-    // 3. Elegant Top Masthead Bar (y: 8 to 128, height: 120px)
-    const mastheadH = 120;
+    // 3. Elegant Top Masthead Bar
+    const mastheadH = isSquare ? 110 : 120;
     const mastheadGrad = ctx.createLinearGradient(0, 8, W, 8);
     mastheadGrad.addColorStop(0, '#0F172A');
     mastheadGrad.addColorStop(1, '#1E293B');
@@ -1494,15 +1714,15 @@ export class GraphicRenderer {
 
     // Logo icon box
     const logoX = 40;
-    const logoY = 24;
-    const logoSize = 64;
+    const logoY = isSquare ? 20 : 24;
+    const logoSize = isSquare ? 58 : 64;
     ctx.fillStyle = '#ED1727';
     ctx.beginPath();
     ctx.roundRect(logoX, logoY, logoSize, logoSize, 12);
     ctx.fill();
 
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 40px "Rozha One", "Noto Sans Devanagari", serif';
+    ctx.font = `bold ${isSquare ? 36 : 40}px "Rozha One", "Noto Sans Devanagari", serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('ब', logoX + logoSize / 2, logoY + logoSize / 2 + 2);
@@ -1511,12 +1731,12 @@ export class GraphicRenderer {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 32px "Noto Sans Devanagari", sans-serif';
-    ctx.fillText('ब्रेकिंग न्यूज़ वाला', logoX + logoSize + 18, 54);
+    ctx.font = `bold ${isSquare ? 28 : 32}px "Noto Sans Devanagari", sans-serif`;
+    ctx.fillText('ब्रेकिंग न्यूज़ वाला', logoX + logoSize + 18, isSquare ? 48 : 54);
 
     ctx.fillStyle = '#94A3B8';
     ctx.font = '700 11px "Inter", sans-serif';
-    ctx.fillText('BREAKING NEWS WALA • MADHYA PRADESH', logoX + logoSize + 18, 74);
+    ctx.fillText('BREAKING NEWS WALA • MADHYA PRADESH', logoX + logoSize + 18, isSquare ? 68 : 74);
 
     // District Tag & Date on Right Side
     const rightMargin = W - 40;
@@ -1533,7 +1753,7 @@ export class GraphicRenderer {
     const pillW = distMetrics.width + 24;
     const pillH = 30;
     const pillX = rightMargin - pillW;
-    const pillY = 32;
+    const pillY = isSquare ? 26 : 32;
 
     ctx.fillStyle = '#FDE900';
     ctx.beginPath();
@@ -1549,7 +1769,7 @@ export class GraphicRenderer {
     ctx.textAlign = 'right';
     ctx.fillStyle = '#94A3B8';
     ctx.font = '13px "Noto Sans Devanagari", sans-serif';
-    ctx.fillText(dateText, rightMargin, 86);
+    ctx.fillText(dateText, rightMargin, isSquare ? 78 : 86);
 
     // Masthead bottom tri-color accent line (4px)
     ctx.fillStyle = '#ED1727';
@@ -1559,23 +1779,28 @@ export class GraphicRenderer {
     ctx.fillStyle = '#344FD6';
     ctx.fillRect(W * 0.66, 8 + mastheadH - 4, W * 0.34, 4);
 
-    // 4. Edition Ribbon
+    // 4. Edition Ribbon & Category Tag
     const contentMarginX = 50;
     const contentW = W - contentMarginX * 2;
-    let currentY = 8 + mastheadH + 24;
+    let currentY = 8 + mastheadH + (isSquare ? 18 : 24);
 
     const editionTitle = options.editionTitle || 'अख़बार कतरन • विशेष ग्राउंड रिपोर्ट';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = '#DC2626';
     ctx.font = 'bold 14px "Noto Sans Devanagari", sans-serif';
-    ctx.fillText(`📰 ${editionTitle}`, contentMarginX, currentY);
+    
+    let ribbonText = `📰 ${editionTitle}`;
+    if (options.category) {
+      ribbonText = `📰 [${options.category}] • ${editionTitle}`;
+    }
+    ctx.fillText(ribbonText, contentMarginX, currentY);
     currentY += 12;
 
     // 5. Headline Rendering (Anti-Clipping line height)
     ctx.fillStyle = '#0F172A';
-    const headlineFontSize = 34;
-    const headlineLineHeight = 48;
+    const headlineFontSize = isSquare ? 30 : 34;
+    const headlineLineHeight = isSquare ? 42 : 48;
     ctx.font = `bold ${headlineFontSize}px "Noto Sans Devanagari", sans-serif`;
 
     const headlineWords = (options.headline || '').split(/\s+/).filter(Boolean);
@@ -1595,19 +1820,20 @@ export class GraphicRenderer {
     if (headLine) headlineLines.push(headLine);
 
     currentY += headlineFontSize;
-    for (let i = 0; i < Math.min(headlineLines.length, 3); i++) {
+    const maxHeadlineLines = isSquare ? 2 : 3;
+    for (let i = 0; i < Math.min(headlineLines.length, maxHeadlineLines); i++) {
       ctx.fillText(headlineLines[i], contentMarginX, currentY);
       currentY += headlineLineHeight;
     }
     currentY += 8;
 
-    // 6. Optional Featured Photo with Aspect Crop
+    // 6. Optional Featured Photo with Aspect Crop or Graceful Missing-Image Divider
     let photoDrawn = false;
     if (options.photoUrl) {
       try {
         const photo = await loadImage(options.photoUrl);
         if (photo && photo.width > 0) {
-          const photoH = 340;
+          const photoH = isSquare ? 260 : 340;
           const photoY = currentY;
 
           ctx.save();
@@ -1637,7 +1863,7 @@ export class GraphicRenderer {
           ctx.roundRect(contentMarginX, photoY, contentW, photoH, 12);
           ctx.stroke();
 
-          currentY += photoH + 20;
+          currentY += photoH + (isSquare ? 14 : 20);
           photoDrawn = true;
         }
       } catch (err) {
@@ -1645,14 +1871,31 @@ export class GraphicRenderer {
       }
     }
 
-    // 7. Justified Devanagari Body Text
-    const attributionCardH = 150;
-    const attributionCardY = H - attributionCardH;
-    const bodyMaxHeight = attributionCardY - currentY - 20;
+    if (!photoDrawn) {
+      // Missing photo graceful fallback (editorial divider, never fabricated image)
+      ctx.save();
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(contentMarginX, currentY);
+      ctx.lineTo(contentMarginX + contentW, currentY);
+      ctx.stroke();
 
-    if (bodyMaxHeight > 80 && options.body) {
-      const bodyFontSize = photoDrawn ? 20 : 23;
-      const bodyLineHeight = photoDrawn ? 32 : 36;
+      // Red accent in center
+      ctx.fillStyle = '#ED1727';
+      ctx.fillRect(contentMarginX + (contentW - 80) / 2, currentY - 1, 80, 3);
+      ctx.restore();
+      currentY += isSquare ? 14 : 18;
+    }
+
+    // 7. Justified Devanagari Body Text
+    const attributionCardH = isSquare ? 130 : 150;
+    const attributionCardY = H - attributionCardH;
+    const bodyMaxHeight = attributionCardY - currentY - 16;
+
+    if (bodyMaxHeight > 60 && options.body) {
+      const bodyFontSize = photoDrawn ? (isSquare ? 18 : 20) : (isSquare ? 21 : 23);
+      const bodyLineHeight = photoDrawn ? (isSquare ? 28 : 32) : (isSquare ? 32 : 36);
 
       DevanagariTypographyEngine.renderJustifiedText(
         ctx,
@@ -1681,7 +1924,7 @@ export class GraphicRenderer {
     ctx.fillRect(0, attributionCardY, W, 2);
 
     // Avatar
-    const avatarR = 42;
+    const avatarR = isSquare ? 36 : 42;
     const avatarX = 50 + avatarR;
     const avatarY = attributionCardY + attributionCardH / 2;
 
@@ -1711,7 +1954,7 @@ export class GraphicRenderer {
       ctx.fill();
 
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 30px "Noto Sans Devanagari", sans-serif';
+      ctx.font = `bold ${isSquare ? 26 : 30}px "Noto Sans Devanagari", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const initial = (options.reporterName || 'सं')[0];
@@ -1721,46 +1964,46 @@ export class GraphicRenderer {
     // Green verification badge on avatar
     ctx.fillStyle = '#10B981';
     ctx.beginPath();
-    ctx.arc(avatarX + 26, avatarY + 26, 12, 0, Math.PI * 2);
+    ctx.arc(avatarX + (isSquare ? 22 : 26), avatarY + (isSquare ? 22 : 26), isSquare ? 10 : 12, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#0F172A';
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 12px "Inter", sans-serif';
+    ctx.font = `bold ${isSquare ? 10 : 12}px "Inter", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('✓', avatarX + 26, avatarY + 26);
+    ctx.fillText('✓', avatarX + (isSquare ? 22 : 26), avatarY + (isSquare ? 22 : 26));
 
     // Reporter Details
-    const textStartX = avatarX + avatarR + 20;
+    const textStartX = avatarX + avatarR + (isSquare ? 16 : 20);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
 
     // Reporter Name
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 24px "Noto Sans Devanagari", sans-serif';
-    ctx.fillText(options.reporterName || 'अधिकृत संवाददाता', textStartX, avatarY - 8);
+    ctx.font = `bold ${isSquare ? 21 : 24}px "Noto Sans Devanagari", sans-serif`;
+    ctx.fillText(options.reporterName || 'अधिकृत संवाददाता', textStartX, avatarY - (isSquare ? 6 : 8));
 
     // Accreditation Badge Pill
     const badgeNumber = options.reporterBadge || 'BNW-REP-0101';
     ctx.fillStyle = '#38BDF8';
-    ctx.font = '600 13px "Inter", "Noto Sans Devanagari", sans-serif';
-    ctx.fillText(`अधिकृत रिपोर्टर • ${badgeNumber}`, textStartX, avatarY + 16);
+    ctx.font = `600 ${isSquare ? 12 : 13}px "Inter", "Noto Sans Devanagari", sans-serif`;
+    ctx.fillText(`अधिकृत रिपोर्टर • ${badgeNumber}`, textStartX, avatarY + (isSquare ? 14 : 16));
 
     ctx.fillStyle = '#94A3B8';
-    ctx.font = '12px "Noto Sans Devanagari", sans-serif';
-    ctx.fillText('मध्य प्रदेश के 55 जिलों का विश्वसनीय डिजिटल नेटवर्क', textStartX, avatarY + 36);
+    ctx.font = `${isSquare ? 11 : 12}px "Noto Sans Devanagari", sans-serif`;
+    ctx.fillText('मध्य प्रदेश के 55 जिलों का विश्वसनीय डिजिटल नेटवर्क', textStartX, avatarY + (isSquare ? 32 : 36));
 
     // Right-aligned branding & domain
     ctx.textAlign = 'right';
     ctx.fillStyle = '#FDE900';
-    ctx.font = 'bold 17px "Inter", sans-serif';
+    ctx.font = `bold ${isSquare ? 15 : 17}px "Inter", sans-serif`;
     ctx.fillText('breakingnewswala.com', W - 50, avatarY - 6);
 
     ctx.fillStyle = '#94A3B8';
-    ctx.font = '12px "Noto Sans Devanagari", sans-serif';
+    ctx.font = `${isSquare ? 11 : 12}px "Noto Sans Devanagari", sans-serif`;
     ctx.fillText('ई-पेपर डिजिटल संस्करण • जन-जन की आवाज', W - 50, avatarY + 18);
 
     ctx.restore();
