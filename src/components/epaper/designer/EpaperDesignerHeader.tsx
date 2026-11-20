@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Layout,
+  Sparkles,
 } from 'lucide-react';
 import { EpaperPageDoc } from '../../../types';
 import { CanvasViewportState, GridColumnCount } from './types';
@@ -41,6 +42,10 @@ export interface EpaperDesignerHeaderProps {
   onRedo: () => void;
   onSave: () => void;
   onSaveAsTemplate?: () => void;
+  onAutoArrange?: () => void;
+  isAutoArranging?: boolean;
+  designerMode?: 'AUTO' | 'ASSISTED' | 'MANUAL';
+  onModeChange?: (mode: 'AUTO' | 'ASSISTED' | 'MANUAL') => void;
   onClose: () => void;
 }
 
@@ -62,6 +67,10 @@ export const EpaperDesignerHeader: React.FC<EpaperDesignerHeaderProps> = ({
   onRedo,
   onSave,
   onSaveAsTemplate,
+  onAutoArrange,
+  isAutoArranging,
+  designerMode = 'ASSISTED',
+  onModeChange,
   onClose,
 }) => {
   const zoomPercent = Math.round(viewportState.zoom * 100);
@@ -167,8 +176,50 @@ export const EpaperDesignerHeader: React.FC<EpaperDesignerHeaderProps> = ({
         </div>
       </div>
 
-      {/* Center: Tools, Toggles, Zoom & Viewport */}
+      {/* Center: Modes, Tools, Toggles, Zoom & Viewport */}
       <div className="flex items-center gap-2">
+        {/* 3 Page Designer Modes: AUTO, ASSISTED, MANUAL */}
+        <div className="flex items-center bg-slate-800/80 p-1 rounded-xl border border-slate-700/60">
+          <button
+            onClick={() => onModeChange && onModeChange('AUTO')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              designerMode === 'AUTO'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="ऑटो मोड: प्राथमिकता व पदानुक्रम के आधार पर स्वचालित लेआउट संयोजन"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">ऑटो (Auto)</span>
+          </button>
+
+          <button
+            onClick={() => onModeChange && onModeChange('ASSISTED')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              designerMode === 'ASSISTED'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="असिस्टेड मोड: चुंबकीय स्नैपिंग, ग्रिड गाइडलाइंस एवं वास्तविक समय टकराव चेतावनियां"
+          >
+            <Magnet className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">असिस्टेड (Assisted)</span>
+          </button>
+
+          <button
+            onClick={() => onModeChange && onModeChange('MANUAL')}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+              designerMode === 'MANUAL'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="मैन्युअल मोड: स्वतंत्र पोज़िशनिंग, आकार परिवर्तन एवं फ्री-फॉर्म संपादन"
+          >
+            <MousePointer className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">मैन्युअल (Manual)</span>
+          </button>
+        </div>
+
         {/* Pointer vs Hand tool */}
         <div className="flex items-center bg-slate-800/80 p-1 rounded-xl border border-slate-700/60">
           <button
@@ -282,6 +333,18 @@ export const EpaperDesignerHeader: React.FC<EpaperDesignerHeaderProps> = ({
             </>
           )}
         </button>
+        {/* AI Auto-Arrange Button (Auto Mode) */}
+        {onAutoArrange && (
+          <button
+            onClick={onAutoArrange}
+            disabled={isAutoArranging}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/50 bg-amber-900/40 hover:bg-amber-800/60 text-amber-200 text-xs font-bold transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+            title="पेज एलिमेंट्स को ऑटोमैटिक 8-कॉलम ब्रॉडशीट ग्रिड में व्यवस्थित करें (Auto Mode)"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span className="hidden lg:inline">{isAutoArranging ? 'ऑटो-लेआउट...' : 'ऑटो लेआउट'}</span>
+          </button>
+        )}
       </div>
 
       {/* Right: Undo/Redo, Dirty Status, Save & Close */}

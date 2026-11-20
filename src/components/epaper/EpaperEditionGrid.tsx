@@ -12,6 +12,7 @@ import {
   Plus,
   Clock,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import { EpaperStatusPipeline } from './EpaperStatusPipeline';
 
@@ -19,6 +20,7 @@ export interface EpaperEditionGridProps {
   editions: EpaperEditionDoc[];
   onOpenNewsDesk: (edition: EpaperEditionDoc) => void;
   onOpenDesigner?: (editionId: string, pageNumber: number) => void;
+  onOpenQualityChecker?: (edition: EpaperEditionDoc) => void;
   onDeleteEdition?: (editionId: string) => void;
   onStatusChange?: (edition: EpaperEditionDoc, nextStatus: any) => void;
   onCreateNew?: () => void;
@@ -30,6 +32,7 @@ export const EpaperEditionGrid: React.FC<EpaperEditionGridProps> = ({
   editions,
   onOpenNewsDesk,
   onOpenDesigner,
+  onOpenQualityChecker,
   onDeleteEdition,
   onStatusChange,
   onCreateNew,
@@ -163,6 +166,16 @@ export const EpaperEditionGrid: React.FC<EpaperEditionGridProps> = ({
                     title="ब्रॉडशीट लेआउट डिज़ाइनर खोलें"
                   >
                     <Edit3 className="w-4 h-4 text-blue-600" />
+                  </button>
+                )}
+
+                {onOpenQualityChecker && (
+                  <button
+                    onClick={() => onOpenQualityChecker(edition)}
+                    className="p-2 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 transition-colors"
+                    title="गुणवत्ता परीक्षक एवं प्रकाशन द्वार (Quality Checker)"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   </button>
                 )}
 

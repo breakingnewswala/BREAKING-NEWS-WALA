@@ -33,7 +33,9 @@ import {
   X,
   RefreshCw,
   Eye,
+  Newspaper,
 } from 'lucide-react';
+import { EpaperReporterWorkspace } from '../components/epaper/EpaperReporterWorkspace';
 import {
   ArticleDetail,
   CategoryItem,
@@ -424,7 +426,7 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   onSubmitDraft,
   onBackClick,
 }) => {
-  const [activeTab, setActiveTab] = useState<'create' | 'my_stories' | 'assignments' | 'profile' | 'classified_ads'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'my_stories' | 'assignments' | 'profile' | 'classified_ads' | 'epaper_workspace'>('create');
 
   // Classified Ads Submission State
   const [adAdvertiserName, setAdAdvertiserName] = useState<string>('');
@@ -938,6 +940,18 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
           >
             <Megaphone className="w-3.5 h-3.5" />
             <span>स्थानीय विज्ञापन / क्लासिफाइड</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('epaper_workspace')}
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+              activeTab === 'epaper_workspace'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Newspaper className="w-3.5 h-3.5" />
+            <span>ई-पेपर कार्यक्षेत्र (E-Paper Workspace)</span>
           </button>
         </div>
       </div>
@@ -1836,6 +1850,17 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* TAB 6: EPAPER WORKSPACE */}
+        {activeTab === 'epaper_workspace' && (
+          <div className="w-full">
+            <EpaperReporterWorkspace
+              reporterId={activeReporter?.id || activeReporter?.badgeNumber}
+              categories={categories}
+              districts={districts}
+            />
           </div>
         )}
       </div>

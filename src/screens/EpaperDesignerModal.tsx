@@ -85,7 +85,24 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
     magneticSnap: true,
     showMargins: true,
     previewMode: false,
+    designerMode: 'ASSISTED',
   });
+
+  // Local synced articles state (augmented with eligible articles)
+  const [articlesState, setArticlesState] = useState<ArticleDetail[]>(articles || []);
+
+  useEffect(() => {
+    if (articles && articles.length > 0) {
+      setArticlesState((prev) => {
+        const merged = new Map<string, ArticleDetail>();
+        for (const a of articles) merged.set(a.id, a);
+        for (const a of prev) {
+          if (!merged.has(a.id)) merged.set(a.id, a);
+        }
+        return Array.from(merged.values());
+      });
+    }
+  }, [articles]);
 
   // Lock body scroll when modal is active
   useEffect(() => {
@@ -104,12 +121,22 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
     if (!editionId) return;
     setIsLoading(true);
     try {
-      const [fetchedEdition, fetchedPages] = await Promise.all([
+      const [fetchedEdition, fetchedPages, eligibleRes] = await Promise.all([
         apiClient.epaper.getEditionById(editionId),
         apiClient.epaper.getEditionPages(editionId),
+        apiClient.epaper.getEligibleArticles({ limit: 100 }).catch(() => null),
       ]);
 
       setEdition(fetchedEdition);
+
+      if (eligibleRes && Array.isArray((eligibleRes as any).items) && (eligibleRes as any).items.length > 0) {
+        setArticlesState((prev) => {
+          const merged = new Map<string, ArticleDetail>();
+          for (const a of prev) merged.set(a.id, a);
+          for (const a of (eligibleRes as any).items) merged.set(a.id, a);
+          return Array.from(merged.values());
+        });
+      }
 
       if (fetchedPages && fetchedPages.length > 0) {
         setPages(fetchedPages);
@@ -245,6 +272,65 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
     }
   }, [historyIndex, historyStack, activePage]);
 
+  // Auto Arrange Layout (Auto Mode)
+  const [isAutoArranging, setIsAutoArranging] = useState<boolean>(false);
+
+  const handleAutoArrange = async () => {
+    if (!activePage) return;
+    setIsAutoArranging(true);
+    pushHistory();
+    try {
+      const res = await apiClient.epaper.ai.autoLayout({
+        elements: activePage.elements || [],
+        gridColumns: (activePage.gridColumns as any) || 8,
+        pageType: activePage.sectionType || 'FRONT_PAGE',
+        hasMasthead: activePage.pageNumber === 1,
+      });
+
+      if (res && res.elements) {
+        setActivePage((prev) => (prev ? { ...prev, elements: res.elements } : null));
+        setIsDirty(true);
+        showToast(
+          `ऑटो-लेआउट सफल! ${res.stats?.placedCount || res.elements.length} एलिमेंट्स सुव्यवस्थित।`,
+          'success'
+        );
+      }
+    } catch (err: any) {
+      console.error('[EpaperDesigner] Auto-layout failed:', err);
+      showToast(err.message || 'ऑटो-लेआउट में त्रुटि!', 'error');
+    } finally {
+      setIsAutoArranging(false);
+    }
+  };
+
+  // Mode Change Handler (AUTO, ASSISTED, MANUAL)
+  const handleModeChange = (mode: 'AUTO' | 'ASSISTED' | 'MANUAL') => {
+    setViewportState((prev) => {
+      const updates: Partial<CanvasViewportState> = { designerMode: mode };
+      if (mode === 'AUTO') {
+        updates.showGrid = true;
+        updates.magneticSnap = true;
+      } else if (mode === 'ASSISTED') {
+        updates.showGrid = true;
+        updates.magneticSnap = true;
+      } else if (mode === 'MANUAL') {
+        updates.magneticSnap = false;
+      }
+      return { ...prev, ...updates };
+    });
+
+    if (mode === 'AUTO') {
+      handleAutoArrange();
+    } else {
+      showToast(
+        mode === 'ASSISTED'
+          ? 'असिस्टेड मोड: चुंबकीय स्नैपिंग एवं टकराव चेतावनियां सक्रिय'
+          : 'मैन्युअल मोड: मुक्त पोज़िशनिंग एवं संपादन सक्रिय',
+        'info'
+      );
+    }
+  };
+
   // Fit Canvas to Screen
   const handleFitToScreen = useCallback(() => {
     const stageWidth = window.innerWidth - 640; // Subtract left/right toolbars (320px each)
@@ -291,6 +377,21 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
   const handleAddStory = (article: ArticleDetail) => {
     if (!activePage) return;
 
+    // Strict Approval Gate: Prevent unapproved articles from entering page composition
+    const isApproved =
+      ['APPROVED', 'PUBLISHED'].includes(String(article.status || '').toUpperCase()) ||
+      ['APPROVED_FOR_EPAPER', 'ASSIGNED_TO_PAGE', 'PAGE_DESIGNED', 'QUALITY_CHECK', 'FINAL_APPROVED'].includes(
+        String((article as any).epaperWorkflow?.status || '').toUpperCase()
+      );
+
+    if (!isApproved) {
+      showToast(
+        `अस्वीकृत समाचार "${article.title.substring(0, 20)}..." पृष्ठ पर नहीं जोड़ा जा सकता! केवल स्वीकृत समाचार ही अनुमत हैं।`,
+        'error'
+      );
+      return;
+    }
+
     const grid = calculateColumnGrid(activePage.gridColumns || 8);
     const colSpan = Math.min(4, activePage.gridColumns || 8);
     const spanWidth = getColumnSpanWidth(colSpan, grid.columnWidth, grid.gutterWidth);
@@ -298,6 +399,23 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
     // Position new element
     const existingCount = activePage.elements?.length || 0;
     const startY = 120 + ((existingCount * 40) % 600);
+
+    const byline = (article as any).byline || article.authorName || '';
+    const editorCredit = (article as any).editorCredit || (article as any).epaperWorkflow?.editorCredit || '';
+    const photoCredit = (article as any).photographer || 'बीएनडब्ल्यू फोटो ब्यूरो';
+    const missingReporterCredit = !byline.trim();
+    const missingEditorCredit = !editorCredit.trim();
+
+    // Determine editorial role based on priority
+    let role: 'LEAD' | 'SECOND_LEAD' | 'ANCHOR' | 'BRIEF' = 'ANCHOR';
+    const prio = String(article.priority || '').toUpperCase();
+    if (prio === 'BREAKING' || existingCount === 0) {
+      role = 'LEAD';
+    } else if (prio === 'URGENT' || prio === 'HIGH') {
+      role = 'SECOND_LEAD';
+    } else if (prio === 'LOW') {
+      role = 'BRIEF';
+    }
 
     const newElement: EpaperPageElement = {
       id: `elem-story-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -312,10 +430,13 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
       colSpan,
       customHeadline: article.title,
       customBodyText: article.summary || article.content,
-      byline: (article as any).byline || article.authorName || 'संवाददाता',
-      photoCredit: (article as any).photographer || 'बीएनडब्ल्यू फोटो ब्यूरो',
-      imageUrl: article.imageUrl,
-      role: 'LEAD',
+      byline: byline || 'संवाददाता, बीएनडब्ल्यू',
+      editorCredit,
+      photoCredit,
+      missingReporterCredit,
+      missingEditorCredit,
+      imageUrl: article.imageUrl || '',
+      role,
       fontSize: 11,
       zIndex: existingCount + 1,
     };
@@ -324,7 +445,56 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
     setActivePage({ ...activePage, elements: updatedElements });
     setSelectedElementId(newElement.id);
     pushHistory();
-    showToast(`"${article.title.substring(0, 24)}..." पृष्ठ पर जोड़ा गया`, 'success');
+
+    const warningText = !article.imageUrl
+      ? ' (⚠️ फ़ोटो अनुपलब्ध)'
+      : missingReporterCredit
+      ? ' (⚠️ रिपोर्टर साभार रिक्त)'
+      : '';
+    showToast(`"${article.title.substring(0, 24)}..." पृष्ठ पर जोड़ा गया${warningText}`, 'success');
+  };
+
+  // Reassign story element to another page before publication
+  const handleReassignElementToPage = (elementId: string, targetPageNum: number) => {
+    if (!activePage || targetPageNum === activePage.pageNumber) return;
+    const targetElement = activePage.elements?.find((el) => el.id === elementId);
+    if (!targetElement) return;
+
+    const targetPage = pages.find((p) => p.pageNumber === targetPageNum);
+    if (!targetPage) {
+      showToast(`लक्ष्य पृष्ठ ${targetPageNum} नहीं मिला!`, 'error');
+      return;
+    }
+
+    // Remove element from active page
+    const remainingElements = (activePage.elements || []).filter((el) => el.id !== elementId);
+    setActivePage({ ...activePage, elements: remainingElements });
+    setSelectedElementId(null);
+
+    // Add element to target page
+    const updatedTargetElements = [
+      ...(targetPage.elements || []),
+      {
+        ...targetElement,
+        id: `elem-reassigned-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        zIndex: (targetPage.elements?.length || 0) + 1,
+      },
+    ];
+
+    setPages((prev) =>
+      prev.map((p) => {
+        if (p.id === activePage.id) return { ...p, elements: remainingElements };
+        if (p.id === targetPage.id) return { ...p, elements: updatedTargetElements };
+        return p;
+      })
+    );
+
+    setIsDirty(true);
+    pushHistory();
+    showToast(
+      `समाचार "${(targetElement.customHeadline || '').substring(0, 20)}..." पृष्ठ ${targetPageNum} पर स्थानांतरित किया गया।`,
+      'success'
+    );
   };
 
   // Add Primitive Element
@@ -793,6 +963,10 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
             onRedo={handleRedo}
             onSave={handleSavePage}
             onSaveAsTemplate={() => setShowSaveTplModal(true)}
+            onAutoArrange={handleAutoArrange}
+            isAutoArranging={isAutoArranging}
+            designerMode={viewportState.designerMode || 'ASSISTED'}
+            onModeChange={handleModeChange}
             onClose={handleClose}
           />
 
@@ -800,7 +974,7 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
           <div className="flex-1 flex overflow-hidden relative">
             {/* Panel 1: Left Toolbox (Approved Stories, Primitives, Templates) */}
             <EpaperToolboxPanel
-              articles={articles}
+              articles={articlesState}
               editionPages={pages}
               activePageNumber={activePageNum}
               onAddStory={handleAddStory}
@@ -825,6 +999,9 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
               selectedElement={selectedElement}
               page={activePage}
               hasCollision={hasCollision}
+              articles={articlesState}
+              totalPages={edition?.totalPages || pages.length || 12}
+              onReassignPage={handleReassignElementToPage}
               onUpdateElement={handleUpdateElement}
               onDeleteElement={handleDeleteElement}
               onDuplicateElement={handleDuplicateElement}

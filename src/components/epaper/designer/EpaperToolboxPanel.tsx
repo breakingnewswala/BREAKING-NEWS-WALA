@@ -42,6 +42,7 @@ export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'stories' | 'primitives' | 'templates'>('stories');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedTplCat, setSelectedTplCat] = useState<string>('all');
 
   // Map articleId -> pageNumber across all edition pages to detect duplicates
   const placedArticleMap = useMemo(() => {
@@ -234,10 +235,41 @@ export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
                     key={art.id}
                     className="p-3 bg-white rounded-xl border border-slate-200 hover:border-slate-300 shadow-2xs hover:shadow-xs transition-all space-y-2 group"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
-                        {art.categoryName || art.category || 'सामान्य'}
-                      </span>
+                    <div className="flex items-start justify-between gap-1 flex-wrap">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                          {art.categoryName || art.category || 'सामान्य'}
+                        </span>
+                        {art.priority && (
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                              String(art.priority).toUpperCase() === 'BREAKING' || String(art.priority).toUpperCase() === 'CRITICAL'
+                                ? 'bg-red-100 text-red-800'
+                                : String(art.priority).toUpperCase() === 'URGENT' || String(art.priority).toUpperCase() === 'HIGH'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {art.priority}
+                          </span>
+                        )}
+                        {!art.imageUrl && (
+                          <span
+                            className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200"
+                            title="फ़ोटो अनुपलब्ध"
+                          >
+                            ⚠️ नो फ़ोटो
+                          </span>
+                        )}
+                        {!art.authorName && !(art as any).byline && (
+                          <span
+                            className="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200"
+                            title="रिपोर्टर साभार रिक्त"
+                          >
+                            ⚠️ नो साभार
+                          </span>
+                        )}
+                      </div>
 
                       {/* Duplicate Placement Badges */}
                       {isAssignedHere ? (
@@ -321,17 +353,47 @@ export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
       {activeTab === 'templates' && (
         <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
           <div className="text-[11px] font-bold text-slate-500 px-1 mb-1">
-            मानक 12-पृष्ठ ब्रॉडशीट टेम्पलेट्स:
+            मानक ब्रॉडशीट टेम्पलेट्स ({DEFAULT_EPAPER_TEMPLATES.length}):
           </div>
 
-          {DEFAULT_EPAPER_TEMPLATES.map((tpl, idx) => (
+          {/* Template Category Pills */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
+            {[
+              { key: 'all', label: 'सभी' },
+              { key: 'FRONT_PAGE', label: 'प्रथम पृष्ठ' },
+              { key: 'DISTRICT_FOCUS', label: 'जिला' },
+              { key: 'STATE', label: 'राज्य' },
+              { key: 'POLITICAL', label: 'राजनीति' },
+              { key: 'BUSINESS', label: 'व्यापार व कृषि' },
+              { key: 'EDUCATION', label: 'शिक्षा' },
+              { key: 'SPORTS', label: 'खेल' },
+              { key: 'EDITORIAL', label: 'संपादकीय' },
+              { key: 'SPECIAL', label: 'विशेषांक' },
+            ].map((cat) => (
+              <button
+                key={cat.key}
+                onClick={() => setSelectedTplCat(cat.key)}
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-colors ${
+                  selectedTplCat === cat.key
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          {DEFAULT_EPAPER_TEMPLATES.filter(
+            (tpl) => selectedTplCat === 'all' || tpl.category === selectedTplCat
+          ).map((tpl, idx) => (
             <div
               key={tpl.id || idx}
               className="p-3 bg-white rounded-xl border border-slate-200 hover:border-blue-400 shadow-2xs transition-all space-y-2 group"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
-                  पृष्ठ {tpl.pageNumberDefault || idx + 1}
+                  {tpl.pageNumberDefault ? `पृष्ठ ${tpl.pageNumberDefault}` : 'टेम्पलेट'}
                 </span>
                 <span className="text-[10px] font-mono text-slate-400">
                   {tpl.regions?.length || 0} स्लॉट्स
@@ -355,7 +417,7 @@ export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
                     onApplyTemplate(tpl);
                   }
                 }}
-                className="w-full py-1.5 rounded-lg bg-slate-50 hover:bg-purple-600 text-slate-700 hover:text-white font-bold text-xs border border-slate-200 hover:border-purple-600 transition-all flex items-center justify-center gap-1.5"
+                className="w-full py-1.5 rounded-lg bg-slate-50 hover:bg-purple-600 text-slate-700 hover:text-white font-bold text-xs border border-slate-200 hover:border-purple-600 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>टेम्पलेट लागू करें</span>

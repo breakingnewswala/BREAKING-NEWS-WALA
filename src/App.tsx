@@ -31,11 +31,10 @@ import { BnwMasthead } from './components/BnwMasthead';
 import { BottomNav, NavTab } from './components/BottomNav';
 import { NavDrawer } from './components/NavDrawer';
 import { Footer } from './components/Footer';
-import { HomeScreen } from './screens/HomeScreen';
-import { ArticleDetailScreen } from './screens/ArticleDetailScreen';
-
-// Performance Optimization (ME-027): Code-splitting heavy operational and studio surfaces
-const EpaperScreen = React.lazy(() => import('./screens/EpaperScreen').then((m) => ({ default: m.EpaperScreen })));
+// Performance Optimization (ME-027 / STEP 18): Code-splitting operational and content surfaces
+const HomeScreen = React.lazy(() => import('./screens/HomeScreen').then((m) => ({ default: m.HomeScreen })));
+const ArticleDetailScreen = React.lazy(() => import('./screens/ArticleDetailScreen').then((m) => ({ default: m.ArticleDetailScreen })));
+const EpaperScreen = React.lazy(() => import('./screens/EpaperScreen.tsx').then((m) => ({ default: m.EpaperScreen })));
 const ReporterDeskScreen = React.lazy(() => import('./screens/ReporterDeskScreen').then((m) => ({ default: m.ReporterDeskScreen })));
 const NewsroomDeskScreen = React.lazy(() => import('./screens/NewsroomDeskScreen').then((m) => ({ default: m.NewsroomDeskScreen })));
 const AdminControlScreen = React.lazy(() => import('./screens/AdminControlScreen').then((m) => ({ default: m.AdminControlScreen })));
@@ -1080,29 +1079,30 @@ export const App: React.FC = () => {
 
       {/* 4. Main Body Content Switcher (4 Unified Surfaces + Utilities) */}
       <main className="flex-1">
-        {selectedArticleId && currentDetailArticle ? (
-          <ArticleDetailScreen
-            article={currentDetailArticle}
-            isBookmarked={bookmarkedIds.includes(currentDetailArticle.id)}
-            relatedArticles={articles.filter((a) => a.id !== currentDetailArticle.id)}
-            onBackClick={() => setSelectedArticleId(null)}
-            onBookmarkToggle={handleBookmarkToggle}
-            onShareArticle={handleShareArticle}
-            onRelatedArticleClick={handleArticleClick}
-            onEarnCoins={handleEarnCoins}
-            onRecordRead={handleRecordArticleRead}
-          />
-        ) : (
-          <React.Suspense
-            fallback={
-              <div className="flex flex-col items-center justify-center min-h-[450px] space-y-4">
-                <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-sm font-medium text-slate-600">लोड हो रहा है... / Loading...</p>
-              </div>
-            }
-          >
-            {/* Surface 1: Public News Website */}
-            {activeTab === 'home' && (
+        <React.Suspense
+          fallback={
+            <div className="flex flex-col items-center justify-center min-h-[450px] space-y-4">
+              <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-sm font-medium text-slate-600">लोड हो रहा है... / Loading...</p>
+            </div>
+          }
+        >
+          {selectedArticleId && currentDetailArticle ? (
+            <ArticleDetailScreen
+              article={currentDetailArticle}
+              isBookmarked={bookmarkedIds.includes(currentDetailArticle.id)}
+              relatedArticles={articles.filter((a) => a.id !== currentDetailArticle.id)}
+              onBackClick={() => setSelectedArticleId(null)}
+              onBookmarkToggle={handleBookmarkToggle}
+              onShareArticle={handleShareArticle}
+              onRelatedArticleClick={handleArticleClick}
+              onEarnCoins={handleEarnCoins}
+              onRecordRead={handleRecordArticleRead}
+            />
+          ) : (
+            <>
+              {/* Surface 1: Public News Website */}
+              {activeTab === 'home' && (
               <HomeScreen
                 articles={articles}
                 categories={CATEGORIES}
@@ -1323,8 +1323,9 @@ export const App: React.FC = () => {
                 onNavigateToArticles={() => navigateToTab('newsroom')}
               />
             )}
-          </React.Suspense>
-        )}
+            </>
+          )}
+        </React.Suspense>
       </main>
 
       {/* 5. Comprehensive Editorial Footer */}

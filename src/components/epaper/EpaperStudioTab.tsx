@@ -23,6 +23,9 @@ import {
   Sparkles,
   Layout,
   Megaphone,
+  UserCheck,
+  Share2,
+  ShieldCheck,
 } from 'lucide-react';
 import { DIVISIONS, DISTRICTS } from '../../data/mockNewsData';
 import { EpaperEditionGrid } from './EpaperEditionGrid';
@@ -31,6 +34,10 @@ import { EpaperCreationWizardModal } from './EpaperCreationWizardModal';
 import { EpaperNewsSelectionDesk } from './EpaperNewsSelectionDesk';
 import { EpaperTemplateManager } from './EpaperTemplateManager';
 import { EpaperAdManager } from './EpaperAdManager';
+import { EpaperReporterWorkspace } from './EpaperReporterWorkspace';
+import { EpaperWhatsAppStudio } from './EpaperWhatsAppStudio';
+import { EpaperAiNewsroomDesk } from './EpaperAiNewsroomDesk';
+import { EpaperQualityDashboard } from './EpaperQualityDashboard';
 import { EpaperDesignerModal } from '../../screens/EpaperDesignerModal';
 
 export interface EpaperStudioTabProps {
@@ -52,7 +59,7 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
 }) => {
   const [editions, setEditions] = useState<EpaperEditionDoc[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeSubView, setActiveSubView] = useState<'grid' | 'calendar' | 'news_desk' | 'templates' | 'ads'>('grid');
+  const [activeSubView, setActiveSubView] = useState<'grid' | 'calendar' | 'news_desk' | 'templates' | 'ads' | 'reporter_workspace' | 'whatsapp_studio' | 'ai_newsroom' | 'quality_checker'>('grid');
   const [selectedEdition, setSelectedEdition] = useState<EpaperEditionDoc | null>(null);
 
   // Filters
@@ -324,6 +331,50 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
                   <Megaphone className="w-3.5 h-3.5" />
                   <span>विज्ञापन एवं क्लासिफाइड (Ads)</span>
                 </button>
+                <button
+                  onClick={() => setActiveSubView('reporter_workspace')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    activeSubView === 'reporter_workspace'
+                      ? 'bg-white text-blue-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>संवाददाता कार्यक्षेत्र (Workspace)</span>
+                </button>
+                <button
+                  onClick={() => setActiveSubView('whatsapp_studio')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    activeSubView === 'whatsapp_studio'
+                      ? 'bg-white text-teal-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>व्हाट्सएप स्टूडियो (WhatsApp)</span>
+                </button>
+                <button
+                  onClick={() => setActiveSubView('ai_newsroom')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    activeSubView === 'ai_newsroom'
+                      ? 'bg-white text-purple-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <span>एआई न्यूज़रूम (AI Studio)</span>
+                </button>
+                <button
+                  onClick={() => setActiveSubView('quality_checker')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    activeSubView === 'quality_checker'
+                      ? 'bg-white text-emerald-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>गुणवत्ता एवं प्रकाशन (Quality & Publish)</span>
+                </button>
               </div>
 
               {/* Search Box */}
@@ -430,6 +481,10 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
                 setActiveSubView('news_desk');
               }}
               onOpenDesigner={handleOpenDesigner}
+              onOpenQualityChecker={(ed) => {
+                setSelectedEdition(ed);
+                setActiveSubView('quality_checker');
+              }}
               onDeleteEdition={handleDeleteEdition}
               onStatusChange={handleStatusChange}
               onCreateNew={() => setShowWizard(true)}
@@ -467,6 +522,47 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
               editions={editions}
               onPlaceAdOnPage={(ad, editionId, pageNumber) => {
                 handleOpenDesigner(editionId, pageNumber);
+              }}
+            />
+          )}
+
+          {activeSubView === 'reporter_workspace' && (
+            <EpaperReporterWorkspace
+              currentRole={currentRole}
+              onOpenReader={(edId, pageNum) => {
+                handleOpenDesigner(edId, pageNum);
+              }}
+              categories={[]}
+              districts={districts}
+            />
+          )}
+
+          {activeSubView === 'whatsapp_studio' && (
+            <EpaperWhatsAppStudio isAdminMode={true} />
+          )}
+
+          {activeSubView === 'ai_newsroom' && (
+            <EpaperAiNewsroomDesk
+              articles={articles}
+              editions={editions}
+              currentRole={currentRole}
+              onOpenDesigner={handleOpenDesigner}
+            />
+          )}
+
+          {activeSubView === 'quality_checker' && (
+            <EpaperQualityDashboard
+              edition={selectedEdition}
+              editions={editions}
+              currentRole={currentRole}
+              onOpenDesigner={handleOpenDesigner}
+              onBack={() => {
+                setActiveSubView('grid');
+                loadEditions();
+              }}
+              onEditionUpdated={(updated) => {
+                setSelectedEdition(updated);
+                loadEditions();
               }}
             />
           )}

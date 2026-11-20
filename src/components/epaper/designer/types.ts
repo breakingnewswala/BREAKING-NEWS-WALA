@@ -30,6 +30,7 @@ export interface CanvasViewportState {
   magneticSnap: boolean;
   showMargins: boolean;
   previewMode: boolean;    // false = wireframe/handles, true = live broadsheet render
+  designerMode?: 'AUTO' | 'ASSISTED' | 'MANUAL'; // 3 modes of Page Designer
 }
 
 export interface HistoryFrame {

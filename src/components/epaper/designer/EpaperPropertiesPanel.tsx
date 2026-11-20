@@ -3,6 +3,7 @@ import {
   EpaperPageDoc,
   EpaperPageElement,
   EpaperElementType,
+  ArticleDetail,
 } from '../../../types';
 import {
   calculateColumnGrid,
@@ -23,12 +24,18 @@ import {
   FileText,
   AlertTriangle,
   Sparkles,
+  ArrowRightLeft,
+  Image as ImageIcon,
+  CheckCircle2,
 } from 'lucide-react';
 
 export interface EpaperPropertiesPanelProps {
   selectedElement: EpaperPageElement | null;
   page: EpaperPageDoc;
   hasCollision?: boolean;
+  articles?: ArticleDetail[];
+  totalPages?: number;
+  onReassignPage?: (elementId: string, targetPageNum: number) => void;
   onUpdateElement: (updated: EpaperPageElement) => void;
   onDeleteElement: (id: string) => void;
   onDuplicateElement: (id: string) => void;
@@ -42,6 +49,9 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
   selectedElement,
   page,
   hasCollision,
+  articles = [],
+  totalPages = 12,
+  onReassignPage,
   onUpdateElement,
   onDeleteElement,
   onDuplicateElement,
@@ -51,6 +61,28 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
   onUpdatePageGridColumns,
 }) => {
   const grid = calculateColumnGrid(page.gridColumns || 8);
+
+  const refArticle = selectedElement?.articleId && articles
+    ? articles.find((a) => a.id === selectedElement.articleId)
+    : null;
+
+  // Page level metric calculations
+  const assignedStoriesCount = (page.elements || []).filter(
+    (el) => el.elementType === 'STORY' || Boolean(el.articleId)
+  ).length;
+
+  const missingImagesCount = (page.elements || []).filter(
+    (el) => (el.elementType === 'STORY' || el.elementType === 'IMAGE') && !el.imageUrl
+  ).length;
+
+  const missingCreditsCount = (page.elements || []).filter(
+    (el) => el.missingReporterCredit || el.missingEditorCredit || !el.byline
+  ).length;
+
+  const overflowElementsCount = (page.elements || []).filter((el) => {
+    const b = el.bounds;
+    return b.x < 0 || b.y < 0 || b.x + b.width > 933 || b.y + b.height > 1475;
+  }).length;
 
   const handleGeometryChange = (field: 'x' | 'y' | 'width' | 'height', val: number) => {
     if (!selectedElement) return;
@@ -96,10 +128,28 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
           {/* Element Header */}
           <div className="flex items-center justify-between pb-3 border-b border-slate-200">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
                   {selectedElement.elementType}
                 </span>
+                {refArticle?.priority && (
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      String(refArticle.priority).toUpperCase() === 'BREAKING' || String(refArticle.priority).toUpperCase() === 'CRITICAL'
+                        ? 'bg-red-100 text-red-800'
+                        : String(refArticle.priority).toUpperCase() === 'URGENT' || String(refArticle.priority).toUpperCase() === 'HIGH'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {refArticle.priority}
+                  </span>
+                )}
+                {refArticle?.status && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    {refArticle.status}
+                  </span>
+                )}
                 <span className="text-xs font-mono text-slate-400">
                   {selectedElement.id.slice(-6)}
                 </span>
@@ -124,6 +174,37 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Missing Image / Missing Credit Alerts */}
+          {(selectedElement.elementType === 'STORY' || selectedElement.elementType === 'IMAGE') && !selectedElement.imageUrl && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">फ़ोटो अनुपलब्ध (Missing Image)</span>
+                <span className="text-[11px] text-amber-700">यह स्टोरी बिना चित्र के टेक्स्ट रूप में मुद्रित होगी।</span>
+              </div>
+            </div>
+          )}
+
+          {(selectedElement.missingReporterCredit || !selectedElement.byline) && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">रिपोर्टर क्रेडिट रिक्त</span>
+                <span className="text-[11px] text-amber-700">कृपया नीचे संवाददाता की बायलाइन दर्ज करें।</span>
+              </div>
+            </div>
+          )}
+
+          {(selectedElement.missingEditorCredit || !selectedElement.editorCredit) && (
+            <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">संपादक क्रेडिट रिक्त</span>
+                <span className="text-[11px] text-blue-700">डेस्क संपादक का नाम नीचे दर्ज करें।</span>
+              </div>
+            </div>
+          )}
 
           {/* 1. Geometry Coordinates */}
           <div className="space-y-2.5">
@@ -397,6 +478,47 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
               />
             </div>
 
+            {/* Editor Credit */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                डेस्क संपादक साभार (Editor Credit):
+              </label>
+              <input
+                type="text"
+                value={selectedElement.editorCredit || ''}
+                onChange={(e) =>
+                  onUpdateElement({
+                    ...selectedElement,
+                    editorCredit: e.target.value,
+                    missingEditorCredit: !e.target.value.trim(),
+                  })
+                }
+                placeholder="डेस्क संपादक का नाम..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Page Reassignment */}
+            {onReassignPage && (
+              <div className="pt-2 border-t border-slate-200">
+                <label className="block text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1">
+                  <ArrowRightLeft className="w-3.5 h-3.5 text-blue-600" />
+                  <span>अन्य पृष्ठ पर भेजें (Move to Page):</span>
+                </label>
+                <select
+                  value={page.pageNumber}
+                  onChange={(e) => onReassignPage(selectedElement.id, parseInt(e.target.value, 10))}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-800 cursor-pointer hover:border-blue-400 transition-colors"
+                >
+                  {Array.from({ length: totalPages || 12 }, (_, i) => i + 1).map((pn) => (
+                    <option key={pn} value={pn} disabled={pn === page.pageNumber}>
+                      पृष्ठ {pn} {pn === page.pageNumber ? '(वर्तमान)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* ASCI Badge Toggle for Ads */}
             {selectedElement.elementType === 'AD' && (
               <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between">
@@ -422,13 +544,43 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
             <p className="text-xs text-slate-500 mt-0.5">ब्रॉडशीट पृष्ठ विन्यास व सामान्य सेटिंग्स</p>
           </div>
 
-          {/* Collision Alert if any */}
+          {/* Page-level Warning Banners */}
           {hasCollision && (
             <div className="p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-2.5 text-xs text-red-900">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div>
                 <span className="font-bold block">ओवरलैप चेतावनी!</span>
                 <span>कैनवास पर कुछ तत्व एक-दूसरे के ऊपर स्थित हैं। कृपया स्थान समायोजित करें।</span>
+              </div>
+            </div>
+          )}
+
+          {overflowElementsCount > 0 && (
+            <div className="p-3 bg-red-50 rounded-xl border border-red-200 flex items-start gap-2.5 text-xs text-red-900">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">पृष्ठ सीमा पार (Overflow)!</span>
+                <span>{overflowElementsCount} तत्व अखबार के मुद्रण क्षेत्र (32.9 × 52 cm) से बाहर हैं।</span>
+              </div>
+            </div>
+          )}
+
+          {missingImagesCount > 0 && (
+            <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2 text-xs text-amber-900">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">फ़ोटो अनुपलब्ध ({missingImagesCount})</span>
+                <span className="text-[11px] text-amber-700">इस पृष्ठ के {missingImagesCount} समाचारों में चित्र नहीं है।</span>
+              </div>
+            </div>
+          )}
+
+          {missingCreditsCount > 0 && (
+            <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 flex items-start gap-2 text-xs text-amber-900">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">क्रेडिट रिक्त ({missingCreditsCount})</span>
+                <span className="text-[11px] text-amber-700">रिपोर्टर या डेस्क संपादक क्रेडिट अपूर्ण है।</span>
               </div>
             </div>
           )}
@@ -485,7 +637,11 @@ export const EpaperPropertiesPanel: React.FC<EpaperPropertiesPanelProps> = ({
           {/* Summary Metrics */}
           <div className="pt-3 border-t border-slate-200 space-y-2 text-xs">
             <div className="flex justify-between text-slate-500">
-              <span>कुल तत्व संख्या:</span>
+              <span>आवंटित समाचार (Stories):</span>
+              <span className="font-bold text-blue-600">{assignedStoriesCount}</span>
+            </div>
+            <div className="flex justify-between text-slate-500">
+              <span>कुल तत्व संख्या (Elements):</span>
               <span className="font-bold text-slate-800">{page.elements?.length || 0}</span>
             </div>
             <div className="flex justify-between text-slate-500">
