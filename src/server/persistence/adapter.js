@@ -40,6 +40,7 @@ import {
   MP_SEED_REPORTERS,
 } from '../../shared/mpHyperlocalSeed.js';
 import { INITIAL_EPAPER_TEMPLATES } from './defaultEpaperTemplates.js';
+import { INITIAL_HEADER_TEMPLATES } from './defaultHeaderTemplates.js';
 import { validateTemplate, BROADSHEET_CONSTANTS as TEMPLATE_CONSTANTS } from '../epaper/templateValidator.js';
 import { BroadsheetAdManager, ALL_SUPPORTED_SLOTS, BROADSHEET_RATE_CARDS } from '../monetization/epaperAds.js';
 import { QualityCheckerEngine, QUALITY_SEVERITY } from '../epaper/qualityCheckerEngine.js';
@@ -56,6 +57,7 @@ export {
   CANONICAL_SEED_CAMPAIGNS,
   CANONICAL_AUDIENCE_SEGMENTS,
   INITIAL_EPAPER_TEMPLATES,
+  INITIAL_HEADER_TEMPLATES,
 };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1175,6 +1177,7 @@ export class LocalJsonAdapter {
       epaperEditions: [],
       epaperPages: [],
       epaperTemplates: [...INITIAL_EPAPER_TEMPLATES],
+      epaperHeaderTemplates: [...INITIAL_HEADER_TEMPLATES],
       epaperWhatsAppGenerations: [],
       epaperAdSubmissions: [],
       epaperEditionVersions: [],
@@ -1436,6 +1439,14 @@ export class LocalJsonAdapter {
           this.data.epaperTemplates.push({ ...initTpl });
         }
       }
+      this.data.epaperHeaderTemplates = Array.isArray(this.data.epaperHeaderTemplates) && this.data.epaperHeaderTemplates.length > 0
+        ? this.data.epaperHeaderTemplates
+        : [...INITIAL_HEADER_TEMPLATES];
+      for (const initHdr of INITIAL_HEADER_TEMPLATES) {
+        if (!this.data.epaperHeaderTemplates.some((h) => h.id === initHdr.id)) {
+          this.data.epaperHeaderTemplates.push({ ...initHdr });
+        }
+      }
       this.data.epaperWhatsAppGenerations = this.data.epaperWhatsAppGenerations || [];
       this.data.epaperAdSubmissions = this.data.epaperAdSubmissions || [];
       this.data.epaperEditionVersions = this.data.epaperEditionVersions || [];
@@ -1471,6 +1482,7 @@ export class LocalJsonAdapter {
       this.data.epaperEditions = [];
       this.data.epaperPages = [];
       this.data.epaperTemplates = [...INITIAL_EPAPER_TEMPLATES];
+      this.data.epaperHeaderTemplates = [...INITIAL_HEADER_TEMPLATES];
       this.data.epaperWhatsAppGenerations = [];
       this.data.epaperAdSubmissions = [];
       this.data.epaperEditionVersions = [];
@@ -6077,6 +6089,134 @@ export class LocalJsonAdapter {
     return true;
   }
 
+  // =========================================================================
+  // MASTER ADMIN HEADER TEMPLATES MANAGEMENT DOMAIN (PART 4)
+  // =========================================================================
+
+  async getEpaperHeaderTemplates(params = {}) {
+    let list = [...(this.data.epaperHeaderTemplates || INITIAL_HEADER_TEMPLATES)];
+    if (params.type && params.type !== 'all') {
+      const tp = String(params.type).toUpperCase();
+      list = list.filter((t) => String(t.type).toUpperCase() === tp);
+    }
+    if (params.activeOnly) {
+      list = list.filter((t) => t.isActive !== false);
+    }
+    if (params.search) {
+      const q = String(params.search).toLowerCase();
+      list = list.filter((t) =>
+        (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.nameHi && t.nameHi.toLowerCase().includes(q)) ||
+        (t.id && t.id.toLowerCase().includes(q)) ||
+        (t.description && t.description.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }
+
+  async getEpaperHeaderTemplateById(id) {
+    const list = this.data.epaperHeaderTemplates || INITIAL_HEADER_TEMPLATES;
+    const item = list.find((t) => t.id === id);
+    return item ? JSON.parse(JSON.stringify(item)) : null;
+  }
+
+  async saveEpaperHeaderTemplate(templateData, user = null) {
+    this.data.epaperHeaderTemplates = this.data.epaperHeaderTemplates || [...INITIAL_HEADER_TEMPLATES];
+    const id = templateData.id || `hdr-custom-${Date.now()}`;
+    const existingIndex = this.data.epaperHeaderTemplates.findIndex((t) => t.id === id);
+    const existing = existingIndex >= 0 ? this.data.epaperHeaderTemplates[existingIndex] : null;
+
+    const record = {
+      ...(existing || {}),
+      ...templateData,
+      id,
+      version: existing ? (existing.version || 1) + 1 : 1,
+      isActive: templateData.isActive !== undefined ? templateData.isActive : (existing?.isActive ?? true),
+      updatedAt: new Date().toISOString(),
+      createdAt: existing ? existing.createdAt : new Date().toISOString(),
+      createdBy: existing?.createdBy || user?.id || 'master-admin',
+      createdByName: existing?.createdByName || user?.fullName || 'मास्टर एडमिन',
+    };
+
+    // If marked default, unset default on other templates
+    if (record.isDefault) {
+      for (const t of this.data.epaperHeaderTemplates) {
+        if (t.id !== id) t.isDefault = false;
+      }
+    }
+
+    if (existingIndex >= 0) {
+      this.data.epaperHeaderTemplates[existingIndex] = record;
+    } else {
+      this.data.epaperHeaderTemplates.push(record);
+    }
+    this.save();
+    this.addAuditLog(user?.fullName || 'मास्टर एडमिन', user?.role || 'MASTER_ADMIN', 'EPAPER_HEADER_TEMPLATE_SAVED', `हेडर टेम्पलेट सहेजा गया: "${record.nameHi || record.name}" (ID: ${id})`);
+    return record;
+  }
+
+  async duplicateEpaperHeaderTemplate(id, newName = '', user = null) {
+    const source = await this.getEpaperHeaderTemplateById(id);
+    if (!source) {
+      const err = new Error(`ERR_NOT_FOUND: हेडर टेम्पलेट [${id}] नहीं मिला।`);
+      err.statusCode = 404;
+      err.code = 'ERR_NOT_FOUND';
+      throw err;
+    }
+
+    const clonedId = `hdr-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const clonedName = newName.trim() || `${source.name} (प्रतिलिपि)`;
+    const clonedNameHi = newName.trim() ? `${newName.trim()} (हिंदी)` : `${source.nameHi || source.name} (प्रतिलिपि)`;
+
+    const cloned = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: clonedId,
+      name: clonedName,
+      nameHi: clonedNameHi,
+      type: 'CUSTOM',
+      isDefault: false,
+      isActive: true,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: user?.id || 'master-admin',
+      createdByName: user?.fullName || 'मास्टर एडमिन',
+    };
+
+    this.data.epaperHeaderTemplates = this.data.epaperHeaderTemplates || [...INITIAL_HEADER_TEMPLATES];
+    this.data.epaperHeaderTemplates.push(cloned);
+    this.save();
+    this.addAuditLog(user?.fullName || 'मास्टर एडमिन', user?.role || 'MASTER_ADMIN', 'EPAPER_HEADER_TEMPLATE_DUPLICATED', `हेडर टेम्पलेट क्लोन किया गया: "${cloned.name}" (नया ID: ${clonedId})`);
+    return cloned;
+  }
+
+  async activateEpaperHeaderTemplate(id, user = null) {
+    const existing = await this.getEpaperHeaderTemplateById(id);
+    if (!existing) {
+      const err = new Error(`ERR_NOT_FOUND: हेडर टेम्पलेट [${id}] नहीं मिला।`);
+      err.statusCode = 404;
+      throw err;
+    }
+    existing.isActive = !existing.isActive;
+    return this.saveEpaperHeaderTemplate(existing, user);
+  }
+
+  async deleteEpaperHeaderTemplate(id, user = null) {
+    if (!this.data.epaperHeaderTemplates) return false;
+    const idx = this.data.epaperHeaderTemplates.findIndex((t) => t.id === id);
+    if (idx < 0) return false;
+    // Don't delete initial system templates, archive them instead
+    if (['hdr-classic-01', 'hdr-modern-02', 'hdr-minimal-03'].includes(id)) {
+      this.data.epaperHeaderTemplates[idx].isActive = false;
+      this.save();
+      return true;
+    }
+    this.data.epaperHeaderTemplates.splice(idx, 1);
+    this.save();
+    this.addAuditLog(user?.fullName || 'मास्टर एडमिन', user?.role || 'MASTER_ADMIN', 'EPAPER_HEADER_TEMPLATE_DELETED', `हेडर टेम्पलेट विलोपित किया गया: (ID: ${id})`);
+    return true;
+  }
+
   async saveEpaperWhatsAppGeneration(data, user = null) {
     this.data.epaperWhatsAppGenerations = this.data.epaperWhatsAppGenerations || [];
     const id = data.id || `wa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -6125,6 +6265,14 @@ export class LocalJsonAdapter {
     const idempotencyKey = data.idempotencyKey || data.id || null;
     const release = await this._acquireReporterLock(reporterId);
     try {
+      this.data.epaperHeaderTemplates = Array.isArray(this.data.epaperHeaderTemplates) && this.data.epaperHeaderTemplates.length > 0
+        ? this.data.epaperHeaderTemplates
+        : [...INITIAL_HEADER_TEMPLATES];
+      for (const initHdr of INITIAL_HEADER_TEMPLATES) {
+        if (!this.data.epaperHeaderTemplates.some((h) => h.id === initHdr.id)) {
+          this.data.epaperHeaderTemplates.push({ ...initHdr });
+        }
+      }
       this.data.epaperWhatsAppGenerations = this.data.epaperWhatsAppGenerations || [];
       if (idempotencyKey) {
         const existing = this.data.epaperWhatsAppGenerations.find(
@@ -6391,6 +6539,14 @@ export class LocalJsonAdapter {
       const now = new Date().toISOString();
       const cards = [];
 
+      this.data.epaperHeaderTemplates = Array.isArray(this.data.epaperHeaderTemplates) && this.data.epaperHeaderTemplates.length > 0
+        ? this.data.epaperHeaderTemplates
+        : [...INITIAL_HEADER_TEMPLATES];
+      for (const initHdr of INITIAL_HEADER_TEMPLATES) {
+        if (!this.data.epaperHeaderTemplates.some((h) => h.id === initHdr.id)) {
+          this.data.epaperHeaderTemplates.push({ ...initHdr });
+        }
+      }
       this.data.epaperWhatsAppGenerations = this.data.epaperWhatsAppGenerations || [];
 
       for (let idx = 0; idx < validArticles.length; idx++) {
@@ -6539,6 +6695,14 @@ export class LocalJsonAdapter {
       }
 
       // Record regeneration consumption in generations history
+      this.data.epaperHeaderTemplates = Array.isArray(this.data.epaperHeaderTemplates) && this.data.epaperHeaderTemplates.length > 0
+        ? this.data.epaperHeaderTemplates
+        : [...INITIAL_HEADER_TEMPLATES];
+      for (const initHdr of INITIAL_HEADER_TEMPLATES) {
+        if (!this.data.epaperHeaderTemplates.some((h) => h.id === initHdr.id)) {
+          this.data.epaperHeaderTemplates.push({ ...initHdr });
+        }
+      }
       this.data.epaperWhatsAppGenerations = this.data.epaperWhatsAppGenerations || [];
       const regenRecord = {
         id: `wa-card-regen-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,

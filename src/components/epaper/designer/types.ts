@@ -25,12 +25,17 @@ export interface CanvasViewportState {
   panOffset: { x: number; y: number };
   isPanning: boolean;
   panStart: { x: number; y: number };
-  activeTool: 'select' | 'hand';
+  activeTool: 'select' | 'hand' | 'brush';
+  brushColor?: string;
+  brushSize?: number;
+  brushOpacity?: number;
+  brushType?: 'pen' | 'highlighter';
   showGrid: boolean;
   magneticSnap: boolean;
   showMargins: boolean;
   previewMode: boolean;    // false = wireframe/handles, true = live broadsheet render
   designerMode?: 'AUTO' | 'ASSISTED' | 'MANUAL'; // 3 modes of Page Designer
+  activeHeaderTemplateId?: string;
 }
 
 export interface HistoryFrame {

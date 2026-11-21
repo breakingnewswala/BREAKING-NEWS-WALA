@@ -21,10 +21,14 @@ import { EpaperToolboxPanel } from '../components/epaper/designer/EpaperToolboxP
 import { EpaperCanvasPanel } from '../components/epaper/designer/EpaperCanvasPanel';
 import { EpaperPropertiesPanel } from '../components/epaper/designer/EpaperPropertiesPanel';
 import { OccConflictDialog } from '../components/epaper/designer/OccConflictDialog';
+import { CoverUrlImportModal } from '../components/epaper/designer/CoverUrlImportModal';
+import { EpaperAiAssistantPanel } from '../components/epaper/designer/EpaperAiAssistantPanel';
+import { EpaperHeaderTemplateManager } from '../components/epaper/EpaperHeaderTemplateManager';
 import {
   CanvasViewportState,
   HistoryFrame,
 } from '../components/epaper/designer/types';
+import { EpaperHeaderTemplateDoc, EpaperFreehandDrawing } from '../types';
 import { Loader2, CheckCircle2, AlertCircle, Layout, X } from 'lucide-react';
 
 export interface EpaperDesignerModalProps {
@@ -69,6 +73,11 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
   const [customTplName, setCustomTplName] = useState<string>('');
   const [customTplNameHi, setCustomTplNameHi] = useState<string>('');
   const [isSavingCustomTpl, setIsSavingCustomTpl] = useState<boolean>(false);
+
+  // New Part 4, 5, 6, 7 Panels & Modals State
+  const [showCoverImportModal, setShowCoverImportModal] = useState<boolean>(false);
+  const [showAiAssistantPanel, setShowAiAssistantPanel] = useState<boolean>(false);
+  const [showHeaderTemplateModal, setShowHeaderTemplateModal] = useState<boolean>(false);
 
   // 50-Frame History Stack
   const [historyStack, setHistoryStack] = useState<HistoryFrame[]>([]);
@@ -527,6 +536,14 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
       colSpan = 2;
       height = 300;
       defaultHeadline = 'संपादकीय विमर्श';
+    } else if (elementType === 'SHAPE') {
+      colSpan = 2;
+      height = 120;
+      defaultHeadline = 'आकृति बॉक्स';
+    } else if (elementType === 'DIVIDER') {
+      colSpan = activePage.gridColumns || 8;
+      height = 4;
+      defaultHeadline = '';
     }
 
     const spanWidth = getColumnSpanWidth(colSpan, grid.columnWidth, grid.gutterWidth);
@@ -556,6 +573,172 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
     setSelectedElementId(newElement.id);
     pushHistory();
     showToast(`${elementType} तत्व पृष्ठ पर जोड़ा गया`, 'info');
+  };
+
+  // Freehand Drawing Handler
+  const handleAddFreehandDrawing = (drawing: EpaperFreehandDrawing) => {
+    if (!activePage) return;
+    const currentDrawings = activePage.freehandDrawings || [];
+    setActivePage({
+      ...activePage,
+      freehandDrawings: [...currentDrawings, drawing],
+    });
+    pushHistory();
+    setIsDirty(true);
+  };
+
+  // Apply Master Admin Header Template to page or entire edition
+  const handleApplyHeaderTemplate = (template: EpaperHeaderTemplateDoc, applyToAll = false) => {
+    if (!activePage) return;
+
+    const existingHeaderIdx = (activePage.elements || []).findIndex(
+      (el) => el.elementType === 'MASTHEAD' || el.elementType === 'HEADER'
+    );
+
+    const headerElement: EpaperPageElement = {
+      id: existingHeaderIdx >= 0
+        ? activePage.elements[existingHeaderIdx].id
+        : `elem-masthead-${Date.now()}`,
+      elementType: 'MASTHEAD',
+      bounds: {
+        x: BROADSHEET_CONSTANTS.MARGIN_LEFT_PT,
+        y: BROADSHEET_CONSTANTS.MARGIN_TOP_PT,
+        width: BROADSHEET_CONSTANTS.PRINTABLE_WIDTH_PT,
+        height: template.heightPt || template.config?.heightPt || 110,
+      },
+      colSpan: activePage.gridColumns || 8,
+      customHeadline: template.config?.newspaperTitle || template.nameHi || template.name || 'दैनिक ब्रेकिंग न्यूज़ वाला',
+      customSubheadline: template.config?.tagline || template.description || 'मध्य प्रदेश का अग्रणी निष्पक्ष डिजिटल दैनिक',
+      headerConfig: template.config || template,
+      zIndex: 10,
+    };
+
+    let newElements = [...(activePage.elements || [])];
+    if (existingHeaderIdx >= 0) {
+      newElements[existingHeaderIdx] = headerElement;
+    } else {
+      newElements = [headerElement, ...newElements];
+    }
+
+    if (applyToAll) {
+      setPages((prev) =>
+        prev.map((p) => {
+          const idx = (p.elements || []).findIndex(
+            (el) => el.elementType === 'MASTHEAD' || el.elementType === 'HEADER'
+          );
+          const elCopy = { ...headerElement, id: `elem-masthead-p${p.pageNumber}-${Date.now()}` };
+          let pElements = [...(p.elements || [])];
+          if (idx >= 0) {
+            pElements[idx] = elCopy;
+          } else {
+            pElements = [elCopy, ...pElements];
+          }
+          return { ...p, elements: pElements, headerTemplateId: template.id };
+        })
+      );
+      showToast(`हेडर टेम्पलेट "${template.nameHi || template.name}" सभी पृष्ठों पर लागू हुआ`, 'success');
+    } else {
+      setActivePage({
+        ...activePage,
+        elements: newElements,
+        headerTemplateId: template.id,
+      });
+      showToast(`हेडर टेम्पलेट "${template.nameHi || template.name}" पृष्ठ ${activePage.pageNumber} पर लागू हुआ`, 'success');
+    }
+
+    setIsDirty(true);
+    pushHistory();
+    setShowHeaderTemplateModal(false);
+  };
+
+  // Insert Cover URL Story onto canvas
+  const handleInsertCoverStory = (story: {
+    title: string;
+    subheadline?: string;
+    summary?: string;
+    content: string;
+    imageUrl?: string;
+  }) => {
+    if (!activePage) return;
+    const grid = calculateColumnGrid(activePage.gridColumns || 8);
+    const colSpan = Math.min(4, activePage.gridColumns || 8);
+    const spanWidth = getColumnSpanWidth(colSpan, grid.columnWidth, grid.gutterWidth);
+
+    const existingCount = activePage.elements?.length || 0;
+    const startY = 140 + ((existingCount * 35) % 550);
+
+    const newElement: EpaperPageElement = {
+      id: `elem-cover-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      elementType: 'STORY',
+      bounds: {
+        x: grid.columnOffsets[0] || 42.52,
+        y: startY,
+        width: spanWidth,
+        height: 250,
+      },
+      colSpan,
+      customHeadline: story.title,
+      customSubheadline: story.subheadline,
+      customBodyText: story.content || story.summary,
+      imageUrl: story.imageUrl,
+      byline: 'कवर डेस्क, बीएनडब्ल्यू',
+      photoCredit: story.imageUrl ? 'वेबसाइट साभार' : undefined,
+      fontSize: 11,
+      zIndex: existingCount + 1,
+    };
+
+    setActivePage({
+      ...activePage,
+      elements: [...(activePage.elements || []), newElement],
+    });
+    setSelectedElementId(newElement.id);
+    pushHistory();
+    setIsDirty(true);
+    showToast(`कवर समाचार "${story.title.substring(0, 24)}..." पृष्ठ पर जोड़ा गया`, 'success');
+  };
+
+  // Insert AI Story onto canvas
+  const handleInsertAiStory = (story: {
+    title: string;
+    subheadline?: string;
+    summary?: string;
+    content: string;
+    byline?: string;
+  }) => {
+    if (!activePage) return;
+    const grid = calculateColumnGrid(activePage.gridColumns || 8);
+    const colSpan = Math.min(4, activePage.gridColumns || 8);
+    const spanWidth = getColumnSpanWidth(colSpan, grid.columnWidth, grid.gutterWidth);
+
+    const existingCount = activePage.elements?.length || 0;
+    const startY = 140 + ((existingCount * 35) % 550);
+
+    const newElement: EpaperPageElement = {
+      id: `elem-ai-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      elementType: 'STORY',
+      bounds: {
+        x: grid.columnOffsets[0] || 42.52,
+        y: startY,
+        width: spanWidth,
+        height: 250,
+      },
+      colSpan,
+      customHeadline: story.title,
+      customSubheadline: story.subheadline,
+      customBodyText: story.content || story.summary,
+      byline: story.byline || 'विशेष संवाददाता, बीएनडब्ल्यू',
+      fontSize: 11,
+      zIndex: existingCount + 1,
+    };
+
+    setActivePage({
+      ...activePage,
+      elements: [...(activePage.elements || []), newElement],
+    });
+    setSelectedElementId(newElement.id);
+    pushHistory();
+    setIsDirty(true);
+    showToast(`AI समाचार "${story.title.substring(0, 24)}..." पृष्ठ पर जोड़ा गया`, 'success');
   };
 
   // Apply Broadsheet Preset Template
@@ -1037,6 +1220,7 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
             isSaving={isSaving}
             canUndo={historyIndex > 0}
             canRedo={historyIndex < historyStack.length - 1}
+            currentRole={currentRole}
             onPageChange={handlePageChange}
             onGridColumnsChange={(cols) => {
               setActivePage({ ...activePage, gridColumns: cols });
@@ -1055,19 +1239,34 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
             isAutoArranging={isAutoArranging}
             designerMode={viewportState.designerMode || 'ASSISTED'}
             onModeChange={handleModeChange}
+            onSectionChange={(sec) => {
+              setActivePage({ ...activePage, sectionType: sec });
+              setIsDirty(true);
+            }}
+            onOpenHeaderTemplates={() => setShowHeaderTemplateModal(true)}
+            onOpenCoverImport={() => setShowCoverImportModal(true)}
+            onOpenAiAssistant={() => setShowAiAssistantPanel(!showAiAssistantPanel)}
+            onAddPrimitive={handleAddPrimitive}
             onClose={handleClose}
           />
 
-          {/* Main 3-Panel Editor Workspace */}
+          {/* Main 3/4-Panel Editor Workspace */}
           <div className="flex-1 flex overflow-hidden relative">
             {/* Panel 1: Left Toolbox (Approved Stories, Primitives, Templates) */}
             <EpaperToolboxPanel
               articles={articlesState}
               editionPages={pages}
               activePageNumber={activePageNum}
+              activeGridColumns={activePage.gridColumns || 8}
+              viewportState={viewportState}
               onAddStory={handleAddStory}
               onAddPrimitive={handleAddPrimitive}
               onApplyTemplate={handleApplyTemplate}
+              onGridColumnsChange={(cols) => {
+                setActivePage({ ...activePage, gridColumns: cols });
+                pushHistory();
+              }}
+              onViewportChange={setViewportState}
               onUploadMedia={handleUploadMedia}
             />
 
@@ -1081,6 +1280,7 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
               onViewportChange={setViewportState}
               onPushHistory={pushHistory}
               onCollisionsDetected={(colliding) => setHasCollision(colliding)}
+              onAddFreehandDrawing={handleAddFreehandDrawing}
             />
 
             {/* Panel 3: Right Inspector (Properties, Geometry, Typography, Immutability) */}
@@ -1107,12 +1307,61 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
                 setActivePage({ ...activePage, gridColumns: cols });
                 pushHistory();
               }}
+              onOpenHeaderTemplates={() => setShowHeaderTemplateModal(true)}
             />
+
+            {/* Panel 4: AI Editorial Assistant Panel (Part 6, 7 & 8) */}
+            {showAiAssistantPanel && (
+              <EpaperAiAssistantPanel
+                isOpen={showAiAssistantPanel}
+                onClose={() => setShowAiAssistantPanel(false)}
+                selectedElement={selectedElement}
+                onUpdateElement={handleUpdateElement}
+                onInsertStoryToCanvas={handleInsertAiStory}
+              />
+            )}
           </div>
         </>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
           कोई पृष्ठ उपलब्ध नहीं है।
+        </div>
+      )}
+
+      {/* Cover URL Import Modal (Part 5) */}
+      {showCoverImportModal && (
+        <CoverUrlImportModal
+          isOpen={showCoverImportModal}
+          onClose={() => setShowCoverImportModal(false)}
+          onInsertStory={handleInsertCoverStory}
+        />
+      )}
+
+      {/* Master Admin Header Template Manager & Visual Designer Modal (Part 4) */}
+      {showHeaderTemplateModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-6xl w-full h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-white shrink-0">
+              <div className="flex items-center gap-2">
+                <Layout className="w-4 h-4 text-purple-400" />
+                <span className="text-xs font-bold text-white">हेडर टेम्पलेट मैनेजर व विज़ुअल डिज़ाइनर</span>
+              </div>
+              <button
+                onClick={() => setShowHeaderTemplateModal(false)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <EpaperHeaderTemplateManager
+                currentRole={currentRole}
+                isModal={true}
+                onSelectHeaderForPage={(tpl) => handleApplyHeaderTemplate(tpl, false)}
+                onClose={() => setShowHeaderTemplateModal(false)}
+              />
+            </div>
+          </div>
         </div>
       )}
 

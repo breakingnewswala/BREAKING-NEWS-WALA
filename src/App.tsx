@@ -48,7 +48,7 @@ import { PublicVideoFeedScreen } from './components/video/PublicVideoFeedScreen'
 import { AdminVideoManagerModal } from './components/video/AdminVideoManagerModal';
 import { DEFAULT_VIDEO_POSTS } from './data/defaultVideoPosts';
 import { VideoPost } from './types';
-import { Radio, X } from 'lucide-react';
+import { Radio, X, Bell, CheckCircle2, ArrowUpRight } from 'lucide-react';
 import { apiClient, AuthUser, getStoredAccessToken } from './services/apiClient';
 import {
   auth,
@@ -83,16 +83,14 @@ export const App: React.FC = () => {
   const [pendingStories, setPendingStories] = useState<ArticleDetail[]>(INITIAL_PENDING_STORIES);
   const [reporterDrafts, setReporterDrafts] = useState<ArticleDetail[]>(INITIAL_PENDING_STORIES);
 
-  // E-Paper Admin Deep Linking Signals
-  const [adminInitialTab, setAdminInitialTab] = useState<
-    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio' | undefined
-  >(undefined);
-  const [adminEpaperAction, setAdminEpaperAction] = useState<
-    'create' | 'drafts' | 'published' | 'templates' | 'archive' | undefined
-  >(undefined);
+  // E-Paper & Master Admin Deep Linking Signals
+  const [adminInitialTab, setAdminInitialTab] = useState<any>(undefined);
+  const [adminEpaperAction, setAdminEpaperAction] = useState<any>(undefined);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  const [showPendingAlertModal, setShowPendingAlertModal] = useState(false);
 
   const handleNavigateToAdminWithEpaperAction = (
-    tab: 'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio' = 'epaper_studio',
+    tab: any = 'epaper_studio',
     action?: 'create' | 'drafts' | 'published' | 'templates' | 'archive'
   ) => {
     setAdminInitialTab(tab);
@@ -737,6 +735,84 @@ export const App: React.FC = () => {
     }
   };
 
+  // Master Admin & AI Newsroom Direct Publish Handler
+  const handleDirectPublishArticle = async (article: Partial<ArticleDetail>) => {
+    const fullArticle: ArticleDetail = {
+      id: article.id || `art-live-${Date.now()}`,
+      slug: article.slug || `live-${Date.now()}`,
+      title: article.title || 'शीर्षक उपलब्ध नहीं',
+      subheadline: article.subheadline,
+      summary: article.summary || '',
+      content: article.content || '',
+      authorName: article.authorName || 'संपादकीय डेस्क',
+      authorRole: article.authorRole || 'वरिष्ठ संपादक',
+      districtId: article.districtId || 'dist-bhopal',
+      districtName: article.districtName || 'भोपाल',
+      categoryId: article.categoryId || 'cat-mp',
+      categoryName: article.categoryName || 'मध्य प्रदेश',
+      imageUrl: article.imageUrl || 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=800&auto=format&fit=crop&q=80',
+      imageCaption: article.imageCaption,
+      status: 'PUBLISHED',
+      priority: article.priority || 'NORMAL',
+      isBreaking: Boolean(article.isBreaking),
+      publishedAt: new Date().toISOString(),
+      createdAt: article.createdAt || new Date().toISOString(),
+      viewCount: 1,
+      shareCount: 0,
+      factChecked: true,
+      tags: article.tags || ['मध्य प्रदेश', 'ताज़ा खबर'],
+    };
+
+    setArticles((prev) => [fullArticle, ...prev.filter((a) => a.id !== fullArticle.id)]);
+  };
+
+  const handleAddPendingArticle = (article: Partial<ArticleDetail>) => {
+    const fullPending: ArticleDetail = {
+      id: article.id || `art-pending-${Date.now()}`,
+      slug: article.slug || `pending-${Date.now()}`,
+      title: article.title || 'शीर्षक उपलब्ध नहीं',
+      subheadline: article.subheadline,
+      summary: article.summary || '',
+      content: article.content || '',
+      authorName: article.authorName || 'संवाददाता / RSS',
+      authorRole: article.authorRole || 'संवाददाता',
+      districtId: article.districtId || 'dist-bhopal',
+      districtName: article.districtName || 'भोपाल',
+      categoryId: article.categoryId || 'cat-mp',
+      categoryName: article.categoryName || 'मध्य प्रदेश',
+      imageUrl: article.imageUrl || 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=800&auto=format&fit=crop&q=80',
+      imageCaption: article.imageCaption,
+      status: 'PENDING_REVIEW',
+      priority: article.priority || 'NORMAL',
+      isBreaking: Boolean(article.isBreaking),
+      publishedAt: new Date().toISOString(),
+      createdAt: article.createdAt || new Date().toISOString(),
+      viewCount: 0,
+      shareCount: 0,
+      factChecked: true,
+      tags: article.tags || ['मध्य प्रदेश', 'समीक्षा'],
+    };
+    setPendingStories((prev) => [fullPending, ...prev.filter((a) => a.id !== fullPending.id)]);
+  };
+
+  const handleUpdateReporterCoins = (reporterId: string, amount: number) => {
+    setReporters((prev) =>
+      prev.map((r) =>
+        r.id === reporterId
+          ? { ...r, totalPoints: (r.totalPoints || 0) + amount }
+          : r
+      )
+    );
+  };
+
+  const handleProfileClick = () => {
+    if (currentRole === 'MASTER_ADMIN' || accountRole === 'MASTER_ADMIN') {
+      navigateToTab('admin');
+    } else {
+      navigateToTab('profile');
+    }
+  };
+
   // Request Revision
   const handleRequestRevision = async (articleId: string, comments: string) => {
     try {
@@ -1059,12 +1135,15 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         onTabChange={navigateToTab}
         onSearchClick={() => navigateToTab('search')}
-        onProfileClick={() => navigateToTab('profile')}
+        onProfileClick={handleProfileClick}
         currentRole={currentRole}
         accountRole={accountRole}
         isAuthenticated={Boolean(authUser)}
         onQuickMasterLogin={handleQuickMasterLogin}
         pendingQueueCount={pendingStories.length}
+        isCollapsed={isHeaderCollapsed}
+        onToggleCollapse={() => setIsHeaderCollapsed((prev) => !prev)}
+        onNotificationClick={() => setShowPendingAlertModal(true)}
       />
 
       {/* 2. Comprehensive Navigation Menu Drawer */}
@@ -1247,8 +1326,8 @@ export const App: React.FC = () => {
                 onRequestRevision={handleRequestRevision}
                 onRejectArticle={handleRejectArticle}
                 onBroadcastBreakingAlert={handleBroadcastAlert}
-                onClaimArticle={handleClaimArticle}
-                onReassignArticle={handleReassignArticle}
+                onClaimArticle={(id, eId, eName) => handleClaimArticle(id, eId || 'usr-desk-chief', eName || 'मुख्य संपादक')}
+                onReassignArticle={(id, eId, eName) => handleReassignArticle(id, eId, eName || 'संपादकीय सहयोगी')}
                 onUpdatePriority={handleUpdatePriority}
                 onToggleBreaking={handleToggleBreaking}
                 onSchedulePublication={handleSchedulePublication}
@@ -1291,6 +1370,30 @@ export const App: React.FC = () => {
                 onUpdateMandiRate={handleUpdateMandiRate}
                 onDeleteMandiRate={handleDeleteMandiRate}
                 onBroadcastAlert={handleBroadcastAlert}
+                onPublishArticle={handleDirectPublishArticle}
+                onAddPendingArticle={handleAddPendingArticle}
+                onUpdateReporterCoins={handleUpdateReporterCoins}
+                onClaimArticle={(id, eId, eName) => handleClaimArticle(id, eId || 'usr-desk-chief', eName || 'मुख्य संपादक')}
+                onReassignArticle={(id, eId, eName) => handleReassignArticle(id, eId, eName || 'संपादकीय सहयोगी')}
+                onUpdatePriority={handleUpdatePriority}
+                onToggleBreaking={handleToggleBreaking}
+                onSchedulePublication={handleSchedulePublication}
+                reporterDrafts={reporterDrafts}
+                onSubmitReporterDraft={handleSubmitReporterDraft}
+                bookmarkedArticles={bookmarkedArticlesList}
+                onSignOut={async () => {
+                  try {
+                    await apiClient.auth.logout();
+                    await auth.signOut();
+                  } catch (e) {
+                    console.error('Logout error:', e);
+                  }
+                  lastAuthUidRef.current = null;
+                  setAccountRole('READER');
+                  setCurrentRole('READER');
+                  setAuthUser(null);
+                  navigateToTab('home');
+                }}
               />
             )}
 
@@ -1416,6 +1519,8 @@ export const App: React.FC = () => {
                 districts={DISTRICTS}
                 categories={CATEGORIES}
                 onNavigateToArticles={() => navigateToTab('newsroom')}
+                onPublishArticle={handleDirectPublishArticle}
+                onAddToReviewQueue={handleAddPendingArticle}
               />
             )}
             </>
@@ -1462,6 +1567,97 @@ export const App: React.FC = () => {
         onSaveVideoPost={handleSaveVideoPost}
         onDeleteVideoPost={handleDeleteVideoPost}
       />
+
+      {/* 8. Master Admin Notification & Pending Review Queue Alert Modal */}
+      {showPendingAlertModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <Bell className="w-5 h-5 text-white animate-bounce" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">संपादकीय समीक्षा कतार अलर्ट</h3>
+                  <p className="text-xs text-red-100">
+                    {pendingStories.length} समाचार 10-बिंदु संपादकीय अनुमोदन हेतु प्रतीक्षारत हैं
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPendingAlertModal(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2.5">
+              {pendingStories.length === 0 ? (
+                <div className="py-8 text-center text-slate-500">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+                  <p className="font-medium text-sm">कोई लंबित समीक्षा समाचार नहीं है</p>
+                  <p className="text-xs text-slate-400">सभी रिपोर्टर व RSS प्रविष्टियां जांची जा चुकी हैं।</p>
+                </div>
+              ) : (
+                pendingStories.map((story) => (
+                  <div
+                    key={story.id}
+                    className="p-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-red-50/40 hover:border-red-200 transition-all flex items-start justify-between gap-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">
+                          {story.districtName || 'मध्य प्रदेश'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          स्रोत: {story.authorName || 'संवाददाता / RSS'}
+                        </span>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 line-clamp-2 leading-tight">
+                        {story.title}
+                      </h4>
+                    </div>
+                    <button
+                      onClick={() => {
+                        handleApproveAndPublish(story.id);
+                      }}
+                      className="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                      title="त्वरित स्वीकृत करें"
+                    >
+                      स्वीकृत
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="bg-slate-50 p-3.5 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-600">
+                कुल प्रतीक्षारत: <span className="text-red-600 font-bold">{pendingStories.length}</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowPendingAlertModal(false)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-xs font-medium hover:bg-slate-100"
+                >
+                  बंद करें
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPendingAlertModal(false);
+                    handleNavigateToAdminWithEpaperAction('review_queue');
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-colors flex items-center gap-1.5 shadow-xs"
+                >
+                  समीक्षा कतार खोलें
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

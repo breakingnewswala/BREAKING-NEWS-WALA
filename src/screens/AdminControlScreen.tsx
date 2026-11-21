@@ -49,6 +49,11 @@ import {
   Wheat,
   Archive,
   Layout,
+  Coins,
+  LogOut,
+  FileQuestion,
+  Download,
+  CheckCheck,
 } from 'lucide-react';
 import {
   AppRole,
@@ -84,12 +89,40 @@ import {
   AudienceSegmentRecord,
   ReaderFeedbackRecord,
   NotificationRecord,
+  CreateDraftRequest,
 } from '../types';
 import { NavTab } from '../components/BottomNav';
 import { BnwAiService } from '../services/aiService';
 import { apiClient } from '../services/apiClient';
 import { DIVISIONS } from '../data/mockNewsData';
 import { EpaperStudioTab } from '../components/epaper/EpaperStudioTab';
+import { NewsroomDeskScreen } from './NewsroomDeskScreen';
+import { ReporterDeskScreen } from './ReporterDeskScreen';
+import { GraphicsStudioScreen } from './GraphicsStudioScreen';
+import { VideoStudioScreen } from './VideoStudioScreen';
+import { AiNewsroomScreen } from './AiNewsroomScreen';
+import { RssManagementDesk } from '../components/admin/RssManagementDesk';
+import { ReporterCoinManagementDesk } from '../components/admin/ReporterCoinManagementDesk';
+
+export type AdminTab =
+  | 'overview'
+  | 'review_queue'
+  | 'reporters'
+  | 'reporter_coins'
+  | 'tickers'
+  | 'ads'
+  | 'mandi'
+  | 'monetization'
+  | 'audience'
+  | 'api_pool'
+  | 'audit_logs'
+  | 'rss_management'
+  | 'epaper_studio'
+  | 'newsroom_studio'
+  | 'reporter_studio'
+  | 'graphics_studio'
+  | 'videos_studio'
+  | 'ai_newsroom_studio';
 
 interface AdminControlScreenProps {
   articles: ArticleDetail[];
@@ -120,8 +153,20 @@ interface AdminControlScreenProps {
   onUpdateMandiRate?: (id: string, dto: Partial<MandiRateItem>) => Promise<void> | void;
   onDeleteMandiRate?: (id: string) => void;
   onBroadcastAlert: (title: string, district: string) => void;
-  initialTab?: 'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio';
-  initialEpaperAction?: 'create' | 'drafts' | 'published' | 'templates' | 'archive';
+  initialTab?: AdminTab;
+  initialEpaperAction?: 'create' | 'drafts' | 'published' | 'templates' | 'header_templates' | 'archive';
+  onSignOut?: () => void;
+  bookmarkedArticles?: ArticleDetail[];
+  reporterDrafts?: ArticleDetail[];
+  onSubmitReporterDraft?: (draftReq: CreateDraftRequest, reporter?: ReporterProfile) => Promise<void> | void;
+  onAddPendingArticle?: (article: Partial<ArticleDetail>) => void;
+  onPublishArticle?: (article: Partial<ArticleDetail>) => Promise<void> | void;
+  onClaimArticle?: (articleId: string, editorId?: string, editorName?: string) => void | Promise<void>;
+  onReassignArticle?: (articleId: string, editorId: string, editorName?: string) => void | Promise<void>;
+  onUpdatePriority?: (articleId: string, priority: any) => void;
+  onToggleBreaking?: (articleId: string, isBreaking: boolean) => void;
+  onSchedulePublication?: (articleId: string, scheduledAt: string) => void;
+  onUpdateReporterCoins?: (reporterId: string, amount: number, reason: string) => void;
 }
 
 export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
@@ -155,11 +200,21 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   onBroadcastAlert,
   initialTab,
   initialEpaperAction,
+  onSignOut,
+  bookmarkedArticles = [],
+  reporterDrafts = [],
+  onSubmitReporterDraft,
+  onAddPendingArticle,
+  onPublishArticle,
+  onClaimArticle,
+  onReassignArticle,
+  onUpdatePriority,
+  onToggleBreaking,
+  onSchedulePublication,
+  onUpdateReporterCoins,
 }) => {
-  const [activeTab, setActiveTab] = useState<
-    'overview' | 'review_queue' | 'reporters' | 'tickers' | 'ads' | 'mandi' | 'monetization' | 'audience' | 'api_pool' | 'audit_logs' | 'epaper_studio'
-  >(initialTab || 'overview');
-  const [epaperAction, setEpaperAction] = useState<'create' | 'drafts' | 'published' | 'templates' | 'archive' | undefined>(initialEpaperAction);
+  const [activeTab, setActiveTab] = useState<AdminTab>(initialTab || 'overview');
+  const [epaperAction, setEpaperAction] = useState<'create' | 'drafts' | 'published' | 'templates' | 'header_templates' | 'archive' | undefined>(initialEpaperAction);
 
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab);
@@ -174,6 +229,10 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   const [auditResult, setAuditResult] = useState<EditorialFactCheckResult | null>(null);
   const [revisionComments, setRevisionComments] = useState('');
   const [showRevisionDialog, setShowRevisionDialog] = useState(false);
+
+  // Master Admin Profile Bar Modals
+  const [showSavedNewsModal, setShowSavedNewsModal] = useState(false);
+  const [showPdfGuideModal, setShowPdfGuideModal] = useState(false);
 
   // New Ticker Form State
   const [newTickerText, setNewTickerText] = useState('');
@@ -746,7 +805,47 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
 
   return (
     <div className="bg-slate-100 min-h-screen pb-24 font-sans">
-      {/* 1. Compact Header Bar + 3-Tab Persona Switcher */}
+      {/* 1. Master Admin System Profile & Session Bar */}
+      <div className="bg-slate-950 text-white px-4 py-2 border-b border-slate-800 text-xs">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-slate-300 font-medium">मास्टर एडमिनिस्ट्रेटर सत्र सक्रिय:</span>
+            <span className="font-bold text-amber-400 font-mono">breakingnewswala.com@gmail.com</span>
+            <span className="text-[10px] bg-red-700 text-white px-2 py-0.5 rounded font-extrabold">SUPER ADMIN</span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowSavedNewsModal(true)}
+              className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <Bookmark className="w-3.5 h-3.5 text-amber-400" />
+              <span>सहेजे समाचार ({bookmarkedArticles.length})</span>
+            </button>
+
+            <button
+              onClick={() => setShowPdfGuideModal(true)}
+              className="flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <FileQuestion className="w-3.5 h-3.5 text-blue-400" />
+              <span>सहायता व PDF गाइड</span>
+            </button>
+
+            {onSignOut && (
+              <button
+                onClick={onSignOut}
+                className="flex items-center gap-1 px-2.5 py-1 bg-red-950/80 hover:bg-red-900 border border-red-700/60 text-red-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>लॉग आउट</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Control Room Title Header */}
       <div className="bg-slate-900 text-white px-4 py-3 border-b border-slate-800 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
           <div className="flex items-center gap-2.5">
@@ -771,7 +870,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowBroadcastModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors whitespace-nowrap cursor-pointer"
             >
               <Radio className="w-3.5 h-3.5 animate-pulse text-white" />
               <span>राज्यव्यापी ब्रेकिंग अलर्ट</span>
@@ -785,7 +884,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
         <div className="max-w-7xl mx-auto mt-2.5 px-4">
           <div className="bg-red-600 text-white p-2.5 rounded-xl shadow-lg text-xs font-bold flex items-center justify-between">
             <span>{broadcastToast}</span>
-            <button onClick={() => setBroadcastToast(null)} className="text-white hover:text-slate-200">
+            <button onClick={() => setBroadcastToast(null)} className="text-white hover:text-slate-200 cursor-pointer">
               ✕
             </button>
           </div>
@@ -802,211 +901,256 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
             }`}
           >
             <span>{adminNotice.text}</span>
-            <button onClick={() => setAdminNotice(null)} className="px-2 font-bold">
+            <button onClick={() => setAdminNotice(null)} className="px-2 font-bold cursor-pointer">
               ✕
             </button>
           </div>
         </div>
       )}
 
-      {/* 2. Sticky Admin Navigation + Remaining Header Desks/Studios Inside Tabs */}
+      {/* 3. Reorganized 2-Row Admin Navigation Bar (Zero Cutoff - All Tabs Visible) */}
       <div className="bg-white border-b border-slate-200 sticky top-[56px] z-30 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-4 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-bold">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'overview'
-              ? 'border-red-600 text-red-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>सिस्टम ओवरव्यू</span>
-          </button>
+        <div className="max-w-7xl mx-auto px-4 py-2 space-y-1.5">
+          {/* ROW 1: Core Operations */}
+          <div className="flex flex-wrap items-center gap-1 text-xs font-bold">
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider shrink-0 mr-1.5">
+              कोर संचालन:
+            </span>
 
-          <button
-            onClick={() => setActiveTab('review_queue')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'review_queue'
-              ? 'border-red-600 text-red-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'overview'
+                  ? 'bg-red-50 text-red-600 ring-1 ring-red-400 font-extrabold'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>समीक्षा कतार</span>
-            {pendingArticles.length > 0 && (
-              <span className="px-1.5 py-0.2 bg-red-600 text-white rounded-full text-[10px]">
-                {pendingArticles.length}
-              </span>
-            )}
-          </button>
+            >
+              <Activity className="w-3.5 h-3.5 text-red-600" />
+              <span>सिस्टम ओवरव्यू</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('reporters')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'reporters'
-              ? 'border-red-600 text-red-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setActiveTab('review_queue')}
+              className={`py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'review_queue'
+                  ? 'bg-red-50 text-red-600 ring-1 ring-red-400 font-extrabold'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>संवाददाता मान्यता ({reporters.length})</span>
-          </button>
+            >
+              <FileText className="w-3.5 h-3.5 text-red-600" />
+              <span>समीक्षा कतार</span>
+              {pendingArticles.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-red-600 text-white rounded-full text-[10px] font-black">
+                  {pendingArticles.length}
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => setActiveTab('tickers')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'tickers'
-              ? 'border-red-600 text-red-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setActiveTab('reporters')}
+              className={`py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'reporters'
+                  ? 'bg-red-50 text-red-600 ring-1 ring-red-400 font-extrabold'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
-          >
-            <Radio className="w-3.5 h-3.5" />
-            <span>ब्रेकिंग टिकर ({tickers.length})</span>
-          </button>
+            >
+              <Users className="w-3.5 h-3.5 text-blue-600" />
+              <span>संवाददाता मान्यता ({reporters.length})</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('ads')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'ads'
-              ? 'border-red-600 text-red-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setActiveTab('reporter_coins')}
+              className={`py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'reporter_coins'
+                  ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-400 font-extrabold'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-500" />
-            <span>विज्ञापन ({ads.length})</span>
-          </button>
+            >
+              <Coins className="w-3.5 h-3.5 text-amber-500" />
+              <span>संवाददाता कॉइन प्रबंधन</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('mandi')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'mandi'
-              ? 'border-emerald-600 text-emerald-700 font-bold'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setActiveTab('tickers')}
+              className={`py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'tickers'
+                  ? 'bg-red-50 text-red-600 ring-1 ring-red-400 font-extrabold'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
-          >
-            <Wheat className="w-3.5 h-3.5 text-emerald-600" />
-            <span>मंडी भाव ({mandiRates.length})</span>
-          </button>
+            >
+              <Radio className="w-3.5 h-3.5 text-amber-500" />
+              <span>ब्रेकिंग टिकर ({tickers.length})</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('monetization')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'monetization'
-              ? 'border-emerald-600 text-emerald-600 font-bold'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setActiveTab('ads')}
+              className={`py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'ads'
+                  ? 'bg-red-50 text-red-600 ring-1 ring-red-400 font-extrabold'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
-          >
-            <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-            <span>बिजनेस व मुद्रीकरण</span>
-          </button>
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-500" />
+              <span>विज्ञापन ({ads.length})</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('audience')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audience'
-              ? 'border-indigo-600 text-indigo-600 font-bold'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setActiveTab('mandi')}
+              className={`py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'mandi'
+                  ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-400 font-extrabold'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
-          >
-            <Users className="w-3.5 h-3.5 text-indigo-600" />
-            <span>दर्शक व सहभागिता</span>
-          </button>
+            >
+              <Wheat className="w-3.5 h-3.5 text-emerald-600" />
+              <span>मंडी भाव ({mandiRates.length})</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('api_pool')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'api_pool'
-              ? 'border-red-600 text-red-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+            <button
+              onClick={() => setActiveTab('rss_management')}
+              className={`py-1.5 px-2.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'rss_management'
+                  ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-400 font-extrabold'
+                  : 'text-slate-700 hover:bg-slate-100'
               }`}
-          >
-            <Server className="w-3.5 h-3.5 text-indigo-500" />
-            <span>AI API Pool</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('audit_logs')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'audit_logs'
-              ? 'border-red-600 text-red-600 font-bold'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>ऑडिट लॉग्स</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('epaper_studio')}
-            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${activeTab === 'epaper_studio'
-              ? 'border-red-600 text-red-600 font-bold'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
-              }`}
-          >
-            <Newspaper className="w-3.5 h-3.5 text-blue-600" />
-            <span>ई-पेपर प्रबंधन (E-Paper)</span>
-          </button>
-        </div>
-
-        {/* Remaining Workspaces & Studios Bar (moved cleanly out of top header into tabs) */}
-        {onNavigateTab && (
-          <div className="bg-slate-50 border-t border-slate-100">
-            <div className="max-w-7xl mx-auto px-4 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-[11px] font-bold">
-              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
-                डेस्क व स्टूडियो:
-              </span>
-              <button
-                onClick={() => onNavigateTab('newsroom')}
-                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-red-300 hover:text-red-600 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
-              >
-                <Building2 className="w-3 h-3 text-red-600" />
-                <span>न्यूज़रूम डेस्क</span>
-                {pendingArticles.length > 0 && (
-                  <span className="px-1 bg-red-600 text-white rounded-full text-[9px]">
-                    {pendingArticles.length}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => onNavigateTab('reporter')}
-                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-blue-300 hover:text-blue-700 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
-              >
-                <PenTool className="w-3 h-3 text-blue-600" />
-                <span>रिपोर्टर डेस्क</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('epaper_studio')}
-                className={`px-2.5 py-1 rounded-md border text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors ${
-                  activeTab === 'epaper_studio'
-                    ? 'bg-blue-50 border-blue-400 text-blue-700 font-bold'
-                    : 'bg-white border-slate-200 hover:border-blue-300 hover:text-[#344FD6]'
-                }`}
-              >
-                <Newspaper className="w-3 h-3 text-[#344FD6]" />
-                <span>ई-पेपर प्रबंधन (Studio)</span>
-              </button>
-              <button
-                onClick={() => onNavigateTab('graphics')}
-                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-orange-300 hover:text-orange-700 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
-              >
-                <Palette className="w-3 h-3 text-orange-500" />
-                <span>ग्राफ़िक्स स्टूडियो</span>
-              </button>
-              <button
-                onClick={() => onNavigateTab('videos')}
-                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-red-300 hover:text-[#ED1727] text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
-              >
-                <Video className="w-3 h-3 text-[#ED1727]" />
-                <span>वीडियो स्टूडियो</span>
-              </button>
-              <button
-                onClick={() => onNavigateTab('ai-newsroom')}
-                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-amber-300 hover:text-amber-700 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
-              >
-                <Bot className="w-3 h-3 text-amber-500" />
-                <span>AI न्यूज़ रूम</span>
-              </button>
-              <button
-                onClick={() => onNavigateTab('profile')}
-                className="px-2.5 py-1 rounded-md bg-white border border-slate-200 hover:border-slate-300 text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors"
-              >
-                <Bookmark className="w-3 h-3 text-slate-600" />
-                <span>सेव्ड समाचार व मोड</span>
-              </button>
-            </div>
+            >
+              <Rss className="w-3.5 h-3.5 text-indigo-600" />
+              <span>RSS प्रबंधन (ऑटो AI फ़ीड)</span>
+            </button>
           </div>
-        )}
+
+          {/* ROW 2: Embedded Desks & Studios (NO REDIRECTION) */}
+          <div className="flex flex-wrap items-center gap-1 text-[11px] font-bold border-t border-slate-100 pt-1.5">
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider shrink-0 mr-1.5">
+              एकीकृत स्टूडियो:
+            </span>
+
+            <button
+              onClick={() => setActiveTab('newsroom_studio')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'newsroom_studio'
+                  ? 'bg-red-600 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <Building2 className="w-3 h-3 text-red-500" />
+              <span>न्यूज़रूम डेस्क</span>
+              {pendingArticles.length > 0 && (
+                <span className="px-1 bg-red-800 text-white rounded-full text-[9px]">
+                  {pendingArticles.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('reporter_studio')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'reporter_studio'
+                  ? 'bg-blue-600 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <PenTool className="w-3 h-3 text-blue-500" />
+              <span>रिपोर्टर डेस्क</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('epaper_studio')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'epaper_studio'
+                  ? 'bg-indigo-600 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <Newspaper className="w-3 h-3 text-indigo-500" />
+              <span>ई-पेपर प्रबंधन (Studio)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('graphics_studio')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'graphics_studio'
+                  ? 'bg-amber-600 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <Palette className="w-3 h-3 text-amber-500" />
+              <span>ग्राफ़िक्स स्टूडियो</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('videos_studio')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'videos_studio'
+                  ? 'bg-red-700 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <Video className="w-3 h-3 text-red-500" />
+              <span>वीडियो स्टूडियो</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('ai_newsroom_studio')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'ai_newsroom_studio'
+                  ? 'bg-purple-700 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <Bot className="w-3 h-3 text-purple-600" />
+              <span>AI न्यूज़ रूम</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('api_pool')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'api_pool'
+                  ? 'bg-slate-900 text-amber-300 font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <Server className="w-3 h-3 text-indigo-500" />
+              <span>AI API Pool</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('monetization')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'monetization'
+                  ? 'bg-emerald-600 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <DollarSign className="w-3 h-3 text-emerald-600" />
+              <span>बिजनेस व मुद्रीकरण</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('audience')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'audience'
+                  ? 'bg-blue-700 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <Users className="w-3 h-3 text-blue-500" />
+              <span>दर्शक व सहभागिता</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('audit_logs')}
+              className={`py-1 px-2.5 rounded-md flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
+                activeTab === 'audit_logs'
+                  ? 'bg-slate-800 text-white font-extrabold shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-200'
+              }`}
+            >
+              <ShieldCheck className="w-3 h-3 text-emerald-500" />
+              <span>ऑडिट लॉग्स</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* 3. Tab Body Container */}
@@ -1293,6 +1437,39 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                   </div>
                   <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] font-bold text-purple-700 flex items-center gap-1">
                     <span>टेम्पलेट्स देखें</span> &rarr;
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setEpaperAction('header_templates');
+                    setActiveTab('epaper_studio');
+                  }}
+                  className="p-4 bg-white hover:bg-red-50/50 border border-slate-200 hover:border-red-400 rounded-xl cursor-pointer transition-all shadow-2xs group flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="p-2 bg-red-100 text-red-700 rounded-lg group-hover:bg-red-600 group-hover:text-white transition-colors">
+                        <Newspaper className="w-4 h-4" />
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 bg-red-100 text-red-800 rounded">
+                        Master Admin
+                      </span>
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 group-hover:text-red-700">
+                        Header Template Manager
+                      </h4>
+                      <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                        हेडर टेम्पलेट प्रबंधक
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      मास्टर एडमिन हेडर डिज़ाइनर: क्लासिक, मॉडर्न, बोल्ड, मिनिमल व विशेषांक मास्टहेड संपादन व प्रबंधन।
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-slate-100 text-[11px] font-bold text-red-700 flex items-center gap-1">
+                    <span>हेडर डिज़ाइनर खोलें</span> &rarr;
                   </div>
                 </div>
 
@@ -4197,6 +4374,188 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
             />
           </div>
         )}
+
+        {/* TAB 10: EMBEDDED NEWSROOM DESK */}
+        {activeTab === 'newsroom_studio' && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 text-white p-3 rounded-xl flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-red-500" />
+                <span className="font-bold text-sm">एकीकृत न्यूज़रूम डेस्क (Embedded Newsroom Desk)</span>
+                <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded font-black">ACTIVE WORKSPACE</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('overview')}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                ← एडमिन ओवरव्यू पर वापस जाएं
+              </button>
+            </div>
+            <NewsroomDeskScreen
+              pendingArticles={pendingArticles}
+              allArticles={articles}
+              reporters={reporters}
+              categories={categories}
+              districts={districts}
+              currentUser={{ id: 'usr-desk-chief', name: 'मुख्य संपादक (Master Admin)', role: currentRole }}
+              onApproveAndPublish={onApproveArticle}
+              onRequestRevision={onRequestRevision}
+              onRejectArticle={onRejectArticle}
+              onBroadcastBreakingAlert={onBroadcastAlert}
+              onClaimArticle={onClaimArticle}
+              onReassignArticle={onReassignArticle}
+              onUpdatePriority={onUpdatePriority}
+              onToggleBreaking={onToggleBreaking}
+              onSchedulePublication={onSchedulePublication}
+            />
+          </div>
+        )}
+
+        {/* TAB 11: EMBEDDED REPORTER DESK */}
+        {activeTab === 'reporter_studio' && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 text-white p-3 rounded-xl flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <PenTool className="w-5 h-5 text-blue-500" />
+                <span className="font-bold text-sm">एकीकृत रिपोर्टर डेस्क (Embedded Reporter Intake Desk)</span>
+                <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded font-black">ACTIVE WORKSPACE</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('overview')}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                ← एडमिन ओवरव्यू पर वापस जाएं
+              </button>
+            </div>
+            <ReporterDeskScreen
+              categories={categories}
+              districts={districts}
+              reporterDrafts={reporterDrafts}
+              reporters={reporters}
+              onSubmitDraft={onSubmitReporterDraft || (async () => {})}
+              onBackClick={() => setActiveTab('overview')}
+            />
+          </div>
+        )}
+
+        {/* TAB 12: EMBEDDED GRAPHICS STUDIO */}
+        {activeTab === 'graphics_studio' && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 text-white p-3 rounded-xl flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <Palette className="w-5 h-5 text-amber-500" />
+                <span className="font-bold text-sm">एकीकृत ग्राफ़िक्स स्टूडियो (Embedded Graphics Studio)</span>
+                <span className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded font-black">ACTIVE WORKSPACE</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('overview')}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                ← एडमिन ओवरव्यू पर वापस जाएं
+              </button>
+            </div>
+            <GraphicsStudioScreen
+              currentUser={{
+                id: 'usr-desk-chief',
+                name: 'मुख्य संपादक (Master Admin)',
+                role: currentRole,
+                roles: [currentRole],
+              }}
+              articles={articles}
+              districts={districts}
+              categories={categories}
+              onNavigateHome={() => setActiveTab('overview')}
+              onNavigateDesk={() => setActiveTab('newsroom_studio')}
+            />
+          </div>
+        )}
+
+        {/* TAB 13: EMBEDDED VIDEO STUDIO */}
+        {activeTab === 'videos_studio' && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 text-white p-3 rounded-xl flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <Video className="w-5 h-5 text-red-500" />
+                <span className="font-bold text-sm">एकीकृत वीडियो स्टूडियो (Embedded Video Studio)</span>
+                <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded font-black">ACTIVE WORKSPACE</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('overview')}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                ← एडमिन ओवरव्यू पर वापस जाएं
+              </button>
+            </div>
+            <VideoStudioScreen
+              currentUser={{
+                id: 'usr-desk-chief',
+                name: 'मुख्य संपादक (Master Admin)',
+                role: currentRole,
+                roles: [currentRole],
+              }}
+              articles={articles}
+              districts={districts}
+              categories={categories}
+              onNavigateHome={() => setActiveTab('overview')}
+              onNavigateDesk={() => setActiveTab('newsroom_studio')}
+            />
+          </div>
+        )}
+
+        {/* TAB 14: EMBEDDED AI NEWSROOM */}
+        {activeTab === 'ai_newsroom_studio' && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 text-white p-3 rounded-xl flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <Bot className="w-5 h-5 text-purple-400" />
+                <span className="font-bold text-sm">एकीकृत AI न्यूज़ रूम (Embedded AI Newsroom Suite)</span>
+                <span className="text-[10px] bg-purple-600 text-white px-2 py-0.5 rounded font-black">ACTIVE WORKSPACE</span>
+              </div>
+              <button
+                onClick={() => setActiveTab('overview')}
+                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                ← एडमिन ओवरव्यू पर वापस जाएं
+              </button>
+            </div>
+            <AiNewsroomScreen
+              currentUser={{
+                id: 'usr-desk-chief',
+                name: 'मुख्य संपादक (Master Admin)',
+                role: currentRole,
+                roles: [currentRole],
+              }}
+              articles={articles}
+              districts={districts}
+              categories={categories}
+              onNavigateToArticles={() => setActiveTab('newsroom_studio')}
+              onPublishArticle={onPublishArticle}
+              onAddToReviewQueue={(art) => {
+                if (onAddPendingArticle) onAddPendingArticle(art as ArticleDetail);
+              }}
+            />
+          </div>
+        )}
+
+        {/* TAB 15: RSS MANAGEMENT DESK */}
+        {activeTab === 'rss_management' && (
+          <RssManagementDesk
+            districts={districts}
+            categories={categories}
+            onAddPendingArticle={(art) => {
+              if (onAddPendingArticle) onAddPendingArticle(art);
+            }}
+            onNavigateToReviewQueue={() => setActiveTab('review_queue')}
+          />
+        )}
+
+        {/* TAB 16: REPORTER COIN MANAGEMENT DESK */}
+        {activeTab === 'reporter_coins' && (
+          <ReporterCoinManagementDesk
+            reporters={reporters}
+            onUpdateReporterCoins={onUpdateReporterCoins}
+          />
+        )}
       </div>
 
       {/* Broadcast Alert Modal */}
@@ -4262,9 +4621,128 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
               <button
                 type="button"
                 onClick={handleSendBroadcast}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer"
               >
                 🚨 अलर्ट प्रसारित करें
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Saved Articles Modal for Master Admin */}
+      {showSavedNewsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Bookmark className="w-5 h-5 text-amber-500" />
+                <h3 className="font-bold text-slate-900 text-base">सहेजे गए समाचार (Saved Articles)</h3>
+                <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-xs font-bold">
+                  {bookmarkedArticles.length}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowSavedNewsModal(false)}
+                className="text-slate-400 hover:text-slate-700 font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 space-y-2 pr-1">
+              {bookmarkedArticles.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  कोई सहेजा गया समाचार उपलब्ध नहीं है।
+                </div>
+              ) : (
+                bookmarkedArticles.map((art) => (
+                  <div
+                    key={art.id}
+                    className="p-3 rounded-xl border border-slate-200 hover:border-red-300 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3"
+                  >
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-xs line-clamp-1">{art.title}</h4>
+                      <span className="text-[10px] text-slate-500">{art.districtName} • {art.categoryName || art.category}</span>
+                    </div>
+                    <span className="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded font-bold shrink-0">
+                      बुकमार्क
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setShowSavedNewsModal(false)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                बंद करें
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Master Admin Editorial Guide & Guidelines PDF Modal */}
+      {showPdfGuideModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FileQuestion className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-slate-900 text-base">मास्टर एडमिनिस्ट्रेटर गाइड व संपादकीय दिशानिर्देश</h3>
+              </div>
+              <button
+                onClick={() => setShowPdfGuideModal(false)}
+                className="text-slate-400 hover:text-slate-700 font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 space-y-3 text-xs text-slate-700 leading-relaxed pr-1">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900">
+                <h4 className="font-bold text-sm mb-1">1. 10-सूत्रीय संपादकीय सत्यापन प्रोटोकॉल</h4>
+                <p>प्रत्येक सबमिशन को 10-बिंदु तथ्य-सत्यापन, धारा-अनुपालन व स्रोत पुष्टि के बाद ही राज्य स्तर पर प्रकाशित किया जाता है।</p>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <h4 className="font-bold text-slate-900 mb-1">2. एकीकृत स्टूडियो व आरएसएस प्रबंधन</h4>
+                <p>न्यूज़रूम, ई-पेपर, ग्राफ़िक्स, वीडियो व AI न्यूज़ रूम सीधे एडमिन डैशबोर्ड में एम्बेडेड हैं। RSS फ़ीड्स से सामग्री स्वतः देवनागरी में रूपांतरित होकर समीक्षा कतार में आती है।</p>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <h4 className="font-bold text-slate-900 mb-1">3. संवाददाता कॉइन गवर्नेंस</h4>
+                <p>कॉइन केवल फील्ड संवाददाताओं के स्टोरी कंट्रीब्यूशन व इंसेंटिव हेतु हैं। एडमिन या पाठक के लिए कॉइन लागू नहीं हैं।</p>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  const blob = new Blob([
+                    `BREAKING NEWS WALA (ब्रेकिंग न्यूज़ वाला) - मास्टर एडमिनिस्ट्रेटर मैनुअल\n\n1. 10-सूत्रीय संपादकीय सत्यापन\n2. आरएसएस व एआई न्यूज़ रूम\n3. संवाददाता कॉइन गवर्नेंस\n4. 55 जिले कवरेज व ई-पेपर प्रबंधन`
+                  ], { type: 'text/plain;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'BREAKING_NEWS_WALA_Master_Admin_Guide.txt';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>गाइड पैकेज डाउनलोड करें</span>
+              </button>
+
+              <button
+                onClick={() => setShowPdfGuideModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold cursor-pointer"
+              >
+                बंद करें
               </button>
             </div>
           </div>

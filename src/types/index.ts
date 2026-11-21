@@ -244,7 +244,11 @@ export type EpaperElementType =
   | 'IMAGE'
   | 'AD'
   | 'MASTHEAD'
-  | 'COLUMN';
+  | 'COLUMN'
+  | 'HEADER'
+  | 'SHAPE'
+  | 'DIVIDER'
+  | 'TEXT';
 
 export type EpaperAdSlotType =
   | 'FULL_PAGE'
@@ -317,15 +321,170 @@ export interface EpaperPageElement {
   badgeText?: string;
   imageUrl?: string;
   imageCaption?: string;
+  caption?: string;
   adSlotType?: EpaperAdSlotType | string;
   adStatus?: string;
   fontSize?: number;
   fontFamily?: string;
+  fontWeight?: string | number;
   lineHeight?: number;
   textAlign?: 'left' | 'center' | 'right' | 'justify';
+  color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  padding?: number;
+  margin?: number;
+  opacity?: number;
+  rotation?: number;
+  objectFit?: 'cover' | 'contain' | 'fill';
+  shapeType?: 'rectangle' | 'circle' | 'line' | 'star';
+  headerConfig?: any;
   zIndex?: number;
   role?: 'LEAD' | 'SECOND_LEAD' | 'ANCHOR' | 'BRIEF' | 'OPINION';
   isLocked?: boolean;
+}
+
+export interface EpaperFreehandDrawing {
+  id: string;
+  tool?: 'brush' | 'highlighter' | 'pen';
+  type?: 'pen' | 'highlighter';
+  color: string;
+  strokeWidth?: number;
+  size?: number;
+  opacity: number;
+  points: Array<{ x: number; y: number }>;
+  pageNumber?: number;
+}
+
+export interface EpaperHeaderElement {
+  id: string;
+  type:
+    | 'NEWSPAPER_NAME'
+    | 'LOGO'
+    | 'EDITION_NAME'
+    | 'DATE'
+    | 'DAY'
+    | 'PAGE_NUMBER'
+    | 'TAGLINE'
+    | 'REGISTRATION'
+    | 'WEBSITE'
+    | 'CONTACT'
+    | 'DIVIDER'
+    | 'BACKGROUND'
+    | 'DECORATIVE'
+    | 'CUSTOM_TEXT';
+  label: string;
+  text?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: string | number;
+  color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+  logoUrl?: string;
+  icon?: string;
+  isLocked?: boolean;
+  zIndex?: number;
+}
+
+export interface EpaperHeaderTemplateDoc {
+  id: string;
+  name: string;
+  nameHi: string;
+  type: 'CLASSIC' | 'MODERN' | 'MINIMAL' | 'BOLD' | 'SPECIAL' | 'CUSTOM';
+  description?: string;
+  heightPt: number;
+  backgroundColor: string;
+  borderColor?: string;
+  hasTricolorRibbon: boolean;
+  elements: EpaperHeaderElement[];
+  config?: any;
+  isDefault?: boolean;
+  isActive: boolean;
+  version: number;
+  previewImageUrl?: string;
+  createdBy: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CoverExtractionResult {
+  url: string;
+  isValid: boolean;
+  isAccessible: boolean;
+  isRestricted: boolean;
+  isCoverOnly?: boolean;
+  restrictionReason?: string;
+  coverImageUrl?: string;
+  newspaperName?: string;
+  extractedTitle?: string;
+  mainHeadlines: string[];
+  subheadings: string[];
+  extractedText: string;
+  extractedDate?: string;
+  suggestedArticles?: Array<{
+    headline: string;
+    subheadline?: string;
+    body: string;
+    category?: string;
+  }>;
+  permissionFallbackMessage?: string;
+}
+
+export interface InterviewToArticleRequest {
+  sourceType?: 'AUDIO' | 'VIDEO' | 'TRANSCRIPT' | 'MANUAL_TEXT' | 'DOCUMENT' | 'COVER_CONTENT';
+  rawText?: string;
+  transcriptText?: string;
+  audioUrl?: string;
+  videoUrl?: string;
+  intervieweeName?: string;
+  interviewerName?: string;
+  topic?: string;
+  contextTopic?: string;
+  district?: string;
+  outputFormat?: string;
+  style?: 'STRAIGHT' | 'IMPACT' | 'QUESTION' | 'ANALYTICAL' | 'FEATURE' | 'ALL';
+}
+
+export interface InterviewToArticleResponse {
+  transcript: string;
+  speakers?: Array<{ speaker: string; text: string }>;
+  keyQuotes?: Array<{ speaker: string; quote: string; verified?: boolean }>;
+  extractedQuotes?: Array<{ speaker: string; quote: string; verified?: boolean }>;
+  topics?: string[];
+  factsAndFigures?: string[];
+  detectedNewsAngle?: string;
+  headlineOptions?: Array<{
+    type: 'STRAIGHT' | 'IMPACT' | 'QUESTION' | 'ANALYTICAL' | 'FEATURE';
+    typeLabelHi: string;
+    headline: string;
+    subheadline: string;
+  }>;
+  headlines?: Array<{
+    style: string;
+    headline: string;
+    subheadline?: string;
+  }>;
+  articleDraft: {
+    title: string;
+    subheadline: string;
+    byline: string;
+    body: string;
+    wordCount: number;
+    summary: string;
+    category: string;
+  } | string;
+  missingDetailsWarning?: string[];
+  requiresApproval?: boolean;
 }
 
 export interface EpaperPageDoc {
@@ -335,7 +494,10 @@ export interface EpaperPageDoc {
   pageTitle: string;
   sectionType: EpaperSectionType | string;
   templateId?: string;
-  gridColumns: 3 | 4 | 5 | 6 | 8;
+  headerTemplateId?: string;
+  customHeaderConfig?: any;
+  freehandDrawings?: EpaperFreehandDrawing[];
+  gridColumns: 1 | 2 | 3 | 4 | 5 | 6 | 8;
   elements: EpaperPageElement[];
   thumbnailUrl?: string;
   pdfUrl?: string;
@@ -387,7 +549,7 @@ export interface EpaperTemplateDoc {
   description?: string;
   category: string;
   pageNumberDefault?: number;
-  gridColumns: 3 | 4 | 5 | 6 | 8;
+  gridColumns: 1 | 2 | 3 | 4 | 5 | 6 | 8;
   regions: EpaperTemplateRegion[];
   isSystem: boolean;
   version: number;

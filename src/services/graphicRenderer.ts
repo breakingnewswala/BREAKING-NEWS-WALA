@@ -1008,6 +1008,33 @@ export class GraphicRenderer {
       }
     }
 
+    // Freehand Drawings (Brush Tool Strokes)
+    if (page.freehandDrawings && page.freehandDrawings.length > 0) {
+      ctx.save();
+      for (const stroke of page.freehandDrawings) {
+        if (!stroke.points || stroke.points.length < 2) continue;
+        ctx.save();
+        ctx.strokeStyle = stroke.color || '#EF4444';
+        ctx.lineWidth = stroke.strokeWidth || stroke.size || 3;
+        ctx.globalAlpha =
+          stroke.opacity !== undefined
+            ? stroke.opacity
+            : stroke.tool === 'highlighter' || stroke.type === 'highlighter'
+            ? 0.35
+            : 1.0;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+        for (let i = 1; i < stroke.points.length; i++) {
+          ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
     ctx.restore();
   }
 
@@ -1109,6 +1136,7 @@ export class GraphicRenderer {
 
     switch (el.elementType) {
       case 'MASTHEAD':
+      case 'HEADER':
         this.renderMastheadElement(ctx, el, bounds);
         break;
       case 'HEADLINE':
@@ -1126,6 +1154,15 @@ export class GraphicRenderer {
       case 'COLUMN':
         this.renderColumnElement(ctx, el, bounds);
         break;
+      case 'SHAPE':
+        this.renderShapeElement(ctx, el, bounds);
+        break;
+      case 'DIVIDER':
+        this.renderDividerElement(ctx, el, bounds);
+        break;
+      case 'TEXT':
+        this.renderTextElement(ctx, el, bounds);
+        break;
       default:
         this.renderStoryElement(ctx, el, bounds);
         break;
@@ -1136,29 +1173,87 @@ export class GraphicRenderer {
 
 
   /**
-   * Renders traditional newspaper Masthead.
+   * Renders traditional or custom newspaper Masthead / Header (PART 4).
    */
   private static renderMastheadElement(
     ctx: CanvasRenderingContext2D,
     el: EpaperPageElement,
     b: EpaperPageElementBounds
   ): void {
+    const bgColor = el.backgroundColor || el.headerConfig?.backgroundColor || '#FFFFFF';
+    const textColor = el.color || el.headerConfig?.color || '#0F172A';
+    const hasTricolor = el.headerConfig?.hasTricolorRibbon !== false;
+
     // Background fill
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = bgColor;
     ctx.fillRect(b.x, b.y, b.width, b.height);
 
     // Masthead Tricolor Ribbon
-    ctx.fillStyle = '#ED1727';
-    ctx.fillRect(b.x, b.y, b.width * 0.33, 4);
-    ctx.fillStyle = '#FDE900';
-    ctx.fillRect(b.x + b.width * 0.33, b.y, b.width * 0.33, 4);
-    ctx.fillStyle = '#344FD6';
-    ctx.fillRect(b.x + b.width * 0.66, b.y, b.width * 0.34, 4);
+    if (hasTricolor) {
+      ctx.fillStyle = '#ED1727';
+      ctx.fillRect(b.x, b.y, b.width * 0.33, 4);
+      ctx.fillStyle = '#FDE900';
+      ctx.fillRect(b.x + b.width * 0.33, b.y, b.width * 0.33, 4);
+      ctx.fillStyle = '#344FD6';
+      ctx.fillRect(b.x + b.width * 0.66, b.y, b.width * 0.34, 4);
+    }
 
-    // Red Logo Emblem 'ब'
+    // If template has specific structured elements, render them proportionally
+    if (el.headerConfig && Array.isArray(el.headerConfig.elements) && el.headerConfig.elements.length > 0) {
+      const templateH = el.headerConfig.heightPt || b.height;
+      const scaleY = b.height / templateH;
+      const scaleX = b.width / 848;
+
+      for (const item of el.headerConfig.elements) {
+        if (item.type === 'DIVIDER') {
+          ctx.fillStyle = item.backgroundColor || '#0F172A';
+          ctx.fillRect(b.x + item.x * scaleX, b.y + item.y * scaleY, item.width * scaleX, Math.max(1, (item.height || 2) * scaleY));
+          continue;
+        }
+
+        ctx.save();
+        const itemX = b.x + item.x * scaleX;
+        const itemY = b.y + item.y * scaleY;
+        const itemW = item.width * scaleX;
+        const itemH = item.height * scaleY;
+
+        if (item.type === 'LOGO') {
+          const lSize = Math.min(itemW, itemH);
+          this.roundRect(ctx, itemX, itemY, lSize, lSize, 6);
+          ctx.fillStyle = item.backgroundColor || '#ED1727';
+          ctx.fill();
+          ctx.fillStyle = item.color || '#FFFFFF';
+          ctx.font = `900 ${Math.round(lSize * 0.6)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(item.text || 'ब', itemX + lSize / 2, itemY + lSize / 2);
+        } else {
+          ctx.fillStyle = item.color || textColor;
+          const fSize = Math.max(9, Math.round((item.fontSize || 12) * Math.min(scaleX, scaleY)));
+          ctx.font = `${item.fontWeight || '700'} ${fSize}px ${item.fontFamily || '"Noto Sans Devanagari", sans-serif'}`;
+          ctx.textAlign = (item.textAlign as any) || 'left';
+          ctx.textBaseline = 'middle';
+
+          const drawX = item.textAlign === 'center' ? itemX + itemW / 2 : item.textAlign === 'right' ? itemX + itemW : itemX;
+          ctx.fillText(item.text || item.label || '', drawX, itemY + itemH / 2);
+        }
+        ctx.restore();
+      }
+
+      // Imprint bottom border
+      ctx.strokeStyle = el.borderColor || '#0F172A';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y + b.height - 1);
+      ctx.lineTo(b.x + b.width, b.y + b.height - 1);
+      ctx.stroke();
+      return;
+    }
+
+    // Fallback: Standard Masthead Rendering with customHeadline / byline / colors
     const logoSize = Math.min(50, b.height * 0.55);
     const logoX = b.x + 12;
-    const logoY = b.y + 12;
+    const logoY = b.y + (hasTricolor ? 10 : 6);
 
     this.roundRect(ctx, logoX, logoY, logoSize, logoSize, 8);
     ctx.fillStyle = '#ED1727';
@@ -1170,28 +1265,99 @@ export class GraphicRenderer {
     ctx.textBaseline = 'middle';
     ctx.fillText('ब', logoX + logoSize / 2, logoY + logoSize / 2);
 
-    // Title: "ब्रेकिंग न्यूज़ वाला"
+    // Title: customHeadline or "ब्रेकिंग न्यूज़ वाला"
+    const titleText = el.customHeadline || 'ब्रेकिंग न्यूज़ वाला';
     ctx.textAlign = 'left';
-    ctx.font = `900 ${Math.min(48, Math.round(b.height * 0.45))}px "Rozha One", "Noto Sans Devanagari", serif`;
-    ctx.fillStyle = '#0F172A';
-    ctx.fillText('ब्रेकिंग न्यूज़ वाला', logoX + logoSize + 14, b.y + b.height * 0.45);
+    ctx.font = `900 ${Math.min(48, Math.round(b.height * 0.42))}px "Rozha One", "Noto Sans Devanagari", serif`;
+    ctx.fillStyle = textColor;
+    ctx.fillText(titleText, logoX + logoSize + 14, b.y + b.height * 0.45);
 
     // Subtitle & Regional Bar
-    ctx.font = '700 12px "Noto Sans Devanagari", sans-serif';
+    const taglineText = el.customSubheadline || 'मध्य प्रदेश का सबसे विश्वसनीय एवं निर्भीक डिजिटल दैनिक • 55 जिलों की धड़कन';
+    ctx.font = '700 11px "Noto Sans Devanagari", sans-serif';
     ctx.fillStyle = '#ED1727';
-    ctx.fillText(
-      'मध्य प्रदेश का सबसे विश्वसनीय एवं निर्भीक डिजिटल दैनिक • 55 जिलों की धड़कन',
-      logoX + logoSize + 16,
-      b.y + b.height * 0.72
-    );
+    ctx.fillText(taglineText, logoX + logoSize + 16, b.y + b.height * 0.72);
+
+    // Right side folio / date
+    if (b.width > 500) {
+      ctx.textAlign = 'right';
+      ctx.font = '700 10px "Noto Sans Devanagari", sans-serif';
+      ctx.fillStyle = '#475569';
+      ctx.fillText(el.byline || 'भोपाल • डाक संस्करण • मूल्य: ₹4.00', b.x + b.width - 14, b.y + b.height * 0.45);
+    }
 
     // Imprint strip at bottom
-    ctx.strokeStyle = '#0F172A';
+    ctx.strokeStyle = el.borderColor || '#0F172A';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(b.x, b.y + b.height - 2);
     ctx.lineTo(b.x + b.width, b.y + b.height - 2);
     ctx.stroke();
+  }
+
+  /**
+   * Renders primitive shapes (Rectangle, Circle, Line).
+   */
+  private static renderShapeElement(
+    ctx: CanvasRenderingContext2D,
+    el: EpaperPageElement,
+    b: EpaperPageElementBounds
+  ): void {
+    ctx.save();
+    ctx.fillStyle = el.backgroundColor || 'rgba(59, 130, 246, 0.1)';
+    ctx.strokeStyle = el.borderColor || '#3B82F6';
+    ctx.lineWidth = el.borderWidth || 1;
+
+    if (el.shapeType === 'circle') {
+      ctx.beginPath();
+      ctx.arc(b.x + b.width / 2, b.y + b.height / 2, Math.min(b.width, b.height) / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.fillRect(b.x, b.y, b.width, b.height);
+      ctx.strokeRect(b.x, b.y, b.width, b.height);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Renders horizontal/vertical decorative divider lines.
+   */
+  private static renderDividerElement(
+    ctx: CanvasRenderingContext2D,
+    el: EpaperPageElement,
+    b: EpaperPageElementBounds
+  ): void {
+    ctx.save();
+    ctx.fillStyle = el.backgroundColor || el.color || '#0F172A';
+    ctx.fillRect(b.x, b.y, b.width, Math.max(1, b.height));
+    ctx.restore();
+  }
+
+  /**
+   * Renders standalone text block.
+   */
+  private static renderTextElement(
+    ctx: CanvasRenderingContext2D,
+    el: EpaperPageElement,
+    b: EpaperPageElementBounds
+  ): void {
+    ctx.save();
+    if (el.backgroundColor && el.backgroundColor !== 'transparent') {
+      ctx.fillStyle = el.backgroundColor;
+      ctx.fillRect(b.x, b.y, b.width, b.height);
+    }
+
+    ctx.fillStyle = el.color || '#0F172A';
+    const fontSize = el.fontSize || 12;
+    ctx.font = `${el.fontWeight || 'normal'} ${fontSize}px ${el.fontFamily || '"Noto Sans Devanagari", sans-serif'}`;
+    ctx.textAlign = el.textAlign === 'justify' ? 'left' : ((el.textAlign as CanvasTextAlign) || 'left');
+    ctx.textBaseline = 'top';
+
+    const text = el.customHeadline || el.customBodyText || 'टेक्स्ट बॉक्स';
+    const startX = el.textAlign === 'center' ? b.x + b.width / 2 : el.textAlign === 'right' ? b.x + b.width - 4 : b.x + 4;
+    ctx.fillText(text, startX, b.y + 4);
+    ctx.restore();
   }
 
   /**

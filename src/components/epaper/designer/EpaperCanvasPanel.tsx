@@ -3,6 +3,7 @@ import {
   EpaperPageDoc,
   EpaperPageElement,
   EpaperPageElementBounds,
+  EpaperFreehandDrawing,
 } from '../../../types';
 import {
   BROADSHEET_CONSTANTS,
@@ -27,6 +28,7 @@ export interface EpaperCanvasPanelProps {
   onViewportChange: (updater: (prev: CanvasViewportState) => CanvasViewportState) => void;
   onPushHistory: () => void;
   onCollisionsDetected?: (hasCollision: boolean, collidingIds: string[]) => void;
+  onAddFreehandDrawing?: (drawing: EpaperFreehandDrawing) => void;
 }
 
 export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
@@ -38,6 +40,7 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
   onViewportChange,
   onPushHistory,
   onCollisionsDetected,
+  onAddFreehandDrawing,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,6 +51,7 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
   const [draggedBounds, setDraggedBounds] = useState<EpaperPageElementBounds | null>(null);
   const [activeSnapLines, setActiveSnapLines] = useState<SnapGuideLine[]>([]);
   const [isSpacePressed, setIsSpacePressed] = useState<boolean>(false);
+  const [brushStrokeState, setBrushStrokeState] = useState<{ isDrawing: boolean; points: Array<{ x: number; y: number }> } | null>(null);
 
   // Modular grid configuration for snapping
   const grid = useMemo(() => {
@@ -174,6 +178,18 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
         startY: e.clientY - viewportState.panOffset.y,
       });
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } else if (viewportState.activeTool === 'brush') {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const ptX = (e.clientX - rect.left) / viewportState.zoom;
+        const ptY = (e.clientY - rect.top) / viewportState.zoom;
+        setBrushStrokeState({
+          isDrawing: true,
+          points: [{ x: ptX, y: ptY }],
+        });
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      }
     } else {
       onSelectElement(null);
     }
@@ -181,6 +197,20 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      // 0. Brush Drawing Interaction
+      if (brushStrokeState?.isDrawing) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          const ptX = (e.clientX - rect.left) / viewportState.zoom;
+          const ptY = (e.clientY - rect.top) / viewportState.zoom;
+          setBrushStrokeState((prev) =>
+            prev ? { ...prev, points: [...prev.points, { x: ptX, y: ptY }] } : null
+          );
+        }
+        return;
+      }
+
       // 1. Pan interaction
       if (panState?.isPanning) {
         onViewportChange((prev) => ({
@@ -299,6 +329,27 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
+      if (brushStrokeState?.isDrawing) {
+        if (brushStrokeState.points.length >= 2 && onAddFreehandDrawing) {
+          const newDrawing: EpaperFreehandDrawing = {
+            id: `draw-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            points: brushStrokeState.points,
+            color: viewportState.brushColor || '#EF4444',
+            size: viewportState.brushSize || 3,
+            opacity:
+              viewportState.brushOpacity !== undefined
+                ? viewportState.brushOpacity
+                : viewportState.brushType === 'highlighter'
+                ? 0.35
+                : 1.0,
+            type: viewportState.brushType || 'pen',
+          };
+          onAddFreehandDrawing(newDrawing);
+          onPushHistory();
+        }
+        setBrushStrokeState(null);
+      }
+
       if (panState?.isPanning) {
         setPanState(null);
       }
@@ -369,6 +420,27 @@ export const EpaperCanvasPanel: React.FC<EpaperCanvasPanelProps> = ({
         {/* Interactive Overlay Layer (Selection boxes & Resize Handles) */}
         {!viewportState.previewMode && (
           <div className="absolute inset-0 pointer-events-auto">
+            {/* Live Freehand Brush Stroke Overlay while drawing */}
+            {brushStrokeState?.isDrawing && brushStrokeState.points.length > 1 && (
+              <svg className="absolute inset-0 pointer-events-none w-full h-full z-50">
+                <polyline
+                  points={brushStrokeState.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke={viewportState.brushColor || '#EF4444'}
+                  strokeWidth={viewportState.brushSize || 3}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={
+                    viewportState.brushOpacity !== undefined
+                      ? viewportState.brushOpacity
+                      : viewportState.brushType === 'highlighter'
+                      ? 0.35
+                      : 1.0
+                  }
+                />
+              </svg>
+            )}
+
             {(page.elements || []).map((el) => {
               const isSelected = el.id === selectedElementId;
               const isColliding = collisionReport.collidingElementIds.includes(el.id);

@@ -138,6 +138,10 @@ import {
   EpaperQualityCheckReport,
   EpaperGrantExceptionInput,
   EpaperFinalApprovalInput,
+  EpaperHeaderTemplateDoc,
+  CoverExtractionResult,
+  InterviewToArticleRequest,
+  InterviewToArticleResponse,
   EpaperSchedulePublishInput,
 } from '../types';
 
@@ -2906,6 +2910,113 @@ export const apiClient = {
       return true;
     },
 
+    // =======================================================================
+    // HEADER TEMPLATES MANAGEMENT (PART 4)
+    // =======================================================================
+
+    async getHeaderTemplates(params?: { type?: string; activeOnly?: boolean; search?: string }): Promise<EpaperHeaderTemplateDoc[]> {
+      const q = new URLSearchParams();
+      if (params?.type && params.type !== 'all') q.set('type', params.type);
+      if (params?.activeOnly) q.set('activeOnly', 'true');
+      if (params?.search) q.set('search', params.search);
+      const endpoint = `/epaper/header-templates${q.toString() ? `?${q.toString()}` : ''}`;
+      const res = await request<EpaperHeaderTemplateDoc[]>(endpoint);
+      return res.success && Array.isArray(res.data) ? res.data : [];
+    },
+
+    async getHeaderTemplateById(id: string): Promise<EpaperHeaderTemplateDoc | null> {
+      const res = await request<EpaperHeaderTemplateDoc>(`/epaper/header-templates/${encodeURIComponent(id)}`);
+      return res.success && res.data ? res.data : null;
+    },
+
+    async saveHeaderTemplate(payload: Partial<EpaperHeaderTemplateDoc>): Promise<EpaperHeaderTemplateDoc> {
+      const res = await request<EpaperHeaderTemplateDoc>('/epaper/header-templates', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'हेडर टेम्पलेट सहेजना विफल रहा');
+      }
+      return res.data;
+    },
+
+    async updateHeaderTemplate(id: string, payload: Partial<EpaperHeaderTemplateDoc>): Promise<EpaperHeaderTemplateDoc> {
+      const res = await request<EpaperHeaderTemplateDoc>(`/epaper/header-templates/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'हेडर टेम्पलेट अद्यतन विफल रहा');
+      }
+      return res.data;
+    },
+
+    async deleteHeaderTemplate(id: string): Promise<boolean> {
+      const res = await request<{ deleted: boolean }>(`/epaper/header-templates/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.success) {
+        throw new Error(res.error?.message || 'हेडर टेम्पलेट हटाना विफल रहा');
+      }
+      return true;
+    },
+
+    async duplicateHeaderTemplate(id: string, newName?: string): Promise<EpaperHeaderTemplateDoc> {
+      const res = await request<EpaperHeaderTemplateDoc>(`/epaper/header-templates/${encodeURIComponent(id)}/duplicate`, {
+        method: 'POST',
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'हेडर टेम्पलेट प्रतिलिपि बनाना विफल रहा');
+      }
+      return res.data;
+    },
+
+    async activateHeaderTemplate(id: string): Promise<EpaperHeaderTemplateDoc> {
+      const res = await request<EpaperHeaderTemplateDoc>(`/epaper/header-templates/${encodeURIComponent(id)}/activate`, {
+        method: 'POST',
+      });
+      if (!res.success || !res.data) {
+        throw new Error(res.error?.message || 'हेडर टेम्पलेट स्थिति परिवर्तन विफल रहा');
+      }
+      return res.data;
+    },
+
+    tools: {
+      async urlExtract(url: string): Promise<CoverExtractionResult> {
+        const res = await request<CoverExtractionResult>('/epaper/tools/url-extract', {
+          method: 'POST',
+          body: JSON.stringify({ url }),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'URL विश्लेषण विफल रहा');
+        }
+        return res.data;
+      },
+
+      async transcribeAudio(audioBase64?: string): Promise<{ transcript: string; language: string; confidence: number }> {
+        const res = await request<{ transcript: string; language: string; confidence: number }>('/epaper/tools/transcribe-audio', {
+          method: 'POST',
+          body: JSON.stringify({ audioBase64 }),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'ऑडियो ट्रांसक्रिप्शन विफल रहा');
+        }
+        return res.data;
+      },
+
+      async ocr(sampleText?: string): Promise<{ text: string; language: string; confidence: number }> {
+        const res = await request<{ text: string; language: string; confidence: number }>('/epaper/tools/ocr', {
+          method: 'POST',
+          body: JSON.stringify({ sampleText }),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'OCR निष्कर्षण विफल रहा');
+        }
+        return res.data;
+      },
+    },
+
     async submitClassifiedAd(payload: Partial<EpaperAdSubmissionDoc>): Promise<EpaperAdSubmissionDoc> {
       const res = await request<EpaperAdSubmissionDoc>('/epaper/ads', {
         method: 'POST',
@@ -3375,6 +3486,50 @@ export const apiClient = {
       async getUsage(): Promise<any> {
         const res = await request<any>('/epaper/ai/usage');
         return res.success && res.data ? res.data : { todayRequests: 0, dailyLimit: 50, remainingRequests: 50 };
+      },
+
+      async interviewToArticle(payload: InterviewToArticleRequest): Promise<InterviewToArticleResponse> {
+        const res = await request<InterviewToArticleResponse>('/epaper/ai/interview-to-article', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'साक्षात्कार से समाचार निर्माण विफल रहा');
+        }
+        return res.data;
+      },
+
+      async extractQuotesAndFacts(payload: { text?: string; title?: string }): Promise<{ quotes: any[]; facts: string[]; summary: string }> {
+        const res = await request<any>('/epaper/ai/quotes-facts', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'उद्धरण व तथ्य निष्कर्षण विफल रहा');
+        }
+        return res.data;
+      },
+
+      async copyEditGrammarSpelling(payload: { content: string }): Promise<{ originalContent: string; revisedContent: string; corrections: any[] }> {
+        const res = await request<any>('/epaper/ai/grammar-spelling', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'व्याकरण व वर्तनी सुधार विफल रहा');
+        }
+        return res.data;
+      },
+
+      async formatColumn(payload: { content: string; columnCount?: number; targetHeightPt?: number }): Promise<any> {
+        const res = await request<any>('/epaper/ai/column-format', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        if (!res.success || !res.data) {
+          throw new Error(res.error?.message || 'कॉलम फॉर्मेटिंग विश्लेषण विफल रहा');
+        }
+        return res.data;
       },
     },
 

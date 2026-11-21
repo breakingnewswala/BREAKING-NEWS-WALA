@@ -53,7 +53,7 @@ export const BROADSHEET_CONSTANTS = {
   MIN_ELEMENT_HEIGHT_PT: 30.0,
 } as const;
 
-export type GridColumnCount = 3 | 4 | 5 | 6 | 8;
+export type GridColumnCount = 1 | 2 | 3 | 4 | 5 | 6 | 8;
 
 export interface ColumnGridConfig {
   columns: GridColumnCount;
@@ -129,8 +129,8 @@ export function calculateColumnGrid(
   gutterWidth: number = BROADSHEET_CONSTANTS.GUTTER_WIDTH_PT,
   leftMargin: number = BROADSHEET_CONSTANTS.MARGIN_LEFT_PT
 ): ColumnGridConfig {
-  if (![3, 4, 5, 6, 8].includes(columns)) {
-    throw new Error(`ERR_INVALID_GRID_COLS: Column count must be 3, 4, 5, 6, or 8 (received ${columns})`);
+  if (![1, 2, 3, 4, 5, 6, 8].includes(columns)) {
+    throw new Error(`ERR_INVALID_GRID_COLS: Column count must be 1, 2, 3, 4, 5, 6, or 8 (received ${columns})`);
   }
 
   const totalGutters = (columns - 1) * gutterWidth;

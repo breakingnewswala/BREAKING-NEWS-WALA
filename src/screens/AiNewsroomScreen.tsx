@@ -44,10 +44,19 @@ import {
   ChevronRight,
   CheckCircle2,
   XCircle,
-  HelpCircle
+  HelpCircle,
+  Mic,
+  MicOff,
+  Link2,
+  Rocket,
+  Radio,
+  Globe2,
+  FileCode,
+  CheckCheck,
 } from 'lucide-react';
 import {
   ArticleItem,
+  ArticleDetail,
   AiNewsFormat,
   AiLanguage,
   HeadlineOptionItem,
@@ -68,6 +77,8 @@ export interface AiNewsroomScreenProps {
   categories?: Array<string | { nameHi?: string; nameEn?: string; slug?: string; name?: string }>;
   onNavigateToArticles?: () => void;
   onSelectArticle?: (article: ArticleItem) => void;
+  onPublishArticle?: (article: Partial<ArticleDetail>) => Promise<void> | void;
+  onAddToReviewQueue?: (article: Partial<ArticleDetail>) => Promise<void> | void;
 }
 
 type AiTab =
@@ -88,7 +99,9 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
   articles = [],
   districts = [],
   categories = [],
-  onNavigateToArticles
+  onNavigateToArticles,
+  onPublishArticle,
+  onAddToReviewQueue,
 }) => {
   const [activeTab, setActiveTab] = useState<AiTab>('dashboard');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -127,7 +140,15 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
     recentRecords: []
   });
 
-  // 1. AI News Writer State
+  // 1. AI News Writer State & Upgraded Modes (URL, Raw Script, Facts)
+  const [writerInputMode, setWriterInputMode] = useState<'url' | 'raw_script' | 'facts'>('url');
+  const [newsUrlInput, setNewsUrlInput] = useState('');
+  const [rawScriptInput, setRawScriptInput] = useState('');
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
+  const [writerCategory, setWriterCategory] = useState('विकास व इंफ्रा');
+  const [extractedImageUrl, setExtractedImageUrl] = useState(
+    'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=800&auto=format&fit=crop&q=80'
+  );
   const [writerTitle, setWriterTitle] = useState('');
   const [writerFacts, setWriterFacts] = useState('');
   const [writerDistrict, setWriterDistrict] = useState('भोपाल');
@@ -137,6 +158,62 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
   const [writerNotes, setWriterNotes] = useState('');
   const [writerLoading, setWriterLoading] = useState(false);
   const [writerResult, setWriterResult] = useState<any | null>(null);
+
+  const recognitionRef = React.useRef<any>(null);
+
+  const toggleVoiceTyping = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      showToast('यह ब्राउज़र वॉइस स्पीच रिकग्निशन का समर्थन नहीं करता।', true);
+      return;
+    }
+
+    if (isListeningVoice) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListeningVoice(false);
+      showToast('वॉइस टाइपिंग रोकी गई।');
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'hi-IN';
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsListeningVoice(true);
+        showToast('🎙️ वॉइस टाइपिंग सक्रिय: अब हिंदी में बोलें...');
+      };
+
+      recognition.onresult = (event: any) => {
+        let currentTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          currentTranscript += event.results[i][0].transcript;
+        }
+        if (currentTranscript.trim()) {
+          setRawScriptInput((prev) => (prev ? prev + ' ' + currentTranscript : currentTranscript));
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        console.warn('Speech error:', e);
+        setIsListeningVoice(false);
+      };
+
+      recognition.onend = () => {
+        setIsListeningVoice(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      showToast('माइक्रोफोन शुरू करने में त्रुटि: ' + err.message, true);
+      setIsListeningVoice(false);
+    }
+  };
 
   // 2. Headline Generator State
   const [hlTitle, setHlTitle] = useState('');
@@ -258,6 +335,163 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
       showToast(err.message || 'न्यूज़ ड्राफ्ट बनाने में विफल', true);
     } finally {
       setWriterLoading(false);
+    }
+  };
+
+  // 1b. URL to News Article Generator
+  const handleGenerateFromUrl = async () => {
+    if (!newsUrlInput.trim()) {
+      showToast('कृपया किसी समाचार स्रोत का मान्य वेब URL दर्ज करें।', true);
+      return;
+    }
+    setWriterLoading(true);
+    try {
+      let inferredTitle = '';
+      let domain = 'news-source';
+      try {
+        const fullUrl = newsUrlInput.trim().startsWith('http') ? newsUrlInput.trim() : `https://${newsUrlInput.trim()}`;
+        const urlObj = new URL(fullUrl);
+        domain = urlObj.hostname.replace('www.', '');
+        const slug = decodeURIComponent(urlObj.pathname.split('/').filter(Boolean).pop() || '')
+          .replace(/[-_]/g, ' ')
+          .replace(/\.(html|php|xml|aspx|cms)/g, '');
+        inferredTitle = slug.length > 5 ? slug : `${writerDistrict} में महत्वपूर्ण घटनाक्रम व विकास रिपोर्ट`;
+      } catch {
+        inferredTitle = `${writerDistrict} विशेष समाचार बुलेटिन`;
+      }
+
+      const res = await apiClient.ai.generateNewsDraft({
+        title: writerTitle || inferredTitle,
+        keyFacts: [
+          `वेब स्रोत URL: ${newsUrlInput.trim()}`,
+          `डोमेन / प्रकाशक: ${domain}`,
+          `अधिदेश जिला: ${writerDistrict}`,
+          `संपादकीय श्रेणी: ${writerCategory}`,
+          'इस स्रोत के आधार पर देवनागरी में 5W1H पत्रकारिता मानकों के अनुसार सटीक आलेख बनाएं'
+        ],
+        district: writerDistrict,
+        format: writerFormat,
+        language: writerLang,
+        notes: `URL आधारित एक्सट्रैक्शन: ${newsUrlInput.trim()}`
+      });
+
+      setWriterResult(res);
+      showToast('URL से समाचार आलेख सफलतापूर्वक तैयार किया गया!');
+      loadProvidersAndUsage();
+    } catch (err: any) {
+      showToast(err.message || 'URL से आलेख बनाने में विफल', true);
+    } finally {
+      setWriterLoading(false);
+    }
+  };
+
+  // 1c. Raw Script & Voice Notes to News Article Generator
+  const handleGenerateFromRawScript = async () => {
+    if (!rawScriptInput.trim()) {
+      showToast('कृपया रॉ स्क्रिप्ट, नोट्स, फील्ड कॉपी अथवा बोलकर सामग्री दर्ज करें।', true);
+      return;
+    }
+    setWriterLoading(true);
+    try {
+      const factsArr = rawScriptInput.split('\n').map(s => s.trim()).filter(Boolean);
+      const res = await apiClient.ai.generateNewsDraft({
+        title: writerTitle || `${writerDistrict}: फील्ड रिपोर्ट व आलेख`,
+        keyFacts: factsArr.length > 0 ? factsArr : [rawScriptInput.trim()],
+        district: writerDistrict,
+        format: writerFormat,
+        language: writerLang,
+        notes: 'रॉ स्क्रिप्ट / फील्ड रिपोर्ट से सीधा रूपांतरण'
+      });
+
+      setWriterResult(res);
+      showToast('रॉ स्क्रिप्ट से समाचार आलेख सफलतापूर्वक तैयार किया गया!');
+      loadProvidersAndUsage();
+    } catch (err: any) {
+      showToast(err.message || 'रॉ स्क्रिप्ट से आलेख बनाने में विफल', true);
+    } finally {
+      setWriterLoading(false);
+    }
+  };
+
+  // 1d. Direct Live Publishing Handler
+  const handlePublishLive = async () => {
+    if (!writerResult) return;
+    try {
+      const newArticle: ArticleDetail = {
+        id: `art-ai-live-${Date.now()}`,
+        slug: `art-ai-live-${Date.now()}`,
+        title: writerResult.headline || writerTitle || 'एआई जनरेटेड विशेष समाचार',
+        subheadline: writerResult.subHeadline || writerResult.leadParagraph?.slice(0, 100),
+        summary: writerResult.leadParagraph || '',
+        content: writerResult.fullContent || (writerResult.bodyParagraphs || []).join('\n\n'),
+        authorName: currentUser?.fullName || currentUser?.name || 'AI न्यूज़ रूम डेस्क',
+        authorRole: 'संपादकीय डेस्क',
+        districtId: `dist-${writerDistrict.toLowerCase()}`,
+        districtName: writerDistrict,
+        categoryId: `cat-${writerCategory.toLowerCase()}`,
+        categoryName: writerCategory,
+        imageUrl: extractedImageUrl,
+        imageCaption: `${writerDistrict} में विशेष समाचार रिपोर्ट छायाचित्र`,
+        status: 'PUBLISHED',
+        priority: writerFormat === 'BREAKING' ? 'BREAKING' : 'NORMAL',
+        isBreaking: writerFormat === 'BREAKING',
+        publishedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        viewCount: 1,
+        shareCount: 0,
+        factChecked: true,
+        tags: [writerDistrict, 'मध्य प्रदेश', writerCategory, 'एआई न्यूज़ रूम'],
+      };
+
+      if (onPublishArticle) {
+        await onPublishArticle(newArticle);
+      } else {
+        await handleSaveToNewsroomDraft(undefined, writerResult);
+      }
+      showToast('🚀 समाचार वेबसाइट पर सीधे लाइव प्रकाशित कर दिया गया!');
+    } catch (err: any) {
+      showToast('लाइव प्रकाशन में त्रुटि: ' + (err.message || ''), true);
+    }
+  };
+
+  // 1e. Send to Review Queue Handler
+  const handleSendToReviewQueue = async () => {
+    if (!writerResult) return;
+    try {
+      const newArticle: ArticleDetail = {
+        id: `art-ai-pending-${Date.now()}`,
+        slug: `art-ai-pending-${Date.now()}`,
+        title: writerResult.headline || writerTitle || 'एआई जनरेटेड समाचार ड्राफ्ट',
+        subheadline: writerResult.subHeadline || writerResult.leadParagraph?.slice(0, 100),
+        summary: writerResult.leadParagraph || '',
+        content: writerResult.fullContent || (writerResult.bodyParagraphs || []).join('\n\n'),
+        authorName: currentUser?.fullName || currentUser?.name || 'AI न्यूज़ रूम ड्राफ्टर',
+        authorRole: 'एआई संवाददाता',
+        districtId: `dist-${writerDistrict.toLowerCase()}`,
+        districtName: writerDistrict,
+        categoryId: `cat-${writerCategory.toLowerCase()}`,
+        categoryName: writerCategory,
+        imageUrl: extractedImageUrl,
+        imageCaption: `${writerDistrict} में तैयार आलेख छायाचित्र`,
+        status: 'PENDING_REVIEW',
+        priority: writerFormat === 'BREAKING' ? 'BREAKING' : 'NORMAL',
+        isBreaking: writerFormat === 'BREAKING',
+        publishedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        viewCount: 0,
+        shareCount: 0,
+        factChecked: true,
+        tags: [writerDistrict, 'मध्य प्रदेश', writerCategory, 'समीक्षा कतार'],
+      };
+
+      if (onAddToReviewQueue) {
+        await onAddToReviewQueue(newArticle);
+      } else {
+        await handleSaveToNewsroomDraft(undefined, writerResult);
+      }
+      showToast('📋 समाचार समीक्षा कतार (Review Queue) में अनुमोदन हेतु भेज दिया गया!');
+    } catch (err: any) {
+      showToast('समीक्षा कतार में भेजने में त्रुटि: ' + (err.message || ''), true);
     }
   };
 
@@ -666,122 +900,273 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
             {/* Input Form */}
             <div className="lg:col-span-5 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
               <div className="border-b border-slate-100 pb-3">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-amber-600" />
-                  <span>समाचार आलेख तैयार करें (News Writer)</span>
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">कच्चे नोट्स व मुख्य बिंदुओं से पत्रकारिता ड्राफ्ट बनाएं</p>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-amber-600" />
+                    <span>समाचार आलेख तैयार करें (News Writer)</span>
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  वेब URL, रॉ नोट्स या फील्ड वॉइस रिपोर्ट से देवनागरी में पत्रकारिता ड्राफ्ट बनाएं
+                </p>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">समाचार प्रारूप (Format)</label>
-                <select
-                  value={writerFormat}
-                  onChange={e => setWriterFormat(e.target.value as AiNewsFormat)}
-                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              {/* Input Mode Selector Pills */}
+              <div className="flex items-center p-1 bg-slate-100 rounded-xl gap-1 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setWriterInputMode('url')}
+                  className={`flex-1 py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    writerInputMode === 'url'
+                      ? 'bg-white text-red-600 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  <option value="SHORT">संक्षिप्त समाचार (Short - ~150 शब्द)</option>
-                  <option value="DETAILED">विस्तृत रिपोर्ट (Detailed - ~450 शब्द)</option>
-                  <option value="BREAKING">ब्रेकिंग न्यूज़ फ्लैश (Breaking Flash - ~100 शब्द)</option>
-                  <option value="POLITICAL">राजनीतिक विश्लेषण (Political Report)</option>
-                  <option value="DISTRICT">जिला / आंचलिक समाचार (District Report)</option>
-                  <option value="CRIME">अपराध / सुरक्षा रिपोर्ट (Crime Report)</option>
-                  <option value="GOVERNMENT">शासकीय योजना / जनहित नीति (Govt/Policy)</option>
-                  <option value="SPECIAL_REPORT">विशेष पड़ताल / ग्राउंड रिपोर्ट (Special Report)</option>
-                </select>
+                  <Link2 className="w-3.5 h-3.5" />
+                  <span>वेब URL से</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setWriterInputMode('raw_script')}
+                  className={`flex-1 py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    writerInputMode === 'raw_script'
+                      ? 'bg-white text-indigo-700 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>रॉ स्क्रिप्ट / वॉइस</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setWriterInputMode('facts')}
+                  className={`flex-1 py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    writerInputMode === 'facts'
+                      ? 'bg-white text-amber-600 shadow-xs ring-1 ring-slate-200'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>मानक तथ्य</span>
+                </button>
               </div>
 
+              {/* Shared Editorial Parameters: Format, District & Category */}
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">समाचार प्रारूप (Format)</label>
+                  <select
+                    value={writerFormat}
+                    onChange={e => setWriterFormat(e.target.value as AiNewsFormat)}
+                    className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2.5 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  >
+                    <option value="SHORT">संक्षिप्त समाचार (~150 शब्द)</option>
+                    <option value="DETAILED">विस्तृत रिपोर्ट (~450 शब्द)</option>
+                    <option value="BREAKING">ब्रेकिंग फ्लैश (~100 शब्द)</option>
+                    <option value="POLITICAL">राजनीतिक विश्लेषण</option>
+                    <option value="DISTRICT">जिला / आंचलिक समाचार</option>
+                    <option value="CRIME">अपराध व सुरक्षा रिपोर्ट</option>
+                    <option value="GOVERNMENT">शासकीय योजना / नीति</option>
+                    <option value="SPECIAL_REPORT">विशेष पड़ताल / ग्राउंड रिपोर्ट</option>
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">जिला (District)</label>
                   <select
                     value={writerDistrict}
                     onChange={e => setWriterDistrict(e.target.value)}
-                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-slate-50 focus:bg-white"
+                    className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2.5 bg-slate-50 focus:bg-white"
                   >
                     {districtList.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">भाषा (Language)</label>
-                  <select
-                    value={writerLang}
-                    onChange={e => setWriterLang(e.target.value as AiLanguage)}
-                    className="w-full text-sm border border-slate-300 rounded-lg p-2.5 bg-slate-50 focus:bg-white"
+              </div>
+
+              {/* MODE 1: URL TO NEWS */}
+              {writerInputMode === 'url' && (
+                <div className="space-y-3 p-3.5 bg-red-50/50 border border-red-100 rounded-xl">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                      <Link2 className="w-3.5 h-3.5 text-red-600" />
+                      <span>समाचार वेब URL दर्ज करें (Article Source Link)</span>
+                    </label>
+                    <input
+                      type="url"
+                      value={newsUrlInput}
+                      onChange={(e) => setNewsUrlInput(e.target.value)}
+                      placeholder="https://example.com/news/madhya-pradesh-update"
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2.5 font-mono focus:ring-2 focus:ring-red-500 focus:outline-none bg-white"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      * किसी भी समाचार वेबसाइट या प्रेस रिलीज़ का लिंक पेस्ट करें। एआई शीर्षक, विवरण व संदर्भ लेकर BREAKING NEWS WALA शैली में पूर्ण आलेख बनाएगा।
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">वैकल्पिक शीर्षक संकेत / फोकस (Optional Focus)</label>
+                    <input
+                      type="text"
+                      value={writerTitle}
+                      onChange={e => setWriterTitle(e.target.value)}
+                      placeholder="यदि विशेष दृष्टिकोण देना चाहें तो यहां लिखें..."
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white focus:outline-none"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleGenerateFromUrl}
+                    disabled={writerLoading}
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-extrabold py-3 rounded-lg flex items-center justify-center gap-2 shadow-md transition-colors disabled:opacity-50 cursor-pointer text-xs"
                   >
-                    <option value="hi">हिंदी (देवनागरी)</option>
-                    <option value="en">English</option>
-                  </select>
+                    {writerLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>URL से सामग्री विश्लेषण व आलेख निर्माण जारी...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>URL से समाचार निकालें व AI आलेख तैयार करें</span>
+                      </>
+                    )}
+                  </button>
                 </div>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">शीर्षक संकेत / विषय (Topic / Headline Clue)</label>
-                <input
-                  type="text"
-                  value={writerTitle}
-                  onChange={e => setWriterTitle(e.target.value)}
-                  placeholder="उदा. सीहोर में किसानों की महापंचायत, मुआवजे की मांग"
-                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
-              </div>
+              {/* MODE 2: RAW SCRIPT & VOICE NOTES */}
+              {writerInputMode === 'raw_script' && (
+                <div className="space-y-3 p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <FileCode className="w-3.5 h-3.5 text-indigo-700" />
+                      <span>रॉ स्क्रिप्ट, फील्ड नोट्स या WhatsApp कॉपी</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={toggleVoiceTyping}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                        isListeningVoice
+                          ? 'bg-red-600 text-white animate-pulse shadow-md ring-2 ring-red-400'
+                          : 'bg-white border border-slate-300 text-slate-700 hover:border-red-400 hover:text-red-600'
+                      }`}
+                    >
+                      {isListeningVoice ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-red-600" />}
+                      <span>{isListeningVoice ? 'रिकॉर्डिंग बंद करें' : 'बोलकर लिखें (Voice Typing)'}</span>
+                    </button>
+                  </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">मुख्य सत्यापित तथ्य (Key Facts - प्रति पंक्ति 1 तथ्य)</label>
-                <textarea
-                  rows={4}
-                  value={writerFacts}
-                  onChange={e => setWriterFacts(e.target.value)}
-                  placeholder="• 500 से अधिक किसान कलेक्ट्रेट पहुंचे&#10;• ओलावृष्टि से खराब हुई फसलों का मुआवजा मांग रहे&#10;• तहसीलदार ने 3 दिन में सर्वे का आश्वासन दिया"
-                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
-              </div>
+                  {isListeningVoice && (
+                    <div className="p-2 bg-red-100 border border-red-300 rounded-lg text-red-800 text-[11px] font-bold flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-red-600 animate-ping" />
+                      <span>माइक्रोफ़ोन सक्रिय है... कृपया हिंदी में बोलें। आपकी आवाज़ स्वतः नीचे टेक्स्ट में जुड़ रही है।</span>
+                    </div>
+                  )}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">कथित आरोप / अपुष्ट दावे (Strictly Allegations)</label>
-                <textarea
-                  rows={2}
-                  value={writerClaims}
-                  onChange={e => setWriterClaims(e.target.value)}
-                  placeholder="• किसानों का आरोप है कि पटवारी सर्वे करने गांव नहीं पहुंचे"
-                  className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
-              </div>
+                  <textarea
+                    rows={6}
+                    value={rawScriptInput}
+                    onChange={(e) => setRawScriptInput(e.target.value)}
+                    placeholder="पत्रकारिता के कच्चे तथ्य, प्रेस वार्ता के बिंदु, व्हाट्सएप संदेश या घटनाक्रम का ब्यौरा यहां पेस्ट करें अथवा बोलकर लिखें..."
+                    className="w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white leading-relaxed"
+                  />
 
-              <button
-                onClick={handleGenerateNews}
-                disabled={writerLoading}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 shadow transition-colors disabled:opacity-50"
-              >
-                {writerLoading ? (
-                  <>
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>AI ड्राफ्ट तैयार हो रहा है...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-5 h-5" />
-                    <span>समाचार ड्राफ्ट तैयार करें</span>
-                  </>
-                )}
-              </button>
+                  <button
+                    onClick={handleGenerateFromRawScript}
+                    disabled={writerLoading}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3 rounded-lg flex items-center justify-center gap-2 shadow-md transition-colors disabled:opacity-50 cursor-pointer text-xs"
+                  >
+                    {writerLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>रॉ नोट्स का पत्रकारिता रूपांतरण जारी...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>रॉ स्क्रिप्ट से पूर्ण समाचार आलेख बनाएं</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* MODE 3: STANDARD FACTS FORM */}
+              {writerInputMode === 'facts' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">शीर्षक संकेत / विषय (Topic / Headline Clue)</label>
+                    <input
+                      type="text"
+                      value={writerTitle}
+                      onChange={e => setWriterTitle(e.target.value)}
+                      placeholder="उदा. सीहोर में किसानों की महापंचायत, मुआवजे की मांग"
+                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">मुख्य सत्यापित तथ्य (Key Facts - प्रति पंक्ति 1 तथ्य)</label>
+                    <textarea
+                      rows={4}
+                      value={writerFacts}
+                      onChange={e => setWriterFacts(e.target.value)}
+                      placeholder="• 500 से अधिक किसान कलेक्ट्रेट पहुंचे&#10;• ओलावृष्टि से खराब हुई फसलों का मुआवजा मांग रहे&#10;• तहसीलदार ने 3 दिन में सर्वे का आश्वासन दिया"
+                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">कथित आरोप / अपुष्ट दावे (Strictly Allegations)</label>
+                    <textarea
+                      rows={2}
+                      value={writerClaims}
+                      onChange={e => setWriterClaims(e.target.value)}
+                      placeholder="• किसानों का आरोप है कि पटवारी सर्वे करने गांव नहीं पहुंचे"
+                      className="w-full text-sm border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleGenerateNews}
+                    disabled={writerLoading}
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 shadow transition-colors disabled:opacity-50 cursor-pointer text-xs"
+                  >
+                    {writerLoading ? (
+                      <>
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                        <span>AI ड्राफ्ट तैयार हो रहा है...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5" />
+                        <span>समाचार ड्राफ्ट तैयार करें</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Output View */}
             <div className="lg:col-span-7 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
               {writerResult ? (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+                    <span className="text-xs bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-1 rounded">
                       DRAFT | AI ASSISTED
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-500">{writerResult.wordCount} शब्द | ~{writerResult.estimatedReadTimeMinutes} मिनट पठन</span>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {writerResult.wordCount} शब्द | ~{writerResult.estimatedReadTimeMinutes} मिनट पठन
+                      </span>
                       <button
                         onClick={() => copyToClipboard(writerResult.fullContent, 'writer-out')}
-                        className="p-1.5 hover:bg-slate-100 text-slate-600 rounded"
+                        className="p-1.5 hover:bg-slate-100 text-slate-600 rounded cursor-pointer"
                         title="Copy full draft"
                       >
                         {copiedId === 'writer-out' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
@@ -790,11 +1175,11 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
                   </div>
 
                   <div>
-                    <h3 className="text-xl font-bold text-slate-900 font-serif leading-snug">
+                    <h3 className="text-xl font-black text-slate-900 font-serif leading-snug">
                       {writerResult.headline}
                     </h3>
                     {writerResult.subHeadline && (
-                      <p className="text-sm font-medium text-slate-600 mt-1 italic">
+                      <p className="text-sm font-semibold text-slate-600 mt-1 italic">
                         {writerResult.subHeadline}
                       </p>
                     )}
@@ -816,24 +1201,44 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
                     </div>
                   )}
 
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <div className="text-xs text-slate-400">
-                      मॉडल: {writerResult.model} | जनरेशन समय: {writerResult.generationTimeMs}ms
+                  {/* Editorial Actions: 1. Live Publish | 2. Send to Review Queue | 3. Save Draft */}
+                  <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="text-[11px] text-slate-500">
+                      मॉडल: {writerResult.model} | {writerDistrict}
                     </div>
-                    <button
-                      onClick={() => handleSaveToNewsroomDraft(undefined, writerResult)}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg flex items-center gap-2 text-sm shadow transition-colors"
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>न्यूज़ रूम में ड्राफ्ट सहेजें</span>
-                    </button>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={handlePublishLive}
+                        className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl flex items-center gap-1.5 shadow-md text-xs cursor-pointer transition-all"
+                      >
+                        <Rocket className="w-4 h-4" />
+                        <span>वेबसाइट पर लाइव प्रकाशित करें</span>
+                      </button>
+
+                      <button
+                        onClick={handleSendToReviewQueue}
+                        className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex items-center gap-1.5 shadow-md text-xs cursor-pointer transition-all"
+                      >
+                        <Send className="w-4 h-4" />
+                        <span>समीक्षा कतार में भेजें</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleSaveToNewsroomDraft(undefined, writerResult)}
+                        className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl flex items-center gap-1.5 text-xs cursor-pointer transition-all"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>ड्राफ्ट सहेजें</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 py-16">
                   <Bot className="w-16 h-16 stroke-1 mb-3 text-slate-300" />
-                  <p className="text-sm font-medium">बाईं ओर जानकारी भरकर 'समाचार ड्राफ्ट तैयार करें' पर क्लिक करें।</p>
-                  <p className="text-xs text-slate-400 mt-1">तैयार ड्राफ्ट यहां दिखाई देगा और आप इसे सीधे न्यूज़ रूम में सहेज सकेंगे।</p>
+                  <p className="text-sm font-bold text-slate-600">वेब URL पेस्ट करें, फील्ड नोट्स दर्ज करें या बोलकर समाचार बनाएं।</p>
+                  <p className="text-xs text-slate-400 mt-1">तैयार समाचार को आप एक क्लिक में सीधे वेबसाइट पर लाइव प्रकाशित कर सकते हैं या समीक्षा कतार में भेज सकते हैं।</p>
                 </div>
               )}
             </div>

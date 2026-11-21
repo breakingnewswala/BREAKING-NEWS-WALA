@@ -38,6 +38,7 @@ import { EpaperReporterWorkspace } from './EpaperReporterWorkspace';
 import { EpaperWhatsAppStudio } from './EpaperWhatsAppStudio';
 import { EpaperAiNewsroomDesk } from './EpaperAiNewsroomDesk';
 import { EpaperQualityDashboard } from './EpaperQualityDashboard';
+import { EpaperHeaderTemplateManager } from './EpaperHeaderTemplateManager';
 import { EpaperDesignerModal } from '../../screens/EpaperDesignerModal';
 
 export interface EpaperStudioTabProps {
@@ -46,7 +47,7 @@ export interface EpaperStudioTabProps {
   articles: ArticleDetail[];
   pendingArticles?: ArticleDetail[];
   currentRole?: AppRole | string;
-  initialAction?: 'create' | 'drafts' | 'published' | 'templates' | 'archive';
+  initialAction?: 'create' | 'drafts' | 'published' | 'templates' | 'header_templates' | 'archive';
   onOpenDesigner?: (editionId: string, pageNumber: number) => void;
 }
 
@@ -61,7 +62,7 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
 }) => {
   const [editions, setEditions] = useState<EpaperEditionDoc[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeSubView, setActiveSubView] = useState<'grid' | 'calendar' | 'news_desk' | 'templates' | 'ads' | 'reporter_workspace' | 'whatsapp_studio' | 'ai_newsroom' | 'quality_checker'>('grid');
+  const [activeSubView, setActiveSubView] = useState<'grid' | 'calendar' | 'news_desk' | 'templates' | 'header_templates' | 'ads' | 'reporter_workspace' | 'whatsapp_studio' | 'ai_newsroom' | 'quality_checker'>('grid');
   const [selectedEdition, setSelectedEdition] = useState<EpaperEditionDoc | null>(null);
 
   // Filters
@@ -90,6 +91,8 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
       setActiveSubView('grid');
     } else if (initialAction === 'templates') {
       setActiveSubView('templates');
+    } else if (initialAction === 'header_templates') {
+      setActiveSubView('header_templates');
     } else if (initialAction === 'archive') {
       setSelectedStatus('ARCHIVED');
       setActiveSubView('grid');
@@ -394,6 +397,17 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
                   <span>टेम्पलेट प्रबंधक (Templates)</span>
                 </button>
                 <button
+                  onClick={() => setActiveSubView('header_templates')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    activeSubView === 'header_templates'
+                      ? 'bg-white text-red-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Newspaper className="w-3.5 h-3.5 text-red-600" />
+                  <span>हेडर डिज़ाइनर (Header Designer)</span>
+                </button>
+                <button
                   onClick={() => setActiveSubView('ads')}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
                     activeSubView === 'ads'
@@ -585,6 +599,19 @@ export const EpaperStudioTab: React.FC<EpaperStudioTabProps> = ({
                   handleOpenDesigner(selectedEdition.id, tpl.pageNumberDefault || 1);
                 } else if (editions.length > 0) {
                   handleOpenDesigner(editions[0].id, tpl.pageNumberDefault || 1);
+                }
+              }}
+            />
+          )}
+
+          {activeSubView === 'header_templates' && (
+            <EpaperHeaderTemplateManager
+              currentRole={currentRole}
+              onSelectHeaderForPage={(headerTpl) => {
+                if (selectedEdition) {
+                  handleOpenDesigner(selectedEdition.id, 1);
+                } else if (editions.length > 0) {
+                  handleOpenDesigner(editions[0].id, 1);
                 }
               }}
             />

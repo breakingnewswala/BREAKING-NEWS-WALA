@@ -9,6 +9,9 @@ import {
   Lock,
   Flame,
   Video,
+  Bell,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { AppRole } from '../types';
 import { NavTab } from './BottomNav';
@@ -24,6 +27,9 @@ interface BnwMastheadProps {
   isAuthenticated?: boolean;
   onQuickMasterLogin?: () => void;
   pendingQueueCount?: number;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onNotificationClick?: () => void;
 }
 
 export const BnwMasthead: React.FC<BnwMastheadProps> = ({
@@ -37,6 +43,9 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
   isAuthenticated = false,
   onQuickMasterLogin,
   pendingQueueCount = 0,
+  isCollapsed = false,
+  onToggleCollapse,
+  onNotificationClick,
 }) => {
   const isMasterAccount = accountRole === 'MASTER_ADMIN';
 
@@ -60,6 +69,50 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
   const roleBadge = getRoleBadge();
   const isAdminActive = ['admin', 'newsroom', 'reporter', 'epaper', 'graphics', 'videos', 'ai-newsroom'].includes(activeTab);
 
+  if (isCollapsed) {
+    return (
+      <header className="sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 shadow-sm transition-all">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-[36px] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black tracking-tight text-red-500 font-news-hero">
+              BREAKING NEWS WALA
+            </span>
+            <span className="text-[10px] text-slate-300 hidden sm:inline">
+              • फुल-स्क्रीन कार्यक्षेत्र सक्रिय
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {pendingQueueCount > 0 && onNotificationClick && (
+              <button
+                onClick={onNotificationClick}
+                className="flex items-center gap-1 px-2 py-0.5 bg-red-600/90 hover:bg-red-600 text-white rounded text-[10px] font-bold cursor-pointer"
+              >
+                <Bell className="w-3 h-3" />
+                <span>समीक्षा अलर्ट ({pendingQueueCount})</span>
+              </button>
+            )}
+            {onToggleCollapse && (
+              <button
+                onClick={onToggleCollapse}
+                title="पूरा हेडर दिखाएं"
+                className="flex items-center gap-1 px-2.5 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+                <span>हेडर दिखाएं</span>
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="w-full flex h-[2px]">
+          <div className="flex-1 bg-[#ED1727]" />
+          <div className="flex-1 bg-[#FDE900]" />
+          <div className="flex-1 bg-[#344FD6]" />
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-xs">
       {/* Top Main Navigation Bar: fixed crisp single-row height (53px + 3px accent = 56px) */}
@@ -69,7 +122,7 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
           <button
             onClick={onOpenMenu}
             aria-label="मुख्य मेन्यू खोलें"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 border border-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 group"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-red-50 hover:text-red-600 border border-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 group cursor-pointer"
           >
             <Menu className="w-4 h-4 text-[#ED1727] group-hover:scale-105 transition-transform" />
             <span className="font-extrabold tracking-wide">मेन्यू</span>
@@ -146,7 +199,7 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
 
           <button
             onClick={() => onTabChange('search')}
-            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'search'
                 ? 'bg-red-50 text-[#ED1727]'
                 : 'text-slate-700 hover:bg-slate-100'
@@ -155,59 +208,6 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
             <Search className="w-3.5 h-3.5 shrink-0" />
             <span>खोजें</span>
           </button>
-
-          {/* Single Unified Role Workspace Entry (all remaining desks & studios live inside tabs) */}
-          {['MASTER_ADMIN', 'ADMIN'].includes(currentRole) && (
-            <button
-              onClick={() => onTabChange('admin')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                isAdminActive
-                  ? 'bg-slate-900 text-amber-300 font-bold ring-1 ring-amber-400'
-                  : 'text-slate-800 bg-amber-50 hover:bg-amber-100 border border-amber-200'
-              }`}
-            >
-              <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span>एडमिन पैनल</span>
-              {pendingQueueCount > 0 && (
-                <span className="px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full">
-                  {pendingQueueCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {currentRole === 'EDITOR' && (
-            <button
-              onClick={() => onTabChange('newsroom')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                activeTab === 'newsroom'
-                  ? 'bg-red-50 text-[#ED1727] font-bold'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5 text-red-600 shrink-0" />
-              <span>न्यूज़रूम डेस्क</span>
-              {pendingQueueCount > 0 && (
-                <span className="px-1.5 py-0.2 bg-red-600 text-white text-[10px] font-black rounded-full">
-                  {pendingQueueCount}
-                </span>
-              )}
-            </button>
-          )}
-
-          {currentRole === 'REPORTER' && (
-            <button
-              onClick={() => onTabChange('reporter')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors whitespace-nowrap ${
-                activeTab === 'reporter'
-                  ? 'bg-blue-50 text-blue-700 font-bold'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <PenSquare className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span>रिपोर्टर डेस्क</span>
-            </button>
-          )}
         </nav>
 
         {/* Right Header Controls */}
@@ -221,10 +221,11 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
               मास्टर लॉगिन
             </button>
           )}
+
           {roleBadge && (
             <button
               onClick={onProfileClick}
-              title="मोड या प्रोफ़ाइल बदलें"
+              title="मास्टर एडमिन डैशबोर्ड खोलें"
               className={`text-[10px] sm:text-[11px] px-2.5 py-1 rounded-full whitespace-nowrap cursor-pointer transition-opacity hover:opacity-90 ${roleBadge.color}`}
             >
               {roleBadge.label}
@@ -234,17 +235,45 @@ export const BnwMasthead: React.FC<BnwMastheadProps> = ({
           <button
             onClick={onSearchClick}
             aria-label="खोजें"
-            className="lg:hidden p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors"
+            className="lg:hidden p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
           >
             <Search className="w-4 h-4" />
           </button>
 
+          {/* Notification Alert Bell */}
+          <button
+            onClick={onNotificationClick}
+            title={pendingQueueCount > 0 ? `${pendingQueueCount} खबरें समीक्षा कतार में अनुमोदन हेतु प्रतीक्षारत हैं!` : 'संपादकीय सूचनाएं व अलर्ट'}
+            className="relative p-1.5 sm:p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+            aria-label="सूचनाएं व अलर्ट्स"
+          >
+            <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+            {pendingQueueCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[9px] font-black rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center animate-pulse shadow-xs">
+                {pendingQueueCount}
+              </span>
+            )}
+          </button>
+
+          {/* Header Collapse Toggle Button */}
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              title="हेडर छिपाएं (कार्यक्षेत्र में फुल स्क्रीन स्पेस पाएं)"
+              className="p-1.5 sm:p-2 text-slate-700 hover:text-red-600 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
+              aria-label="हेडर छिपाएं"
+            >
+              <ChevronUp className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+          )}
+
           <button
             onClick={onProfileClick}
-            aria-label="प्रोफ़ाइल"
-            className={`hidden lg:flex p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer ${
-              activeTab === 'profile'
-                ? 'bg-red-50 text-[#ED1727]'
+            aria-label="प्रोफ़ाइल / मास्टर एडमिन कंट्रोल"
+            title="मास्टर एडमिन डैशबोर्ड खोलें"
+            className={`flex p-1.5 sm:p-2 rounded-full transition-colors cursor-pointer ${
+              activeTab === 'profile' || activeTab === 'admin'
+                ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-400'
                 : 'text-slate-700 hover:text-red-600 hover:bg-slate-100'
             }`}
           >

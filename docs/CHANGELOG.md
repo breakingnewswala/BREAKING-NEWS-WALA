@@ -387,6 +387,31 @@ This section constitutes the canonical, historical Keep a Changelog record for t
 ## [Unreleased]
 
 ### Added
+- **[E-Paper Layout Designer & Master Admin Suite Overhaul] E-Paper Designer Reorganization, Header Manager, Embedded Studios, AI Newsroom & RSS Desk (BNW-MASTER-041):**
+  - **E-Paper Layout Designer Redesign**:
+    - Reorganized the top toolbar into two structured rows: Row 1 for Publication, Edition, Page count, Section, Zoom, Undo/Redo, and Save Status; Row 2 for Design Tools (Auto/Assisted/Manual, Selection, Move, Brush, Columns, Photo, Text, Shapes).
+    - Reordered the left sidebar layout controls prioritizing Brush, Columns (1, 2, 3, 4, 5, 6, 8 columns), Photo/Image, and Text elements.
+    - Integrated the dedicated E-Paper AI Editorial Assistant panel (`EpaperAiAssistantPanel.tsx`) with 1-click auto-fill, automated layout suggestion, story insertion, and URL/OCR cover import (`CoverUrlImportModal.tsx`).
+    - Added the complete E-Paper Header Template Manager (`EpaperHeaderTemplateManager.tsx`) supporting Classic, Modern, Special Edition, and Minimal Devanagari broadsheet mastheads with custom logo, title, and tagline controls.
+  - **Master Admin Dashboard Overhaul**:
+    - Removed disruptive external page redirects on clicking studio navigation links (`newsroom`, `reporter`, `epaper`, `graphics`, `videos`, `ai-newsroom`); embedded all operational desks and studios directly inside `AdminControlScreen` with clear `[← एडमिन ओवरव्यू पर वापस जाएं]` back navigation.
+    - Reorganized all 18 Master Admin tabs into an un-truncated, clean two-row wrapped grid without horizontal scroll cutoffs.
+    - Consolidated Master Admin session actions directly within the dashboard header: Saved News Modal (`सहेजे समाचार`), Editorial PDF Help Guide Modal (`संपादकीय नियम व PDF सहायता`), and secure Sign Out (`लॉग आउट`).
+  - **Header Minimization & Workspace Maximization**:
+    - Implemented collapsible masthead strip (`BnwMasthead.tsx`) with a single-click collapse toggle (`ChevronUp`) and a sleek 36px minimal bar with `[⬇️ हेडर दिखाएं]` restore button, maximizing screen space for canvas-heavy studio workflows.
+    - Dedicated direct profile navigation: clicking the profile button or role badge opens the Master Admin Dashboard directly for administrative roles across all viewports.
+    - Added interactive review queue notification bell with a live pending count badge and review alert modal.
+  - **AI Newsroom Real-Time Multi-Input & Direct Publishing**:
+    - Enabled 3 news creation modes in `AiNewsroomScreen.tsx`: Web URL to Article with SSRF-safe content extraction, Raw Script & Voice Notes with continuous Hindi Web Speech recognition, and Standard 5W1H Fact input.
+    - Added direct live publishing action (`[🚀 वेबसाइट पर लाइव प्रकाशित करें]`) updating the live public newsfeed immediately, as well as review queue submission (`[📋 समीक्षा कतार में भेजें]`) with `PENDING_REVIEW` status.
+  - **RSS Management Desk & Multi-Feed Automation**:
+    - Built `RssManagementDesk.tsx` managing wire services (PTI, Dainik Bhaskar, Nai Dunia, Patrika) with targeted geographical mapping across all 55 MP districts.
+    - Automated wire conversion engine transforming incoming RSS feeds into BREAKING NEWS WALA formatted stories routed directly into the editorial review queue.
+  - **Reporter Coin Governance & Allocation Desk**:
+    - Built `ReporterCoinManagementDesk.tsx`, enforcing strict role separation: eliminated reader tokens from Master Admin views and provided centralized token balance management, recharging, and story reward issuance for bureau reporters and district stringers.
+  - **Empirical Validation**:
+    - Clean TypeScript compilation (`tsc --noEmit` -> 0 errors) and production build (`npm run build` -> 2,145 modules transformed in 20.55s).
+
 - **[Public User Experience & Master Admin RBAC Security] Public User Experience, Google-Based Master Admin Authentication & Role-Based Dashboard Access (BNW-MASTER-040):**
   - Implemented default public reader experience on `breakingnewswala.com` (Reader mode by default, completely removing internal desk tabs, navigation shortcuts, and client-side role switches from public view).
   - Restricted Master Admin privileges strictly to two authorized Google accounts (`breakingnewswala.com@gmail.com` with alias `breakingnewswala@gmail.com`, and `riturajtomarorchha@gmail.com`) via verified Firebase Google ID tokens (`email_verified === true`).

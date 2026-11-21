@@ -34,6 +34,7 @@ import {
   CANONICAL_SEED_CAMPAIGNS,
   CANONICAL_AUDIENCE_SEGMENTS,
   INITIAL_EPAPER_TEMPLATES,
+  INITIAL_HEADER_TEMPLATES,
   parseNormalizedTimestamp,
 } from './adapter.js';
 import { validateTemplate, BROADSHEET_CONSTANTS as TEMPLATE_CONSTANTS } from '../epaper/templateValidator.js';
@@ -326,6 +327,7 @@ export class FirestoreAdapter {
       ['epaperEditions', new Map()],
       ['epaperPages', new Map()],
       ['epaperTemplates', new Map()],
+      ['epaperHeaderTemplates', new Map()],
       ['epaperWhatsAppGenerations', new Map()],
       ['epaperWhatsAppQuotas', new Map()],
       ['epaperAdSubmissions', new Map()],
@@ -452,6 +454,11 @@ export class FirestoreAdapter {
     const epaperTmplMap = this._collections.get('epaperTemplates');
     if (epaperTmplMap && Array.isArray(INITIAL_EPAPER_TEMPLATES)) {
       INITIAL_EPAPER_TEMPLATES.forEach((t) => epaperTmplMap.set(t.id, { ...t }));
+    }
+
+    const epaperHdrMap = this._collections.get('epaperHeaderTemplates');
+    if (epaperHdrMap && Array.isArray(INITIAL_HEADER_TEMPLATES)) {
+      INITIAL_HEADER_TEMPLATES.forEach((t) => epaperHdrMap.set(t.id, { ...t }));
     }
   }
 
@@ -4525,6 +4532,127 @@ export class FirestoreAdapter {
     if (this.firestore) {
       await this.firestore.collection('epaperTemplates').doc(id).delete();
     }
+    return true;
+  }
+
+  async getEpaperHeaderTemplates(params = {}) {
+    const hdrMap = this._collections.get('epaperHeaderTemplates') || new Map();
+    let list = Array.from(hdrMap.values());
+    if (params.type && params.type !== 'all') {
+      const tp = String(params.type).toUpperCase();
+      list = list.filter((t) => String(t.type).toUpperCase() === tp);
+    }
+    if (params.activeOnly) {
+      list = list.filter((t) => t.isActive !== false);
+    }
+    if (params.search) {
+      const q = String(params.search).toLowerCase();
+      list = list.filter((t) =>
+        (t.name && t.name.toLowerCase().includes(q)) ||
+        (t.nameHi && t.nameHi.toLowerCase().includes(q)) ||
+        (t.id && t.id.toLowerCase().includes(q)) ||
+        (t.description && t.description.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }
+
+  async getEpaperHeaderTemplateById(id) {
+    const hdrMap = this._collections.get('epaperHeaderTemplates') || new Map();
+    const t = hdrMap.get(id);
+    return t ? JSON.parse(JSON.stringify(t)) : null;
+  }
+
+  async saveEpaperHeaderTemplate(templateData, user = null) {
+    const hdrMap = this._collections.get('epaperHeaderTemplates') || new Map();
+    const id = templateData.id || `hdr-custom-${Date.now()}`;
+    const existing = hdrMap.get(id);
+
+    const record = {
+      ...(existing || {}),
+      ...templateData,
+      id,
+      version: existing ? (existing.version || 1) + 1 : 1,
+      isActive: templateData.isActive !== undefined ? templateData.isActive : (existing?.isActive ?? true),
+      updatedAt: new Date().toISOString(),
+      createdAt: existing ? existing.createdAt : new Date().toISOString(),
+      createdBy: existing?.createdBy || user?.id || 'master-admin',
+      createdByName: existing?.createdByName || user?.fullName || 'मास्टर एडमिन',
+    };
+
+    if (record.isDefault) {
+      for (const [k, v] of hdrMap.entries()) {
+        if (k !== id) v.isDefault = false;
+      }
+    }
+
+    hdrMap.set(id, record);
+    if (this.firestore) {
+      await this.firestore.collection('epaperHeaderTemplates').doc(id).set(record);
+    }
+    this.addAuditLog(user?.fullName || 'मास्टर एडमिन', user?.role || 'MASTER_ADMIN', 'EPAPER_HEADER_TEMPLATE_SAVED', `हेडर टेम्पलेट सहेजा गया: "${record.nameHi || record.name}" (ID: ${id})`);
+    return record;
+  }
+
+  async duplicateEpaperHeaderTemplate(id, newName = '', user = null) {
+    const source = await this.getEpaperHeaderTemplateById(id);
+    if (!source) {
+      const err = new Error(`ERR_NOT_FOUND: हेडर टेम्पलेट [${id}] नहीं मिला।`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const clonedId = `hdr-custom-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const clonedName = newName.trim() || `${source.name} (प्रतिलिपि)`;
+    const clonedNameHi = newName.trim() ? `${newName.trim()} (हिंदी)` : `${source.nameHi || source.name} (प्रतिलिपि)`;
+
+    const cloned = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: clonedId,
+      name: clonedName,
+      nameHi: clonedNameHi,
+      type: 'CUSTOM',
+      isDefault: false,
+      isActive: true,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: user?.id || 'master-admin',
+      createdByName: user?.fullName || 'मास्टर एडमिन',
+    };
+
+    const hdrMap = this._collections.get('epaperHeaderTemplates') || new Map();
+    hdrMap.set(clonedId, cloned);
+    if (this.firestore) {
+      await this.firestore.collection('epaperHeaderTemplates').doc(clonedId).set(cloned);
+    }
+    this.addAuditLog(user?.fullName || 'मास्टर एडमिन', user?.role || 'MASTER_ADMIN', 'EPAPER_HEADER_TEMPLATE_DUPLICATED', `हेडर टेम्पलेट क्लोन किया गया: "${cloned.name}" (नया ID: ${clonedId})`);
+    return cloned;
+  }
+
+  async activateEpaperHeaderTemplate(id, user = null) {
+    const existing = await this.getEpaperHeaderTemplateById(id);
+    if (!existing) {
+      const err = new Error(`ERR_NOT_FOUND: हेडर टेम्पलेट [${id}] नहीं मिला।`);
+      err.statusCode = 404;
+      throw err;
+    }
+    existing.isActive = !existing.isActive;
+    return this.saveEpaperHeaderTemplate(existing, user);
+  }
+
+  async deleteEpaperHeaderTemplate(id, user = null) {
+    const hdrMap = this._collections.get('epaperHeaderTemplates') || new Map();
+    if (!hdrMap.has(id)) return false;
+    if (['hdr-classic-01', 'hdr-modern-02', 'hdr-minimal-03'].includes(id)) {
+      const item = hdrMap.get(id);
+      item.isActive = false;
+      return true;
+    }
+    hdrMap.delete(id);
+    if (this.firestore) {
+      await this.firestore.collection('epaperHeaderTemplates').doc(id).delete();
+    }
+    this.addAuditLog(user?.fullName || 'मास्टर एडमिन', user?.role || 'MASTER_ADMIN', 'EPAPER_HEADER_TEMPLATE_DELETED', `हेडर टेम्पलेट विलोपित किया गया: (ID: ${id})`);
     return true;
   }
 
