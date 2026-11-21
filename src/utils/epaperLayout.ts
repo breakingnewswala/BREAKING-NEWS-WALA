@@ -703,33 +703,43 @@ export function detectAllCollisions(
 // ============================================================================
 
 /**
- * Clamps element bounds within the full canvas dimensions.
+ * Clamps element bounds within the full canvas dimensions and enforces printable Safe Zone margins.
  */
 export function clampToBounds(
   bounds: EpaperPageElementBounds,
   canvasWidth = BROADSHEET_CONSTANTS.PAGE_WIDTH_PT,
-  canvasHeight = BROADSHEET_CONSTANTS.PAGE_HEIGHT_PT
+  canvasHeight = BROADSHEET_CONSTANTS.PAGE_HEIGHT_PT,
+  enforceSafeZone = true
 ): EpaperPageElementBounds {
   let { x, y, width, height } = bounds;
 
-  if (x < 0) x = 0;
-  if (y < 0) y = 0;
+  const minX = enforceSafeZone ? BROADSHEET_CONSTANTS.MARGIN_LEFT_PT : 0;
+  const minY = enforceSafeZone ? BROADSHEET_CONSTANTS.MARGIN_TOP_PT : 0;
+  const maxX = enforceSafeZone
+    ? BROADSHEET_CONSTANTS.MARGIN_LEFT_PT + BROADSHEET_CONSTANTS.PRINTABLE_WIDTH_PT
+    : canvasWidth;
+  const maxY = enforceSafeZone
+    ? BROADSHEET_CONSTANTS.MARGIN_TOP_PT + BROADSHEET_CONSTANTS.PRINTABLE_HEIGHT_PT
+    : canvasHeight;
 
-  if (x + width > canvasWidth) {
-    if (x >= canvasWidth) {
-      x = Math.max(0, canvasWidth - 50);
+  if (x < minX) x = minX;
+  if (y < minY) y = minY;
+
+  if (x + width > maxX) {
+    if (x >= maxX) {
+      x = Math.max(minX, maxX - 50);
       width = 50;
     } else {
-      width = Math.max(10, canvasWidth - x);
+      width = Math.max(10, maxX - x);
     }
   }
 
-  if (y + height > canvasHeight) {
-    if (y >= canvasHeight) {
-      y = Math.max(0, canvasHeight - 30);
+  if (y + height > maxY) {
+    if (y >= maxY) {
+      y = Math.max(minY, maxY - 30);
       height = 30;
     } else {
-      height = Math.max(10, canvasHeight - y);
+      height = Math.max(10, maxY - y);
     }
   }
 

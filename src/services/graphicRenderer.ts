@@ -807,35 +807,87 @@ export class GraphicRenderer {
       ctx.restore();
     }
 
-    // 3. Top Running Folio Header (Standard Newspaper Masthead Folio)
-    const folioY = 40;
-    ctx.save();
-    ctx.fillStyle = '#0F172A';
-    ctx.font = '700 12px "Noto Sans Devanagari", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(
-      `ब्रेकिंग न्यूज़ वाला • मध्य प्रदेश का अग्रणी डिजिटल दैनिक • ${page.pageTitle || 'मुख्य पृष्ठ'}`,
-      BROADSHEET_CONSTANTS.MARGIN_LEFT_PT,
-      folioY + 12
-    );
+    // 3. Dynamic Newspaper Folio: Primary Header/Footer on Page 1, Sub-header/Sub-footer on Inner Pages
+    const isFirstPage = (page.pageNumber || 1) === 1;
 
-    ctx.textAlign = 'right';
-    ctx.font = '600 11px "Noto Sans Devanagari", sans-serif';
-    ctx.fillStyle = '#475569';
-    ctx.fillText(
-      `पृष्ठ ${page.pageNumber || 1} • मूल्य: ₹4.00`,
-      pageWidth - BROADSHEET_CONSTANTS.MARGIN_RIGHT_PT,
-      folioY + 12
-    );
+    if (!isFirstPage) {
+      // Inner Pages: Render Standard Running Sub-header (Folio)
+      const folioY = 32;
+      ctx.save();
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '700 11px "Noto Sans Devanagari", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        'ब्रेकिंग न्यूज़ वाला • ई-पेपर संस्करण',
+        BROADSHEET_CONSTANTS.MARGIN_LEFT_PT,
+        folioY + 10
+      );
 
-    // Folio bottom dividing rule
-    ctx.strokeStyle = '#0F172A';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(BROADSHEET_CONSTANTS.MARGIN_LEFT_PT, folioY + 20);
-    ctx.lineTo(pageWidth - BROADSHEET_CONSTANTS.MARGIN_RIGHT_PT, folioY + 20);
-    ctx.stroke();
-    ctx.restore();
+      // Section / Page Title in Center
+      ctx.textAlign = 'center';
+      ctx.font = '700 11px "Noto Sans Devanagari", sans-serif';
+      ctx.fillStyle = '#ED1727';
+      ctx.fillText(
+        page.pageTitle || 'राज्य / आंचलिक समाचार',
+        pageWidth / 2,
+        folioY + 10
+      );
+
+      // Page Number & Details on Right
+      ctx.textAlign = 'right';
+      ctx.font = '600 10px "Noto Sans Devanagari", sans-serif';
+      ctx.fillStyle = '#475569';
+      ctx.fillText(
+        `पृष्ठ ${page.pageNumber || 2} | डिजिटल संस्करण`,
+        pageWidth - BROADSHEET_CONSTANTS.MARGIN_RIGHT_PT,
+        folioY + 10
+      );
+
+      // Sub-header dividing rule
+      ctx.strokeStyle = '#CBD5E1';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(BROADSHEET_CONSTANTS.MARGIN_LEFT_PT, folioY + 16);
+      ctx.lineTo(pageWidth - BROADSHEET_CONSTANTS.MARGIN_RIGHT_PT, folioY + 16);
+      ctx.stroke();
+
+      // Common Sub-footer for Inner Pages
+      const subFooterY = pageHeight - BROADSHEET_CONSTANTS.MARGIN_BOTTOM_PT + 8;
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 0.75;
+      ctx.beginPath();
+      ctx.moveTo(BROADSHEET_CONSTANTS.MARGIN_LEFT_PT, subFooterY - 4);
+      ctx.lineTo(pageWidth - BROADSHEET_CONSTANTS.MARGIN_RIGHT_PT, subFooterY - 4);
+      ctx.stroke();
+
+      ctx.font = '500 9px "Noto Sans Devanagari", sans-serif';
+      ctx.fillStyle = '#64748B';
+      ctx.textAlign = 'left';
+      ctx.fillText('ब्रेकिंग न्यूज़ वाला • मध्य प्रदेश का अग्रणी डिजिटल दैनिक', BROADSHEET_CONSTANTS.MARGIN_LEFT_PT, subFooterY + 8);
+      ctx.textAlign = 'center';
+      ctx.fillText('www.breakingnewswala.com', pageWidth / 2, subFooterY + 8);
+      ctx.textAlign = 'right';
+      ctx.fillText(`पृष्ठ ${page.pageNumber || 2}`, pageWidth - BROADSHEET_CONSTANTS.MARGIN_RIGHT_PT, subFooterY + 8);
+      ctx.restore();
+    } else {
+      // Page 1 (Front Page): Primary Footer Imprint at Bottom Margin
+      const primaryFooterY = pageHeight - BROADSHEET_CONSTANTS.MARGIN_BOTTOM_PT + 8;
+      ctx.save();
+      ctx.strokeStyle = '#0F172A';
+      ctx.lineWidth = 1.25;
+      ctx.beginPath();
+      ctx.moveTo(BROADSHEET_CONSTANTS.MARGIN_LEFT_PT, primaryFooterY - 4);
+      ctx.lineTo(pageWidth - BROADSHEET_CONSTANTS.MARGIN_RIGHT_PT, primaryFooterY - 4);
+      ctx.stroke();
+
+      ctx.font = '600 9px "Noto Sans Devanagari", sans-serif';
+      ctx.fillStyle = '#334155';
+      ctx.textAlign = 'left';
+      ctx.fillText('RNI पंजीयन: MP-HIN/2026/89412 • डाक पंजीयन क्रमांक: MP/BPL/2026-28 • सर्वाधिकार सुरक्षित © ब्रेकिंग न्यूज़ वाला', BROADSHEET_CONSTANTS.MARGIN_LEFT_PT, primaryFooterY + 8);
+      ctx.textAlign = 'right';
+      ctx.fillText('पृष्ठ 1 (मुख्य पृष्ठ) • ई-पेपर डिजिटल संस्करण', pageWidth - BROADSHEET_CONSTANTS.MARGIN_RIGHT_PT, primaryFooterY + 8);
+      ctx.restore();
+    }
 
     // 4. Modular Column Grid Overlay (if enabled)
     if (options.showGrid) {

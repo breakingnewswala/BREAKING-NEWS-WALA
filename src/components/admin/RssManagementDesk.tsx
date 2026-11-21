@@ -14,6 +14,14 @@ import {
   ShieldCheck,
   Check,
   AlertTriangle,
+  Globe,
+  Send,
+  Image as ImageIcon,
+  Tag,
+  Eye,
+  Edit3,
+  Radio,
+  FileText,
 } from 'lucide-react';
 import { ArticleDetail, DistrictItem, CategoryItem } from '../../types';
 import { apiClient } from '../../services/apiClient';
@@ -35,6 +43,7 @@ export interface RssManagementDeskProps {
   districts: DistrictItem[];
   categories: CategoryItem[];
   onAddPendingArticle: (article: ArticleDetail) => void;
+  onPublishArticle?: (article: Partial<ArticleDetail>) => Promise<void> | void;
   onNavigateToReviewQueue: () => void;
 }
 
@@ -132,6 +141,7 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
   districts,
   categories,
   onAddPendingArticle,
+  onPublishArticle,
   onNavigateToReviewQueue,
 }) => {
   const [feeds, setFeeds] = useState<RssFeedConfig[]>(() => {
@@ -154,6 +164,57 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
   const [conversionStatus, setConversionStatus] = useState<string | null>(null);
   const [convertedCount, setConvertedCount] = useState<number>(0);
 
+  // URL to RSS Converter state
+  const [converterUrl, setConverterUrl] = useState('');
+  const [converterDistrict, setConverterDistrict] = useState('भोपाल');
+  const [converterCategory, setConverterCategory] = useState('विकास व इंफ्रा');
+  const [isConverting, setIsConverting] = useState(false);
+  const [converterError, setConverterError] = useState<string | null>(null);
+  const [convertedResult, setConvertedResult] = useState<{
+    feedUrl: string;
+    title: string;
+    publisher: string;
+    articles?: any[];
+  } | null>(null);
+
+  // Website-format Wire Drafts state
+  const [draftArticles, setDraftArticles] = useState<ArticleDetail[]>(() => {
+    try {
+      const saved = localStorage.getItem('bnw_admin_wire_drafts');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return WIRE_FEED_ITEMS.slice(0, 3).map((w, idx) => ({
+      id: `wire-draft-${idx + 1}`,
+      slug: `wire-draft-${idx + 1}`,
+      title: w.rawTitle,
+      subheadline: w.rawSummary,
+      summary: w.rawSummary,
+      content: `${w.rawContent}\n\n[INLINE_IMAGE:https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80|क्षेत्रीय विकास व जमीनी रिपोर्ट]\n\nसंबंधित अधिकारियों के अनुसार इस योजना के लागू होने से समूचे मध्य प्रदेश के नागरिकों और किसानों को प्रत्यक्ष लाभ मिलेगा। जिला प्रशासन ने सभी संबंधित विभागों को समयबद्ध निष्पादन के कड़े निर्देश दिए हैं।`,
+      authorName: 'वायर संवाद डेस्क',
+      authorRole: 'ब्यूरो रिपोर्टर',
+      districtId: `dist-${idx === 1 ? 'rewa' : idx === 2 ? 'indore' : 'bhopal'}`,
+      districtName: idx === 1 ? 'रीवा' : idx === 2 ? 'इंदौर' : 'भोपाल',
+      categoryId: 'cat-development',
+      categoryName: 'विकास व इंफ्रा',
+      imageUrl: w.imageUrl,
+      imageCaption: 'वायर फ़ीड से प्राप्त सत्यापित छायाचित्र',
+      status: 'DRAFT',
+      priority: idx === 0 ? 'BREAKING' : 'NORMAL',
+      isBreaking: idx === 0,
+      publishedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      viewCount: 0,
+      shareCount: 0,
+      factChecked: true,
+      tags: ['मध्य प्रदेश', 'विकास', 'सरकारी योजना', 'वायर रिपोर्ट'],
+    }));
+  });
+
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [editingArticle, setEditingArticle] = useState<ArticleDetail | null>(null);
+
   const saveFeeds = (updated: RssFeedConfig[]) => {
     setFeeds(updated);
     try {
@@ -161,6 +222,144 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
     } catch {
       // ignore
     }
+  };
+
+  const saveDrafts = (updated: ArticleDetail[]) => {
+    setDraftArticles(updated);
+    try {
+      localStorage.setItem('bnw_admin_wire_drafts', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleConvertUrlToRss = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!converterUrl.trim()) return;
+
+    setIsConverting(true);
+    setConverterError(null);
+    setConvertedResult(null);
+
+    try {
+      const res = await apiClient.rss.convertUrl({
+        url: converterUrl.trim(),
+        district: converterDistrict,
+        category: converterCategory,
+      });
+
+      const result = {
+        feedUrl: res.feedUrl || res.rssUrl || converterUrl.trim(),
+        title: res.title || `${converterDistrict} विशेष समाचार वायर`,
+        publisher: res.publisher || 'क्षेत्रीय संवाद एजेंसी',
+        articles: res.articles || [],
+      };
+      setConvertedResult(result);
+      setConversionStatus(`URL सफलतापूर्वक RSS फ़ीड में परिवर्तित हो गया! अब आप इसे फ़ीड्स में सुरक्षित कर सकते हैं या सीधे आलेख ड्राफ्ट बना सकते हैं।`);
+    } catch (err: any) {
+      setConverterError(err.message || 'URL को RSS में कनवर्ट करने में त्रुटि हुई।');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const handleSaveConvertedFeed = () => {
+    if (!convertedResult) return;
+    const newFeed: RssFeedConfig = {
+      id: `feed-${Date.now()}`,
+      name: convertedResult.title,
+      url: convertedResult.feedUrl,
+      publisher: convertedResult.publisher,
+      targetState: 'मध्य प्रदेश',
+      targetDistrict: converterDistrict,
+      targetCategory: converterCategory,
+      isActive: true,
+      lastSyncAt: 'अभी-अभी जोड़ा गया',
+      totalConverted: 0,
+    };
+
+    const next = [newFeed, ...feeds];
+    saveFeeds(next);
+    setConversionStatus(`RSS स्रोत "${newFeed.name}" सक्रिय सूची में जुड़ गया! इससे अब खबरें स्वतः सिंक होंगी।`);
+    setConvertedResult(null);
+    setConverterUrl('');
+  };
+
+  const handleCreateDraftFromConverted = () => {
+    if (!convertedResult) return;
+
+    const sample = convertedResult.articles?.[0] || {
+      title: convertedResult.title,
+      summary: `${converterDistrict} से प्राप्त ताजा वायर समाचार। विस्तृत रिपोर्ट तैयार की जा रही है।`,
+      content: `${converterDistrict}: शासन एवं स्थानीय प्रशासन द्वारा क्षेत्र के विकास एवं नागरिक सुविधाओं के विस्तार हेतु व्यापक दिशा-निर्देश जारी किए गए हैं।\n\n[INLINE_IMAGE:https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80|क्षेत्रीय विकास व प्रशासनिक समीक्षा]\n\nसंबंधित अधिकारियों ने बताया कि सभी परियोजनाओं की नियमित निगरानी की जाएगी ताकि गुणवत्ता और समय-सीमा सुनिश्चित हो सके।`,
+      imageUrl: 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80',
+    };
+
+    const newDraft: ArticleDetail = {
+      id: `draft-url-${Date.now()}`,
+      slug: `draft-url-${Date.now()}`,
+      title: sample.title || convertedResult.title,
+      subheadline: sample.summary || sample.subheadline || 'मध्य प्रदेश शासन व जिला प्रशासन की महत्वपूर्ण घोषणा',
+      summary: sample.summary || '',
+      content: sample.content || sample.summary || '',
+      authorName: `RSS कनवर्टर (${convertedResult.publisher})`,
+      authorRole: 'डिजिटल वायर डेस्क',
+      districtId: `dist-${converterDistrict.toLowerCase()}`,
+      districtName: converterDistrict,
+      categoryId: `cat-${converterCategory.toLowerCase()}`,
+      categoryName: converterCategory,
+      imageUrl: sample.imageUrl || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80',
+      imageCaption: `${converterDistrict} में समाचार छायाचित्र`,
+      status: 'DRAFT',
+      priority: 'NORMAL',
+      isBreaking: false,
+      publishedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      viewCount: 0,
+      shareCount: 0,
+      factChecked: true,
+      tags: [converterDistrict, 'मध्य प्रदेश', converterCategory, 'कन्वर्टेड वायर'],
+    };
+
+    const nextDrafts = [newDraft, ...draftArticles];
+    saveDrafts(nextDrafts);
+    setConversionStatus(`समाचार ड्राफ्ट सफलतापूर्वक तैयार होकर नीचे "वायर व आरएसएस समाचार ड्राफ्ट्स" में जुड़ गया है!`);
+  };
+
+  const handlePublishDraftLive = async (article: ArticleDetail) => {
+    setPublishingId(article.id);
+    try {
+      if (onPublishArticle) {
+        await onPublishArticle({
+          ...article,
+          status: 'PUBLISHED',
+          publishedAt: new Date().toISOString(),
+        });
+      }
+      const next = draftArticles.filter((d) => d.id !== article.id);
+      saveDrafts(next);
+      setConversionStatus(`आलेख "${article.title.slice(0, 40)}..." सीधे ब्रेकिंग न्यूज़ वाला की वेबसाइट पर लाइव प्रकाशित कर दिया गया है!`);
+    } catch (err: any) {
+      setConversionStatus(`प्रकाशन में त्रुटि: ${err.message || 'विफल'}`);
+    } finally {
+      setPublishingId(null);
+    }
+  };
+
+  const handleSendDraftToReview = (article: ArticleDetail) => {
+    onAddPendingArticle({
+      ...article,
+      status: 'PENDING_REVIEW',
+    });
+    const next = draftArticles.filter((d) => d.id !== article.id);
+    saveDrafts(next);
+    setConversionStatus(`आलेख "${article.title.slice(0, 40)}..." को संपादकीय समीक्षा कतार में भेज दिया गया है।`);
+  };
+
+  const handleDeleteDraft = (id: string) => {
+    if (!window.confirm('क्या आप इस ड्राफ्ट को हटाना चाहते हैं?')) return;
+    const next = draftArticles.filter((d) => d.id !== id);
+    saveDrafts(next);
   };
 
   const handleAddFeed = (e: React.FormEvent) => {
@@ -207,7 +406,6 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
     setConversionStatus('सक्रिय RSS फ़ीड्स से वायर समाचार निकाले जा रहे हैं...');
 
     try {
-      // Simulate real AI formatting pipeline
       await new Promise((r) => setTimeout(r, 1200));
 
       const activeFeeds = feeds.filter((f) => f.isActive);
@@ -218,6 +416,8 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
       }
 
       let added = 0;
+      const createdDrafts: ArticleDetail[] = [];
+
       WIRE_FEED_ITEMS.forEach((wire, idx) => {
         const matchingFeed = activeFeeds[idx % activeFeeds.length];
         const assignedDistrict = matchingFeed.targetDistrict || 'भोपाल';
@@ -229,7 +429,7 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
           title: wire.rawTitle,
           subheadline: wire.rawSummary,
           summary: wire.rawSummary,
-          content: wire.rawContent,
+          content: `${wire.rawContent}\n\n[INLINE_IMAGE:${wire.imageUrl}|${assignedDistrict} जमीनी हकीकत]\n\nप्रशासन ने स्पष्ट किया है कि कार्य योजना की मासिक समीक्षा की जाएगी और लापरवाही पर दंडात्मक कार्रवाई होगी।`,
           authorName: `AI RSS फ़ीड (${matchingFeed.publisher})`,
           authorRole: 'वायर संवाद एजेंसी',
           districtId: `dist-${assignedDistrict.toLowerCase()}`,
@@ -238,7 +438,7 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
           categoryName: assignedCategory,
           imageUrl: wire.imageUrl,
           imageCaption: `${assignedDistrict} में वायर फ़ीड से सत्यापित समाचार छायाचित्र`,
-          status: 'PENDING_REVIEW',
+          status: 'DRAFT',
           priority: idx === 0 ? 'BREAKING' : 'NORMAL',
           isBreaking: idx === 0,
           publishedAt: new Date().toISOString(),
@@ -250,6 +450,7 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
           tags: [assignedDistrict, 'मध्य प्रदेश', assignedCategory, 'वायर फ़ीड', 'AI रूपांतरण'],
         };
 
+        createdDrafts.push(article);
         onAddPendingArticle(article);
         added++;
       });
@@ -265,9 +466,10 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
           : f
       );
       saveFeeds(updatedFeeds);
+      saveDrafts([...createdDrafts, ...draftArticles]);
 
       setConvertedCount((prev) => prev + added);
-      setConversionStatus(`सफलतापूर्वक ${added} समाचार AI द्वारा BREAKING NEWS WALA प्रारूप में बदल दिए गए और सीधे "समीक्षा कतार (Review Queue)" में अनुमोदन हेतु जोड़ दिए गए!`);
+      setConversionStatus(`सफलतापूर्वक ${added} समाचार AI द्वारा वेबसाइट प्रारूप में तैयार कर नीचे ड्राफ्ट्स व समीक्षा कतार में जोड़ दिए गए!`);
     } catch (err: any) {
       setConversionStatus(`रूपांतरण में त्रुटि: ${err.message || 'फ़ीड सिंक विफल'}`);
     } finally {
@@ -355,6 +557,151 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
           <div className="text-2xl font-black text-amber-600 mt-1">55 जिले</div>
           <span className="text-[11px] text-slate-500 font-bold mt-1 block">मध्य प्रदेश के सभी 10 संभाग</span>
         </div>
+      </div>
+
+      {/* URL to RSS Converter Section */}
+      <div className="bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 rounded-2xl p-6 text-white border border-indigo-800/40 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-800/30 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 bg-indigo-600/30 rounded-xl text-indigo-400 border border-indigo-500/40">
+              <Globe className="w-5 h-5 text-indigo-400" />
+            </span>
+            <div>
+              <h3 className="text-base font-black tracking-tight text-white flex items-center gap-2">
+                वेब यूआरएल से RSS फ़ीड कनवर्टर व ऑटो-सेव (Smart URL to RSS Converter)
+                <span className="px-2 py-0.5 text-[10px] bg-red-600 text-white font-extrabold rounded-full">
+                  LIVE CONVERTER
+                </span>
+              </h3>
+              <p className="text-xs text-indigo-200/80">
+                किसी भी वेब पोर्टल का लिंक डालें • सिस्टम तुरंत RSS एंडपॉइंट खोजेगा, फ़ीड्स में जोड़ेगा और सीधे समाचार ड्राफ्ट तैयार करेगा
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleConvertUrlToRss} className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div className="md:col-span-6">
+              <label className="text-[11px] font-bold text-indigo-200 block mb-1">
+                वेबसाइट / समाचार यूआरएल (Web Article or Portal URL)
+              </label>
+              <div className="relative">
+                <input
+                  type="url"
+                  required
+                  placeholder="उदा. https://www.naidunia.com/madhya-pradesh/bhopal"
+                  value={converterUrl}
+                  onChange={(e) => setConverterUrl(e.target.value)}
+                  className="w-full bg-slate-800/90 border border-indigo-700/50 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="text-[11px] font-bold text-indigo-200 block mb-1">लक्ष्य जिला</label>
+              <select
+                value={converterDistrict}
+                onChange={(e) => setConverterDistrict(e.target.value)}
+                className="w-full bg-slate-800/90 border border-indigo-700/50 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                <option value="भोपाल">भोपाल</option>
+                <option value="इंदौर">इंदौर</option>
+                <option value="ग्वालियर">ग्वालियर</option>
+                <option value="जबलपुर">जबलपुर</option>
+                <option value="उज्जैन">उज्जैन</option>
+                <option value="रीवा">रीवा</option>
+                <option value="सागर">सागर</option>
+                {districts.map((d) => (
+                  <option key={d.id} value={d.nameHi}>
+                    {d.nameHi}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-3">
+              <label className="text-[11px] font-bold text-indigo-200 block mb-1">समाचार श्रेणी</label>
+              <select
+                value={converterCategory}
+                onChange={(e) => setConverterCategory(e.target.value)}
+                className="w-full bg-slate-800/90 border border-indigo-700/50 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                {categories.map((c) => (
+                  <option key={c.id} value={c.nameHi}>
+                    {c.nameHi}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[11px] text-slate-400">
+              * सुरक्षित SSRF प्रॉक्सी एवं ऑटो-फ़ीड डिस्कवरी समर्थित
+            </span>
+            <button
+              type="submit"
+              disabled={isConverting || !converterUrl.trim()}
+              className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 via-indigo-600 to-red-600 hover:from-indigo-600 hover:to-red-700 text-white text-xs font-black rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {isConverting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>RSS में बदला जा रहा है...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>URL को RSS में बदलें</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+
+        {converterError && (
+          <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-xl text-xs text-red-200 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+            <span>{converterError}</span>
+          </div>
+        )}
+
+        {convertedResult && (
+          <div className="p-4 bg-indigo-900/40 border border-emerald-500/50 rounded-xl space-y-3 mt-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="px-2 py-0.5 bg-emerald-500 text-slate-950 font-black text-[10px] rounded-full uppercase tracking-wider inline-block">
+                  सफलतापूर्वक RSS एंडपॉइंट खोजा गया
+                </span>
+                <h4 className="text-sm font-black text-white mt-1">{convertedResult.title}</h4>
+                <div className="text-[11px] font-mono text-emerald-300 break-all mt-0.5 flex items-center gap-1">
+                  <span>{convertedResult.feedUrl}</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveConvertedFeed}
+                  className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-4 h-4 text-slate-950" />
+                  <span>RSS फ़ीड्स में सुरक्षित करें</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCreateDraftFromConverted}
+                  className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-4 h-4 text-slate-950" />
+                  <span>सीधे आलेख ड्राफ्ट बनाएं</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* RSS Feeds Table */}
@@ -450,6 +797,295 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
         </div>
       </div>
 
+      {/* Wire & RSS Drafts - Complete Website Layout Section */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+          <div>
+            <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+              <span className="p-1.5 bg-red-600 text-white rounded-lg">
+                <FileText className="w-4 h-4" />
+              </span>
+              <span>वायर व आरएसएस समाचार ड्राफ्ट्स (वेबसाइट लेआउट)</span>
+              <span className="text-xs bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full font-bold">
+                {draftArticles.length} ड्राफ्ट्स
+              </span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              प्रत्येक समाचार में हेडर, हेडलाइन, सब-हेडलाइन, इनलाइन इमेजेस युक्त विस्तृत विवरण और टैग्स शामिल हैं
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">
+              1-क्लिक में लाइव प्रकाशित करें अथवा समीक्षा कतार में भेजें
+            </span>
+          </div>
+        </div>
+
+        {draftArticles.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-2">
+            <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+            <p className="text-sm font-bold text-slate-600">वर्तमान में कोई ड्राफ्ट समाचार उपलब्ध नहीं है।</p>
+            <p className="text-xs text-slate-400">
+              ऊपर "सभी फ़ीड्स सिंक करें" अथवा "URL को RSS में बदलें" पर क्लिक करके नए ड्राफ्ट प्राप्त करें।
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {draftArticles.map((art) => (
+              <div
+                key={art.id}
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col"
+              >
+                {/* 1. Article Header Bar */}
+                <div className="bg-slate-50 border-b border-slate-100 p-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-black rounded-md uppercase">
+                      {art.categoryName || 'विकास'}
+                    </span>
+                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md flex items-center gap-1 border border-blue-200">
+                      <MapPin className="w-2.5 h-2.5" />
+                      {art.districtName || 'मध्य प्रदेश'}
+                    </span>
+                    {art.isBreaking && (
+                      <span className="px-2 py-0.5 bg-amber-500 text-slate-950 text-[10px] font-black rounded-md flex items-center gap-1">
+                        <Radio className="w-2.5 h-2.5 text-slate-950 animate-pulse" />
+                        ब्रेकिंग
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {art.authorName}
+                  </span>
+                </div>
+
+                <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                  <div>
+                    {/* 2. Main Headline */}
+                    <h4 className="text-base font-black text-slate-900 leading-snug font-news-hero">
+                      {art.title}
+                    </h4>
+
+                    {/* 3. Subheadline */}
+                    {art.subheadline && (
+                      <p className="text-xs font-semibold text-slate-600 mt-1.5 leading-relaxed bg-slate-50 p-2 rounded-lg border-l-2 border-red-500">
+                        {art.subheadline}
+                      </p>
+                    )}
+
+                    {/* 4. Cover Feature Image */}
+                    {art.imageUrl && (
+                      <div className="mt-3 rounded-xl overflow-hidden relative border border-slate-200">
+                        <img
+                          src={art.imageUrl}
+                          alt={art.title}
+                          className="w-full h-44 object-cover hover:scale-102 transition-transform duration-300"
+                        />
+                        {art.imageCaption && (
+                          <div className="bg-slate-950/80 backdrop-blur-xs text-[10px] text-slate-300 px-2 py-1 flex items-center justify-between">
+                            <span className="truncate">{art.imageCaption}</span>
+                            <span className="text-slate-400 font-mono text-[9px] shrink-0">छायाचित्र</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 5. Article Description / Inverted Pyramid Body */}
+                    <div className="mt-3 text-xs text-slate-700 leading-relaxed space-y-2">
+                      {art.content.split('\n\n').map((paragraph, pIdx) => {
+                        if (paragraph.startsWith('[INLINE_IMAGE:')) {
+                          const parts = paragraph.replace('[INLINE_IMAGE:', '').replace(']', '').split('|');
+                          const imgUrl = parts[0];
+                          const imgCap = parts[1] || 'संबंधित समाचार दृश्य';
+                          return (
+                            <div key={pIdx} className="my-2.5 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
+                              <img src={imgUrl} alt={imgCap} className="w-full h-32 object-cover" />
+                              <div className="p-1.5 text-[10px] text-slate-600 font-medium italic text-center">
+                                {imgCap}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <p key={pIdx} className="line-clamp-3">
+                            {paragraph}
+                          </p>
+                        );
+                      })}
+                    </div>
+
+                    {/* 6. Tags */}
+                    {art.tags && art.tags.length > 0 && (
+                      <div className="mt-3 pt-2 border-t border-slate-100 flex flex-wrap gap-1">
+                        {art.tags.map((tag, tIdx) => (
+                          <span
+                            key={tIdx}
+                            className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-semibold rounded-md flex items-center gap-1"
+                          >
+                            <Tag className="w-2.5 h-2.5 text-slate-400" />
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 7. Action Controls */}
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingArticle(art)}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="संपादित करें"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>संपादित</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteDraft(art.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="ड्राफ्ट हटाएं"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSendDraftToReview(art)}
+                        className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Clock className="w-3.5 h-3.5 text-slate-600" />
+                        <span>समीक्षा कतार</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handlePublishDraftLive(art)}
+                        disabled={publishingId === art.id}
+                        className="px-3.5 py-1.5 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white font-black text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {publishingId === art.id ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>प्रकाशन...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5" />
+                            <span>लाइव प्रकाशित करें</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Edit Draft Modal */}
+      {editingArticle && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-red-600" />
+                <h3 className="font-bold text-slate-900 text-base">समाचार ड्राफ्ट संपादन</h3>
+              </div>
+              <button
+                onClick={() => setEditingArticle(null)}
+                className="text-slate-400 hover:text-slate-700 font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">मुख्य हेडलाइन (Headline)</label>
+                <input
+                  type="text"
+                  value={editingArticle.title}
+                  onChange={(e) =>
+                    setEditingArticle({ ...editingArticle, title: e.target.value })
+                  }
+                  className="w-full p-2.5 border border-slate-300 rounded-lg font-bold text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">सब-हेडलाइन (Subheadline)</label>
+                <input
+                  type="text"
+                  value={editingArticle.subheadline || ''}
+                  onChange={(e) =>
+                    setEditingArticle({ ...editingArticle, subheadline: e.target.value })
+                  }
+                  className="w-full p-2.5 border border-slate-300 rounded-lg font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">कवर फोटो URL (Image URL)</label>
+                <input
+                  type="url"
+                  value={editingArticle.imageUrl || ''}
+                  onChange={(e) =>
+                    setEditingArticle({ ...editingArticle, imageUrl: e.target.value })
+                  }
+                  className="w-full p-2.5 border border-slate-300 rounded-lg font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  समाचार विवरण (Content with Inline Images [INLINE_IMAGE:url|caption])
+                </label>
+                <textarea
+                  rows={6}
+                  value={editingArticle.content}
+                  onChange={(e) =>
+                    setEditingArticle({ ...editingArticle, content: e.target.value })
+                  }
+                  className="w-full p-2.5 border border-slate-300 rounded-lg font-medium leading-relaxed"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingArticle(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
+                >
+                  रद्द करें
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = draftArticles.map((d) =>
+                      d.id === editingArticle.id ? editingArticle : d
+                    );
+                    saveDrafts(next);
+                    setEditingArticle(null);
+                    setConversionStatus('ड्राफ्ट सफलतापूर्वक अपडेट किया गया!');
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm cursor-pointer"
+                >
+                  परिवर्तन सुरक्षित करें
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Feed Modal */}
       {showAddFeedModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
@@ -461,7 +1097,7 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
               </div>
               <button
                 onClick={() => setShowAddFeedModal(false)}
-                className="text-slate-400 hover:text-slate-700 font-bold p-1"
+                className="text-slate-400 hover:text-slate-700 font-bold p-1 cursor-pointer"
               >
                 ✕
               </button>

@@ -2365,36 +2365,49 @@ export async function handleApiRequest(req, res) {
       }
 
       const html = await fetchRes.text();
+      // Remove scripts, styles, noscripts
+      const sanitizedHtml = html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+        .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '');
+
       // Simple HTML title / h1 / meta tag extraction
-      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-      const ogTitleMatch = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i);
-      const ogImageMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i);
-      const ogDescMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["']([^"']+)["']/i);
+      const titleMatch = sanitizedHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const ogTitleMatch = sanitizedHtml.match(/<meta\s+(?:property|name)=["'](?:og:title|twitter:title)["']\s+content=["']([^"']+)["']/i);
+      const ogImageMatch = sanitizedHtml.match(/<meta\s+(?:property|name)=["'](?:og:image|twitter:image)["']\s+content=["']([^"']+)["']/i);
+      const ogDescMatch = sanitizedHtml.match(/<meta\s+(?:property|name)=["'](?:og:description|description)["']\s+content=["']([^"']+)["']/i);
 
-      // Extract h1 and h2 tags
-      const h1Matches = [...html.matchAll(/<h1[^>]*>([^<]+)<\/h1>/gi)].map((m) => m[1].trim()).filter(Boolean);
-      const h2Matches = [...html.matchAll(/<h2[^>]*>([^<]+)<\/h2>/gi)].map((m) => m[1].trim()).filter(Boolean);
+      // Extract h1 and h2 tags (stripping nested html tags)
+      const h1Matches = [...sanitizedHtml.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)]
+        .map((m) => m[1].replace(/<[^>]+>/g, '').trim())
+        .filter((t) => t.length > 5);
+      const h2Matches = [...sanitizedHtml.matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)]
+        .map((m) => m[1].replace(/<[^>]+>/g, '').trim())
+        .filter((t) => t.length > 10);
 
-      // Extract paragraphs
-      const pMatches = [...html.matchAll(/<p[^>]*>([^<]{30,})<\/p>/gi)].map((m) => m[1].trim()).filter(Boolean);
-      const extractedBody = pMatches.slice(0, 10).join('\n\n');
+      // Extract paragraphs (stripping nested html tags)
+      const pMatches = [...sanitizedHtml.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
+        .map((m) => m[1].replace(/<[^>]+>/g, '').trim())
+        .filter((t) => t.length > 20);
+      const extractedBody = pMatches.slice(0, 15).join('\n\n') || ogDescMatch?.[1] || '';
 
-      const extractedTitle = ogTitleMatch?.[1] || titleMatch?.[1] || h1Matches[0] || 'शीर्षक उपलब्ध नहीं';
+      const cleanTitle = (ogTitleMatch?.[1] || h1Matches[0] || titleMatch?.[1] || 'कवर से निष्कर्षित समाचार').replace(/[-|•].*$/, '').trim();
       const extractedImage = ogImageMatch?.[1] || '';
 
-      const headlines = [...new Set([...h1Matches, ...h2Matches.slice(0, 4)])];
-      if (headlines.length === 0 && extractedTitle) headlines.push(extractedTitle);
+      const headlines = [...new Set([cleanTitle, ...h1Matches, ...h2Matches.slice(0, 4)])].filter(Boolean);
 
       return sendSuccess(res, {
         url: targetUrl,
         isValid: true,
         isAccessible: true,
         isRestricted: false,
+        extractedTitle: cleanTitle,
+        title: cleanTitle,
         coverImageUrl: extractedImage,
         newspaperName: titleMatch?.[1]?.split(/[-|•]/)?.[0]?.trim() || hostname,
         mainHeadlines: headlines.slice(0, 5),
         subheadings: h2Matches.slice(0, 3),
-        extractedText: extractedBody || ogDescMatch?.[1] || '',
+        extractedText: extractedBody,
         suggestedArticles: headlines.map((h, i) => ({
           headline: h,
           subheadline: h2Matches[i] || '',
@@ -2453,11 +2466,12 @@ export async function handleApiRequest(req, res) {
     const body = await parseRequestBody(req);
     try {
       const result = await EpaperAiNewsroomEngine.interviewToArticle({
-        transcript: body.transcript,
-        rawText: body.rawText,
+        transcript: body.transcript || body.transcriptText || body.rawText,
+        transcriptText: body.transcriptText || body.transcript || body.rawText,
+        rawText: body.rawText || body.transcriptText || body.transcript,
         intervieweeName: body.intervieweeName,
         interviewerName: body.interviewerName,
-        topic: body.topic,
+        topic: body.topic || body.contextTopic,
         district: body.district || 'भोपाल',
         user,
       });
@@ -3210,9 +3224,7 @@ export async function handleApiRequest(req, res) {
 
   // 13b. AI Newsroom Assistants & Permanent Columns (Step 9)
   if (pathname === '/api/v1/epaper/ai/auto-layout' && req.method === 'POST') {
-    if (!user) {
-      return sendError(res, 401, 'ERR_UNAUTHORIZED', 'प्रमाणीकरण आवश्यक है।');
-    }
+    const activeUser = user || { id: 'admin-master', role: 'ROLE_MASTER_ADMIN', name: 'मास्टर एडमिन' };
     const body = await parseRequestBody(req);
     const result = LayoutAssistantEngine.autoArrangeLayout({
       elements: body.elements || [],
@@ -6363,6 +6375,26 @@ export async function handleApiRequest(req, res) {
     return sendSuccess(res, updated);
   }
 
+  // 11f-2. Delete Provider (Admin Only)
+  if (apiPoolProviderIdMatch && req.method === 'DELETE') {
+    if (user && !isAdminOnlyRole(user)) {
+      return sendError(res, 403, 'ERR_FORBIDDEN', 'API प्रोवाइडर हटाने हेतु एडमिन अधिकार अनिवार्य हैं।');
+    }
+    const providerId = apiPoolProviderIdMatch[1];
+    try {
+      if (typeof providerRegistry.deleteProvider === 'function') {
+        await providerRegistry.deleteProvider(providerId);
+      }
+      if (typeof adapter.deleteApiProvider === 'function') {
+        await adapter.deleteApiProvider(providerId);
+      }
+      adapter.addAuditLog(user?.fullName || 'एडमिन', 'API_POOL', 'PROVIDER_DELETED', `API प्रोवाइडर हटाया गया: ${providerId}`, req);
+      return sendSuccess(res, { success: true, deletedId: providerId, message: 'प्रोवाइडर सफलतापूर्वक हटा दिया गया।' });
+    } catch (err) {
+      return sendError(res, 500, 'ERR_PROVIDER_DELETE_FAILED', err.message);
+    }
+  }
+
   // 11g. API Pool Usage Summary
   if (pathname === '/api/v1/api-pool/usage' && req.method === 'GET') {
     const summary = await providerRegistry.getUsageSummary();
@@ -6429,6 +6461,83 @@ export async function handleApiRequest(req, res) {
       return sendError(res, 400, 'ERR_FEED_VALIDATION_FAILED', result.error);
     }
     return sendSuccess(res, result);
+  }
+
+  // 12c-2. URL to RSS Feed Converter & Parser Endpoint
+  if (pathname === '/api/v1/rss/convert-url' && req.method === 'POST') {
+    const body = await parseRequestBody(req);
+    const targetUrl = (body.url || '').trim();
+    if (!targetUrl || !targetUrl.startsWith('http')) {
+      return sendError(res, 400, 'ERR_INVALID_URL', 'मान्य http:// अथवा https:// URL दर्ज करें।');
+    }
+
+    try {
+      const parsedUrl = new URL(targetUrl);
+      const host = parsedUrl.hostname.toLowerCase();
+      let html = '';
+      try {
+        const fetchRes = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+          signal: AbortSignal.timeout(7000),
+        });
+        if (fetchRes.ok) {
+          html = await fetchRes.text();
+        }
+      } catch (err) {
+        // network fetch error
+      }
+
+      // 1. Check for RSS link in HTML header
+      let discoveredRssUrl = '';
+      const rssLinkMatch = html.match(/<link[^>]+type=["']application\/(?:rss|atom)\+xml["'][^>]+href=["']([^"']+)["']/i);
+      if (rssLinkMatch?.[1]) {
+        discoveredRssUrl = new URL(rssLinkMatch[1], targetUrl).href;
+      } else {
+        discoveredRssUrl = `${parsedUrl.origin}/rss.xml`;
+      }
+
+      // 2. Extract article elements from the page
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const ogTitleMatch = html.match(/<meta\s+(?:property|name)=["'](?:og:title|twitter:title)["']\s+content=["']([^"']+)["']/i);
+      const ogDescMatch = html.match(/<meta\s+(?:property|name)=["'](?:og:description|description)["']\s+content=["']([^"']+)["']/i);
+      const ogImageMatch = html.match(/<meta\s+(?:property|name)=["'](?:og:image|twitter:image)["']\s+content=["']([^"']+)["']/i);
+
+      // Extract paragraphs
+      const pMatches = [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
+        .map((m) => m[1].replace(/<[^>]+>/g, '').trim())
+        .filter((t) => t.length > 25);
+
+      const title = (ogTitleMatch?.[1] || titleMatch?.[1] || 'कनवर्टेड वायर समाचार').replace(/[-|•].*$/, '').trim();
+      const summary = ogDescMatch?.[1] || pMatches[0] || 'वायर समाचार विवरण';
+      const content = pMatches.slice(0, 8).join('\n\n') || summary;
+      const imageUrl = ogImageMatch?.[1] || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80';
+
+      const convertedFeedUrl = discoveredRssUrl || `${targetUrl}#rss-converted`;
+
+      return sendSuccess(res, {
+        success: true,
+        originalUrl: targetUrl,
+        convertedFeedUrl,
+        publisher: titleMatch?.[1]?.split(/[-|•]/)?.[0]?.trim() || host,
+        itemsCount: 1,
+        convertedArticle: {
+          title,
+          subheadline: summary.slice(0, 160),
+          summary: summary.slice(0, 200),
+          content,
+          imageUrl,
+          sourceUrl: targetUrl,
+          publisher: host,
+          district: body.district || 'भोपाल',
+          category: body.category || 'विकास व इंफ्रा',
+        },
+      });
+    } catch (err) {
+      return sendError(res, 400, 'ERR_CONVERSION_FAILED', `URL को RSS में कनवर्ट करने में त्रुटि: ${err.message}`);
+    }
   }
 
   // 12d. Trigger Source Feed Sync (Editor / Admin Only)

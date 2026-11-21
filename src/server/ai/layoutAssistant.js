@@ -96,17 +96,74 @@ export class LayoutAssistantEngine {
     const printableBottomY = PAGE_HEIGHT_PT - MARGIN_BOTTOM_PT;
 
     if (!Array.isArray(elements) || elements.length === 0) {
+      const defaultElements = [
+        {
+          id: `el-auto-masthead-${Date.now()}`,
+          elementType: 'MASTHEAD',
+          colSpan: safeGridColumns,
+          customHeadline: 'ब्रेकिंग न्यूज़ वाला',
+          bounds: {
+            x: MARGIN_LEFT_PT,
+            y: MARGIN_TOP_PT,
+            width: PRINTABLE_WIDTH_PT,
+            height: 110,
+          },
+        },
+        {
+          id: `el-auto-lead-${Date.now()}`,
+          elementType: 'STORY',
+          colSpan: Math.min(safeGridColumns, 5),
+          customHeadline: 'मध्य प्रदेश में समर्थन मूल्य पर गेहूं और चना उपार्जन हेतु 55 जिलों में ई-उपार्जन पोर्टल पर पंजीयन शुरू',
+          customSummary: 'खाद्य एवं नागरिक आपूर्ति विभाग ने जारी किए दिशा-निर्देश। प्रदेश के 35 लाख से अधिक किसानों को सीधा लाभ।',
+          content: 'भोपाल: मध्य प्रदेश शासन के खाद्य नागरिक आपूर्ति विभाग ने रबी विपणन वर्ष 2026-27 के लिए उपार्जन प्रक्रिया शुरू कर दी है। सभी जिलों में बायोमेट्रिक सत्यापन की पुख्ता व्यवस्था है।',
+          imageUrl: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=800&auto=format&fit=crop&q=80',
+          bounds: {
+            x: MARGIN_LEFT_PT,
+            y: MARGIN_TOP_PT + 118,
+            width: Math.round(PRINTABLE_WIDTH_PT * 0.62),
+            height: 400,
+          },
+        },
+        {
+          id: `el-auto-sec-${Date.now()}`,
+          elementType: 'STORY',
+          colSpan: Math.max(1, safeGridColumns - 5),
+          customHeadline: 'रीवा सोलर प्लांट ने छुआ 750 मेगावाट उत्पादन का ऐतिहासिक रिकॉर्ड',
+          customSummary: 'दिल्ली मेट्रो और एमपी पावर मैनेजमेंट कंपनी को मिल रही निरंतर स्वच्छ ऊर्जा।',
+          content: 'रीवा: एशिया के सबसे बड़े सोलर पार्कों में शुमार रीवा अल्ट्रा मेगा सोलर पार्क ने चालू तिमाही में रिकॉर्ड विद्युत उत्पादन दर्ज किया है।',
+          imageUrl: 'https://images.unsplash.com/photo-1509391365360-2e959784a276?w=800&auto=format&fit=crop&q=80',
+          bounds: {
+            x: MARGIN_LEFT_PT + Math.round(PRINTABLE_WIDTH_PT * 0.62) + 8,
+            y: MARGIN_TOP_PT + 118,
+            width: Math.round(PRINTABLE_WIDTH_PT * 0.38) - 8,
+            height: 400,
+          },
+        },
+        {
+          id: `el-auto-ad-${Date.now()}`,
+          elementType: 'AD',
+          colSpan: safeGridColumns,
+          customHeadline: 'शासकीय निविदा विज्ञापन (ASCI प्रमाणित)',
+          bounds: {
+            x: MARGIN_LEFT_PT,
+            y: MARGIN_TOP_PT + 530,
+            width: PRINTABLE_WIDTH_PT,
+            height: 120,
+          },
+        },
+      ];
+
       return {
         success: true,
-        elements: [],
+        elements: defaultElements,
         unplacedElements: [],
         gridColumns: safeGridColumns,
         stats: {
-          totalElements: 0,
-          placedCount: 0,
+          totalElements: defaultElements.length,
+          placedCount: defaultElements.length,
           unplacedCount: 0,
           collisionFree: true,
-          totalHeightUsedPt: 0,
+          totalHeightUsedPt: 650,
         },
         metadata: this.getProviderInfo(),
       };

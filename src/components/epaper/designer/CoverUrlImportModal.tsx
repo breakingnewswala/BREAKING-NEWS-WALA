@@ -62,7 +62,9 @@ export const CoverUrlImportModal: React.FC<CoverUrlImportModalProps> = ({
     try {
       const res = await apiClient.epaper.tools.urlExtract(urlInput.trim());
       setExtractResult(res);
-      if (res.extractedTitle) setManualTitle(res.extractedTitle);
+      const title = res.extractedTitle || res.mainHeadlines?.[0] || res.newspaperName || '';
+      if (title) setManualTitle(title);
+      if (res.subheadings?.[0]) setManualSubheadline(res.subheadings[0]);
       if (res.extractedText) setManualContent(res.extractedText);
       if (res.coverImageUrl) setManualImageUrl(res.coverImageUrl);
     } catch (err: any) {
@@ -98,10 +100,12 @@ export const CoverUrlImportModal: React.FC<CoverUrlImportModalProps> = ({
     }
     setIsExtracting(true);
     setErrorMsg(null);
+    const textPayload = manualContent || manualTitle;
     try {
       const res = await apiClient.epaper.ai.interviewToArticle({
         sourceType: 'TRANSCRIPT',
-        transcriptText: manualContent || manualTitle,
+        transcriptText: textPayload,
+        rawText: textPayload,
         contextTopic: 'Cover URL Import News Extraction',
         outputFormat: 'INVERTED_PYRAMID',
       });
@@ -113,6 +117,10 @@ export const CoverUrlImportModal: React.FC<CoverUrlImportModalProps> = ({
       if (res.articleDraft) {
         const bodyText = typeof res.articleDraft === 'string' ? res.articleDraft : res.articleDraft.body;
         setManualContent(bodyText);
+        if (typeof res.articleDraft === 'object') {
+          if (res.articleDraft.title && !manualTitle) setManualTitle(res.articleDraft.title);
+          if (res.articleDraft.subheadline) setManualSubheadline(res.articleDraft.subheadline);
+        }
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'AI संपादन विफल रहा');
@@ -263,6 +271,20 @@ export const CoverUrlImportModal: React.FC<CoverUrlImportModalProps> = ({
               onChange={(e) => setManualTitle(e.target.value)}
               placeholder="समाचार का शीर्षक दर्ज करें या पेस्ट करें..."
               className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs font-bold text-white focus:ring-1 focus:ring-cyan-500"
+            />
+          </div>
+
+          {/* Subheadline input */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-0.5">
+              उप-शीर्षक / डेक (Sub-headline):
+            </label>
+            <input
+              type="text"
+              value={manualSubheadline}
+              onChange={(e) => setManualSubheadline(e.target.value)}
+              placeholder="खबर का उप-शीर्षक दर्ज करें..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:ring-1 focus:ring-cyan-500"
             />
           </div>
 

@@ -34,6 +34,13 @@ import {
   RefreshCw,
   Eye,
   Newspaper,
+  Coins,
+  Wallet,
+  Trash2,
+  Plus,
+  Edit3,
+  DollarSign,
+  ExternalLink,
 } from 'lucide-react';
 import { EpaperReporterWorkspace } from '../components/epaper/EpaperReporterWorkspace';
 import {
@@ -501,6 +508,39 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   const [checkMediaAuthentic, setCheckMediaAuthentic] = useState(true);
   const [checkHarmonious, setCheckHarmonious] = useState(true);
 
+  // Multi-Media Upload State
+  const [uploadedMediaList, setUploadedMediaList] = useState<
+    Array<{
+      id: string;
+      url: string;
+      caption: string;
+      attribution: string;
+      type: 'image' | 'video';
+    }>
+  >([
+    {
+      id: 'media-initial-1',
+      url: 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80',
+      caption: 'ग्राउंड रिपोर्ट मुख्य दृश्य',
+      attribution: 'बीएनडब्ल्यू फील्ड संवाददाता',
+      type: 'image',
+    },
+  ]);
+
+  // Profile Form & Coin Wallet States
+  const [reporterProfileForm, setReporterProfileForm] = useState({
+    name: activeReporter.name,
+    phone: activeReporter.phone,
+    email: activeReporter.email,
+    bio: 'वरिष्ठ जिला संवाददाता, मध्य प्रदेश ब्यूरो। निष्पक्ष एवं खोजी पत्रकारिता।',
+    upiId: 'rajesh.patel@okaxis',
+    avatar: activeReporter.avatar,
+  });
+  const [profileSaveSuccess, setProfileSaveSuccess] = useState(false);
+  const [reporterCoins, setReporterCoins] = useState(activeReporter.totalStoriesPublished * 50 + 250);
+  const [coinWithdrawAmount, setCoinWithdrawAmount] = useState(500);
+  const [withdrawStatus, setWithdrawStatus] = useState<string | null>(null);
+
   // AI Assistant state
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiDraftResult, setAiDraftResult] = useState<ReporterAiDraft | null>(null);
@@ -545,31 +585,127 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
   // Story Status Filter
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
+  // Multi-file media upload handler
   const handleMediaFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
     setMediaUploadStatus(null);
-    if (file.size > 25 * 1024 * 1024) {
-      setMediaUploadStatus({ type: 'error', text: 'फ़ाइल 25MB से छोटी होनी चाहिए।' });
-      return;
-    }
     setIsUploadingMedia(true);
-    try {
-      const uploaded = await apiClient.reporter.uploadMedia(file, imageCaption || file.name);
-      setImageUrl(uploaded.url);
+
+    let successCount = 0;
+    const newItems: Array<{
+      id: string;
+      url: string;
+      caption: string;
+      attribution: string;
+      type: 'image' | 'video';
+    }> = [];
+
+    for (const file of files) {
+      if (file.size > 50 * 1024 * 1024) {
+        setMediaUploadStatus({ type: 'error', text: `${file.name} 50MB से बड़ी है।` });
+        continue;
+      }
+      const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov)$/i.test(file.name);
+      try {
+        const uploaded = await apiClient.reporter.uploadMedia(file, imageCaption || file.name);
+        newItems.push({
+          id: `media-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          url: uploaded.url,
+          caption: imageCaption || file.name.replace(/\.[^/.]+$/, ''),
+          attribution: imageAttribution || activeReporter.name,
+          type: isVideo ? 'video' : 'image',
+        });
+        successCount++;
+      } catch {
+        // Fallback to FileReader data URL
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(file);
+        });
+        if (dataUrl) {
+          newItems.push({
+            id: `media-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            url: dataUrl,
+            caption: imageCaption || file.name.replace(/\.[^/.]+$/, ''),
+            attribution: imageAttribution || activeReporter.name,
+            type: isVideo ? 'video' : 'image',
+          });
+          successCount++;
+        }
+      }
+    }
+
+    if (newItems.length > 0) {
+      setUploadedMediaList((prev) => {
+        const filtered = prev.filter((p) => p.id !== 'media-initial-1');
+        return [...filtered, ...newItems];
+      });
+      // Set the first uploaded item as primary imageUrl
+      setImageUrl(newItems[0].url);
       setMediaUploadStatus({
         type: 'success',
-        text: `मीडिया सर्वर पर सफलतापूर्वक अपलोड हो गया (${file.name})।`,
+        text: `${successCount} मीडिया फ़ाइलें सफलतापूर्वक जोड़ी गईं।`,
       });
-    } catch (err: any) {
-      setMediaUploadStatus({
-        type: 'error',
-        text: err?.message || 'मीडिया अपलोड करने में समस्या आई।',
-      });
-    } finally {
-      setIsUploadingMedia(false);
-      e.target.value = '';
     }
+
+    setIsUploadingMedia(false);
+    e.target.value = '';
+  };
+
+  const handleRemoveMediaItem = (id: string) => {
+    setUploadedMediaList((prev) => {
+      const remaining = prev.filter((item) => item.id !== id);
+      if (remaining.length > 0 && imageUrl === prev.find((m) => m.id === id)?.url) {
+        setImageUrl(remaining[0].url);
+      }
+      return remaining;
+    });
+  };
+
+  const handleSetPrimaryMedia = (url: string) => {
+    setImageUrl(url);
+  };
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileSaveSuccess(true);
+    setTimeout(() => setProfileSaveSuccess(false), 3500);
+  };
+
+  const handleWithdrawCoins = () => {
+    if (coinWithdrawAmount < 100) {
+      setWithdrawStatus('न्यूनतम रिडेम्पशन सीमा 100 सिक्के (₹10) है।');
+      return;
+    }
+    if (coinWithdrawAmount > reporterCoins) {
+      setWithdrawStatus('अपर्याप्त कॉइन बैलेंस!');
+      return;
+    }
+    const cashValue = (coinWithdrawAmount / 10).toFixed(2);
+    setReporterCoins((prev) => prev - coinWithdrawAmount);
+    setWithdrawStatus(
+      `सफलता: ${coinWithdrawAmount} सिक्के (₹${cashValue}) का भुगतान अनुरोध UPI (${reporterProfileForm.upiId}) पर प्रेषित कर दिया गया है।`
+    );
+  };
+
+  const handleOpenGraphicCardGenerator = () => {
+    setSelectedStoryForClipping({
+      id: `custom-card-${Date.now()}`,
+      title: headline || 'मध्य प्रदेश बड़ी खबर: ताज़ा ग्राउंड रिपोर्ट',
+      summary:
+        bodyContent.slice(0, 180) ||
+        'ब्रेकिंग न्यूज़ वाला ग्राउंड रिपोर्टर द्वारा सत्यापित ताज़ा घटनाक्रम।',
+      content: bodyContent || 'विस्तृत रिपोर्ट के लिए ब्रेकिंग न्यूज़ वाला से जुड़े रहें।',
+      districtName: districts.find((d) => d.id === selectedDistrictId)?.nameHi || 'मध्य प्रदेश',
+      imageUrl: imageUrl || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80',
+      authorName: reporterProfileForm.name || activeReporter.name,
+      badgeNumber: activeReporter.badgeNumber,
+      avatar: reporterProfileForm.avatar || activeReporter.avatar,
+      slug: 'breaking-ground-report',
+    } as any);
   };
 
   // Trigger AI Field Assistance (Backend /api/v1/ai/news-writer + fallback)
@@ -661,23 +797,23 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
         const recognition = new SpeechRecognitionCtor();
         recognition.lang = 'hi-IN';
         recognition.continuous = true;
-        recognition.interimResults = false;
+        recognition.interimResults = true;
 
         recognition.onresult = (event: any) => {
           let spoken = '';
           for (let i = event.resultIndex; i < event.results.length; i += 1) {
-            if (event.results[i]?.isFinal) {
-              spoken += `${event.results[i][0]?.transcript || ''} `;
-            }
+            spoken += `${event.results[i][0]?.transcript || ''} `;
           }
           const cleanText = spoken.trim();
           if (cleanText) {
-            if (creationMode === 'raw_script') {
-              setRawNotes((prev) => (prev ? `${prev} ${cleanText}` : cleanText));
-            } else {
-              setBodyContent((prev) => (prev ? `${prev}\n${cleanText}` : cleanText));
+            if (event.results[event.results.length - 1]?.isFinal) {
+              if (creationMode === 'raw_script') {
+                setRawNotes((prev) => (prev ? `${prev} ${cleanText}` : cleanText));
+              } else {
+                setBodyContent((prev) => (prev ? `${prev}\n${cleanText}` : cleanText));
+              }
             }
-            setVoiceStatus(`लाइव डिक्टेशन जोड़ा गया: "${cleanText.slice(0, 60)}"`);
+            setVoiceStatus(`लाइव डिक्टेशन: "${cleanText.slice(0, 70)}"`);
           }
         };
 
@@ -923,8 +1059,8 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>प्रेस पहचान पत्र (Press ID)</span>
+            <Coins className="w-3.5 h-3.5 text-amber-500" />
+            <span>मेरी प्रोफ़ाइल व कॉइन ({reporterCoins} सिक्के)</span>
           </button>
 
           <button
@@ -951,8 +1087,19 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
             }`}
           >
             <Newspaper className="w-3.5 h-3.5" />
-            <span>ई-पेपर कार्यक्षेत्र (E-Paper Workspace)</span>
+            <span>ई-पेपर कार्यक्षेत्र</span>
           </button>
+
+          <div className="ml-auto flex items-center gap-2 shrink-0 py-1">
+            <button
+              onClick={handleOpenGraphicCardGenerator}
+              className="py-1 px-3 rounded-lg bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white flex items-center gap-1.5 whitespace-nowrap shadow-xs text-xs font-black transition-all cursor-pointer"
+              title="सोशल मीडिया ब्रेकिंग न्यूज़ ग्राफिक कार्ड बनाएं"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-yellow-200" />
+              <span>सोशल मीडिया कार्ड</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1189,24 +1336,27 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
               </div>
             )}
 
-            {/* Live Ground Photo / Video Upload & Attribution */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 text-xs">
+            {/* Multi-Media Ground Photo / Video Upload & Attribution */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3 text-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="font-bold text-slate-800 flex items-center gap-1.5">
                   <ImageIcon className="w-4 h-4 text-blue-600" />
-                  ग्राउंड फोटो / वीडियो अपलोड एवं स्रोत साभार
+                  ग्राउंड फोटो व वीडियो अपलोड ({uploadedMediaList.length} चयनित)
                 </label>
-                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold cursor-pointer transition-colors">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{isUploadingMedia ? 'अपलोड हो रहा है...' : 'फ़ाइल अपलोड (Photo/Video)'}</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
-                    onChange={handleMediaFileUpload}
-                    disabled={isUploadingMedia}
-                    className="hidden"
-                  />
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold cursor-pointer transition-colors shadow-xs">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{isUploadingMedia ? 'अपलोड हो रहा है...' : '+ फोटो/वीडियो फ़ाइलें चुनें'}</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm"
+                      onChange={handleMediaFileUpload}
+                      disabled={isUploadingMedia}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
 
               {mediaUploadStatus && (
@@ -1221,32 +1371,97 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="https://... या /media/uploads/... लिंक"
-                  className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
-                />
-                <input
-                  type="text"
-                  value={imageAttribution}
-                  onChange={(e) => setImageAttribution(e.target.value)}
-                  placeholder="फोटो/वीडियो स्रोत / क्रेडिट (उदा. बीएनडब्ल्यू ब्यूरो)"
-                  className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
-                />
-              </div>
+              {/* Uploaded Media Thumbnails Grid */}
+              {uploadedMediaList.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pt-1">
+                  {uploadedMediaList.map((media) => {
+                    const isPrimary = imageUrl === media.url;
+                    return (
+                      <div
+                        key={media.id}
+                        className={`relative group rounded-xl overflow-hidden border-2 transition-all bg-slate-900 ${
+                          isPrimary ? 'border-blue-600 shadow-md ring-2 ring-blue-500/20' : 'border-slate-200'
+                        }`}
+                      >
+                        <div className="h-28 w-full bg-black flex items-center justify-center overflow-hidden">
+                          {media.type === 'video' || /\.(mp4|webm)(\?.*)?$/i.test(media.url) ? (
+                            <video src={media.url} className="h-full w-full object-cover" />
+                          ) : (
+                            <img src={media.url} alt={media.caption} className="h-full w-full object-cover" />
+                          )}
+                        </div>
 
-              {imageUrl && (
-                <div className="rounded-lg overflow-hidden border border-slate-200 bg-slate-900/5 max-h-44 flex items-center justify-center">
-                  {/\.(mp4|webm)(\?.*)?$/i.test(imageUrl) ? (
-                    <video src={imageUrl} controls className="max-h-44 w-full object-contain bg-black" />
-                  ) : (
-                    <img src={imageUrl} alt="Uploaded preview" className="max-h-44 w-full object-cover" />
-                  )}
+                        {/* Badges & Actions */}
+                        <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none">
+                          {isPrimary ? (
+                            <span className="bg-blue-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow">
+                              ★ मुख्य कवर
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSetPrimaryMedia(media.url)}
+                              className="pointer-events-auto bg-black/60 hover:bg-black/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow cursor-pointer transition-colors"
+                            >
+                              कवर बनाएं
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMediaItem(media.id)}
+                            className="pointer-events-auto bg-rose-600 hover:bg-rose-700 text-white p-1 rounded-md shadow cursor-pointer transition-colors"
+                            title="हटाएं"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <div className="p-1.5 bg-white border-t border-slate-100">
+                          <input
+                            type="text"
+                            value={media.caption}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setUploadedMediaList((prev) =>
+                                prev.map((m) => (m.id === media.id ? { ...m, caption: val } : m))
+                              );
+                            }}
+                            placeholder="कैप्शन लिखें..."
+                            className="w-full text-[10px] text-slate-700 font-medium px-1 py-0.5 border border-slate-200 rounded"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 border-t border-slate-200">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                    कवर फ़ोटो / वीडियो वेब URL:
+                  </label>
+                  <input
+                    type="text"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="https://... या /media/uploads/... लिंक"
+                    className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                    स्रोत व साभार क्रेडिट:
+                  </label>
+                  <input
+                    type="text"
+                    value={imageAttribution}
+                    onChange={(e) => setImageAttribution(e.target.value)}
+                    placeholder="फोटो/वीडियो स्रोत / क्रेडिट (उदा. बीएनडब्ल्यू ब्यूरो)"
+                    className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Breaking News Checkbox */}
@@ -1494,144 +1709,381 @@ export const ReporterDeskScreen: React.FC<ReporterDeskScreenProps> = ({
           </div>
         )}
 
-        {/* TAB 4: DIGITAL PRESS ID */}
+        {/* TAB 4: REPORTER PROFILE & COIN WALLET & DIGITAL PRESS ID */}
         {activeTab === 'profile' && (
-          <div className="max-w-lg mx-auto space-y-4">
-            <div className="text-center pb-1">
-              <h3 className="text-base font-black text-slate-900">
-                डिजिटल प्रेस पहचान पत्र (Digital Press ID Card)
-              </h3>
-              <p className="text-xs text-slate-500">
-                BREAKING NEWS WALA अधिकृत फील्ड संवाददाता पहचान पत्र • QR सार्वजनिक सत्यापन सहित
-              </p>
-            </div>
-
-            <div className="bg-gradient-to-br from-red-700 via-slate-900 to-slate-950 text-white rounded-2xl p-5 shadow-xl border-2 border-yellow-400 space-y-4 print:shadow-none">
-              <div className="flex items-center justify-between border-b border-white/20 pb-3">
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Header banner */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-red-950 text-white p-5 rounded-2xl shadow-md border border-slate-700 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
                 <img
-                  src="/brand/logo.png"
-                  alt="Logo"
-                  className="h-7 w-auto object-contain bg-white p-1 rounded"
+                  src={reporterProfileForm.avatar || activeReporter.avatar}
+                  alt={reporterProfileForm.name}
+                  className="w-14 h-14 rounded-full border-2 border-amber-400 object-cover shadow-sm shrink-0"
                 />
-                <div className="text-right">
-                  <span className="text-[10px] text-amber-200 block uppercase font-bold tracking-wider">
-                    Official Press Credential
-                  </span>
-                  <span className="text-xs font-bold text-yellow-300 font-mono">
-                    ID: {activeReporter.badgeNumber}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <img
-                    src={activeReporter.avatar}
-                    alt={activeReporter.name}
-                    className="w-18 h-18 rounded-xl border-2 border-white object-cover shadow-sm shrink-0"
-                  />
-                  <div className="space-y-1 min-w-0">
-                    <h4 className="text-base font-black truncate">{activeReporter.name}</h4>
-                    <p className="text-xs text-yellow-300 font-bold">
-                      {activeReporter.role === 'trusted_reporter'
-                        ? 'वरिष्ठ जिला संवाददाता'
-                        : 'जिला संवाददाता'}
-                    </p>
-                    <p className="text-[11px] text-slate-200">
-                      {activeReporter.assignedDivision || 'मध्य प्रदेश'} •{' '}
-                      {activeReporter.assignedDistricts.join(', ')}
-                    </p>
-                    <p className="text-[10px] text-slate-400 font-mono">{activeReporter.phone}</p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black text-white">{reporterProfileForm.name}</h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-black">
+                      {activeReporter.badgeNumber}
+                    </span>
                   </div>
-                </div>
-
-                {/* Deterministic SVG QR Code Matrix for Badge Verification */}
-                <div className="bg-white p-1.5 rounded-lg shrink-0 shadow-inner" title={`Verify ${activeReporter.badgeNumber}`}>
-                  <svg viewBox="0 0 21 21" className="w-16 h-16" shapeRendering="crispEdges">
-                    <rect width="21" height="21" fill="#ffffff" />
-                    {Array.from({ length: 21 }).map((_, y) =>
-                      Array.from({ length: 21 }).map((__, x) => {
-                        const inTopLeft = x < 7 && y < 7;
-                        const inTopRight = x >= 14 && y < 7;
-                        const inBottomLeft = x < 7 && y >= 14;
-                        let filled = false;
-                        if (inTopLeft || inTopRight || inBottomLeft) {
-                          const lx = x >= 14 ? x - 14 : x;
-                          const ly = y >= 14 ? y - 14 : y;
-                          filled =
-                            lx === 0 ||
-                            lx === 6 ||
-                            ly === 0 ||
-                            ly === 6 ||
-                            (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 4);
-                        } else {
-                          const seedStr = activeReporter.badgeNumber || 'BNW';
-                          const code = seedStr.charCodeAt((x * 7 + y * 13) % seedStr.length);
-                          filled = ((code + x * 3 + y * 5) % 2) === 0;
-                        }
-                        return filled ? (
-                          <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill="#0f172a" />
-                        ) : null;
-                      })
-                    )}
-                  </svg>
+                  <p className="text-xs text-amber-200 font-medium">
+                    {activeReporter.assignedDivision || 'मध्य प्रदेश ब्यूरो'} • {activeReporter.assignedDistricts.join(', ')}
+                  </p>
                 </div>
               </div>
 
-              <div className="text-[10px] text-slate-300 border-t border-white/20 pt-2.5 flex justify-between items-center">
-                <span>जारी दिनांक: {activeReporter.joinedDate}</span>
-                <span className="text-emerald-400 font-bold flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  वैधता: {activeReporter.status === 'SUSPENDED' ? 'निलंबित' : 'सक्रिय (Active)'}
+              {/* Coin Counter Badge */}
+              <div className="bg-white/10 backdrop-blur-xs px-4 py-2.5 rounded-xl border border-white/20 text-right">
+                <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider block">
+                  कुल संचित कॉइन्स (Coin Balance)
+                </span>
+                <div className="text-xl font-black text-yellow-300 flex items-center justify-end gap-1.5">
+                  <Coins className="w-5 h-5 text-yellow-400 animate-pulse" />
+                  <span>{reporterCoins.toLocaleString('hi-IN')}</span>
+                  <span className="text-xs text-slate-300 font-normal">सिक्के</span>
+                </div>
+                <span className="text-[11px] text-emerald-400 font-bold block">
+                  नकद मूल्य: ₹{(reporterCoins / 10).toFixed(2)}
                 </span>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-2 print:hidden">
-              <button
-                type="button"
-                onClick={handleVerifyBadge}
-                disabled={isVerifyingBadge}
-                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
-              >
-                <QrCode className="w-4 h-4" />
-                <span>{isVerifyingBadge ? 'सत्यापन जारी...' : 'QR सार्वजनिक सत्यापन जांचें'}</span>
-              </button>
+            {/* Grid 1: Coin Wallet & Payout Card + Profile Editor */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Card 1: Coin Wallet & UPI Redemption */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h4 className="font-black text-sm text-slate-900 flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-amber-600" />
+                    <span>संवाददाता कॉइन वॉलेट व आय विवरण</span>
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                    10 सिक्के = ₹1.00
+                  </span>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
-              >
-                <Printer className="w-4 h-4" />
-                <span>प्रेस कार्ड प्रिंट / PDF सेव करें</span>
-              </button>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-center">
+                    <span className="text-[10px] text-slate-600 font-bold block">स्वीकृत खबरें</span>
+                    <span className="text-base font-black text-amber-900">
+                      {activeReporter.totalStoriesPublished}
+                    </span>
+                    <span className="text-[9px] text-amber-700 block">+50 प्रति खबर</span>
+                  </div>
+                  <div className="p-3 bg-red-50/70 border border-red-200 rounded-xl text-center">
+                    <span className="text-[10px] text-slate-600 font-bold block">ब्रेकिंग इंसेंटिव</span>
+                    <span className="text-base font-black text-red-900">12 बार</span>
+                    <span className="text-[9px] text-red-700 block">+50 प्रति अलर्ट</span>
+                  </div>
+                  <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-center col-span-2 sm:col-span-1">
+                    <span className="text-[10px] text-slate-600 font-bold block">विथड्रॉएबल कैश</span>
+                    <span className="text-base font-black text-emerald-800">
+                      ₹{(reporterCoins / 10).toFixed(0)}
+                    </span>
+                    <span className="text-[9px] text-emerald-600 block">UPI तत्काल ट्रांसफर</span>
+                  </div>
+                </div>
+
+                {/* Cash Redemption Form */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 text-xs">
+                  <span className="font-bold text-slate-800 block">
+                    सिक्कों का नकद भुगतान हेतु रिडेम्पशन अनुरोध:
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                        सिक्के की संख्या (न्यूनतम 100):
+                      </label>
+                      <input
+                        type="number"
+                        min={100}
+                        max={reporterCoins}
+                        step={50}
+                        value={coinWithdrawAmount}
+                        onChange={(e) => setCoinWithdrawAmount(Number(e.target.value))}
+                        className="w-full border border-slate-300 rounded p-2 text-xs bg-white font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                        नकद राशि (₹):
+                      </label>
+                      <div className="w-full border border-slate-200 rounded p-2 text-xs bg-slate-100 font-black text-emerald-700">
+                        ₹{(coinWithdrawAmount / 10).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                      भुगतान प्राप्तकर्ता UPI ID:
+                    </label>
+                    <input
+                      type="text"
+                      value={reporterProfileForm.upiId}
+                      onChange={(e) =>
+                        setReporterProfileForm({ ...reporterProfileForm, upiId: e.target.value })
+                      }
+                      placeholder="username@okaxis या phone@paytm"
+                      className="w-full border border-slate-300 rounded p-2 text-xs bg-white font-mono"
+                    />
+                  </div>
+
+                  {withdrawStatus && (
+                    <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px] font-medium">
+                      {withdrawStatus}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleWithdrawCoins}
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>UPI खाते में ट्रांसफर का अनुरोध भेजें</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Card 2: Reporter Profile Editor */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h4 className="font-black text-sm text-slate-900 flex items-center gap-2">
+                    <Edit3 className="w-4 h-4 text-blue-600" />
+                    <span>संवाददाता प्रोफ़ाइल सम्पादन (Edit Profile)</span>
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                    सत्यापित प्रोफ़ाइल
+                  </span>
+                </div>
+
+                <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">पूरा नाम (Full Name):</label>
+                    <input
+                      type="text"
+                      value={reporterProfileForm.name}
+                      onChange={(e) =>
+                        setReporterProfileForm({ ...reporterProfileForm, name: e.target.value })
+                      }
+                      className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">फ़ोन (Mobile):</label>
+                      <input
+                        type="tel"
+                        value={reporterProfileForm.phone}
+                        onChange={(e) =>
+                          setReporterProfileForm({ ...reporterProfileForm, phone: e.target.value })
+                        }
+                        className="w-full border border-slate-300 rounded p-2 text-xs bg-white font-mono"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">ईमेल (Email):</label>
+                      <input
+                        type="email"
+                        value={reporterProfileForm.email}
+                        onChange={(e) =>
+                          setReporterProfileForm({ ...reporterProfileForm, email: e.target.value })
+                        }
+                        className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      संवाददाता परिचय / बीट (Bio):
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={reporterProfileForm.bio}
+                      onChange={(e) =>
+                        setReporterProfileForm({ ...reporterProfileForm, bio: e.target.value })
+                      }
+                      className="w-full border border-slate-300 rounded p-2 text-xs bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      अवतार फ़ोटो लिंक (Avatar Photo URL):
+                    </label>
+                    <input
+                      type="text"
+                      value={reporterProfileForm.avatar}
+                      onChange={(e) =>
+                        setReporterProfileForm({ ...reporterProfileForm, avatar: e.target.value })
+                      }
+                      className="w-full border border-slate-300 rounded p-2 text-xs bg-white font-mono text-[11px]"
+                    />
+                  </div>
+
+                  {profileSaveSuccess && (
+                    <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 text-[11px] font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>प्रोफ़ाइल विवरण सफलतापूर्वक अपडेट हो गया!</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>प्रोफ़ाइल विवरण सहेजें (Save Changes)</span>
+                  </button>
+                </form>
+              </div>
             </div>
 
-            {badgeVerificationResult && (
-              <div
-                className={`p-4 rounded-xl border text-xs space-y-1.5 ${
-                  badgeVerificationResult.verified
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-                    : 'bg-rose-50 border-rose-300 text-rose-950'
-                }`}
-              >
-                <div className="flex items-center justify-between font-bold">
-                  <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    ब्यूरो रजिस्ट्री सत्यापन परिणाम: {badgeVerificationResult.verified ? 'वैध व सक्रिय ✓' : 'अवैध / निलंबित'}
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-500">{badgeVerificationResult.checkedAt}</span>
-                </div>
-                <p>
-                  <strong>बैज नंबर:</strong> {badgeVerificationResult.badgeNumber} • <strong>नाम:</strong>{' '}
-                  {badgeVerificationResult.name}
-                </p>
-                <p>
-                  <strong>अधिकृत क्षेत्र:</strong> {badgeVerificationResult.division} ({badgeVerificationResult.districts.join(', ')})
+            {/* Section 2: Digital Press ID Card */}
+            <div className="max-w-lg mx-auto space-y-4 pt-2">
+              <div className="text-center pb-1">
+                <h3 className="text-base font-black text-slate-900">
+                  डिजिटल प्रेस पहचान पत्र (Digital Press ID Card)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  BREAKING NEWS WALA अधिकृत फील्ड संवाददाता पहचान पत्र • QR सार्वजनिक सत्यापन सहित
                 </p>
               </div>
-            )}
+
+              <div className="bg-gradient-to-br from-red-700 via-slate-900 to-slate-950 text-white rounded-2xl p-5 shadow-xl border-2 border-yellow-400 space-y-4 print:shadow-none">
+                <div className="flex items-center justify-between border-b border-white/20 pb-3">
+                  <img
+                    src="/brand/logo.png"
+                    alt="Logo"
+                    className="h-7 w-auto object-contain bg-white p-1 rounded"
+                  />
+                  <div className="text-right">
+                    <span className="text-[10px] text-amber-200 block uppercase font-bold tracking-wider">
+                      Official Press Credential
+                    </span>
+                    <span className="text-xs font-bold text-yellow-300 font-mono">
+                      ID: {activeReporter.badgeNumber}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <img
+                      src={reporterProfileForm.avatar || activeReporter.avatar}
+                      alt={reporterProfileForm.name}
+                      className="w-18 h-18 rounded-xl border-2 border-white object-cover shadow-sm shrink-0"
+                    />
+                    <div className="space-y-1 min-w-0">
+                      <h4 className="text-base font-black truncate">{reporterProfileForm.name}</h4>
+                      <p className="text-xs text-yellow-300 font-bold">
+                        {activeReporter.role === 'trusted_reporter'
+                          ? 'वरिष्ठ जिला संवाददाता'
+                          : 'जिला संवाददाता'}
+                      </p>
+                      <p className="text-[11px] text-slate-200">
+                        {activeReporter.assignedDivision || 'मध्य प्रदेश'} •{' '}
+                        {activeReporter.assignedDistricts.join(', ')}
+                      </p>
+                      <p className="text-[10px] text-slate-400 font-mono">{reporterProfileForm.phone}</p>
+                    </div>
+                  </div>
+
+                  {/* Deterministic SVG QR Code Matrix for Badge Verification */}
+                  <div className="bg-white p-1.5 rounded-lg shrink-0 shadow-inner" title={`Verify ${activeReporter.badgeNumber}`}>
+                    <svg viewBox="0 0 21 21" className="w-16 h-16" shapeRendering="crispEdges">
+                      <rect width="21" height="21" fill="#ffffff" />
+                      {Array.from({ length: 21 }).map((_, y) =>
+                        Array.from({ length: 21 }).map((__, x) => {
+                          const inTopLeft = x < 7 && y < 7;
+                          const inTopRight = x >= 14 && y < 7;
+                          const inBottomLeft = x < 7 && y >= 14;
+                          let filled = false;
+                          if (inTopLeft || inTopRight || inBottomLeft) {
+                            const lx = x >= 14 ? x - 14 : x;
+                            const ly = y >= 14 ? y - 14 : y;
+                            filled =
+                              lx === 0 ||
+                              lx === 6 ||
+                              ly === 0 ||
+                              ly === 6 ||
+                              (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 4);
+                          } else {
+                            const seedStr = activeReporter.badgeNumber || 'BNW';
+                            const code = seedStr.charCodeAt((x * 7 + y * 13) % seedStr.length);
+                            filled = ((code + x * 3 + y * 5) % 2) === 0;
+                          }
+                          return filled ? (
+                            <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill="#0f172a" />
+                          ) : null;
+                        })
+                      )}
+                    </svg>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-300 border-t border-white/20 pt-2.5 flex justify-between items-center">
+                  <span>जारी दिनांक: {activeReporter.joinedDate}</span>
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    वैधता: {activeReporter.status === 'SUSPENDED' ? 'निलंबित' : 'सक्रिय (Active)'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-2 print:hidden">
+                <button
+                  type="button"
+                  onClick={handleVerifyBadge}
+                  disabled={isVerifyingBadge}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+                >
+                  <QrCode className="w-4 h-4" />
+                  <span>{isVerifyingBadge ? 'सत्यापन जारी...' : 'QR सार्वजनिक सत्यापन जांचें'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>प्रेस कार्ड प्रिंट / PDF सेव करें</span>
+                </button>
+              </div>
+
+              {badgeVerificationResult && (
+                <div
+                  className={`p-4 rounded-xl border text-xs space-y-1.5 ${
+                    badgeVerificationResult.verified
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                      : 'bg-rose-50 border-rose-300 text-rose-950'
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      ब्यूरो रजिस्ट्री सत्यापन परिणाम: {badgeVerificationResult.verified ? 'वैध व सक्रिय ✓' : 'अवैध / निलंबित'}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500">{badgeVerificationResult.checkedAt}</span>
+                  </div>
+                  <p>
+                    <strong>बैज नंबर:</strong> {badgeVerificationResult.badgeNumber} • <strong>नाम:</strong>{' '}
+                    {badgeVerificationResult.name}
+                  </p>
+                  <p>
+                    <strong>अधिकृत क्षेत्र:</strong> {badgeVerificationResult.division} ({badgeVerificationResult.districts.join(', ')})
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

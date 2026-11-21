@@ -587,6 +587,17 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
     setIsDirty(true);
   };
 
+  const handleClearFreehandDrawings = () => {
+    if (!activePage) return;
+    setActivePage({
+      ...activePage,
+      freehandDrawings: [],
+    });
+    pushHistory();
+    setIsDirty(true);
+    showToast('सभी रेखांकन साफ़ कर दिए गए!', 'info');
+  };
+
   // Apply Master Admin Header Template to page or entire edition
   const handleApplyHeaderTemplate = (template: EpaperHeaderTemplateDoc, applyToAll = false) => {
     if (!activePage) return;
@@ -1268,6 +1279,7 @@ export const EpaperDesignerModal: React.FC<EpaperDesignerModalProps> = ({
               }}
               onViewportChange={setViewportState}
               onUploadMedia={handleUploadMedia}
+              onClearFreehandDrawings={handleClearFreehandDrawings}
             />
 
             {/* Panel 2: Center Stage (Broadsheet Canvas 932.6 x 1474 pt) */}

@@ -65,6 +65,42 @@ export const EpaperHeaderTemplateManager: React.FC<EpaperHeaderTemplateManagerPr
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
+  const dragRef = useRef<{ id: string; startX: number; startY: number; elX: number; elY: number } | null>(null);
+
+  const handleElementPointerDown = (e: React.PointerEvent, el: EpaperHeaderElement) => {
+    e.stopPropagation();
+    setSelectedElementId(el.id);
+    dragRef.current = {
+      id: el.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      elX: el.x,
+      elY: el.y,
+    };
+  };
+
+  const handleCanvasPointerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current || !activeTemplate) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    const newX = Math.max(0, Math.min(848 - 20, Math.round(dragRef.current.elX + dx)));
+    const newY = Math.max(0, Math.min((activeTemplate.heightPt || 100) - 10, Math.round(dragRef.current.elY + dy)));
+
+    setActiveTemplate((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        elements: prev.elements.map((item) =>
+          item.id === dragRef.current?.id ? { ...item, x: newX, y: newY } : item
+        ),
+      };
+    });
+  };
+
+  const handleCanvasPointerUp = () => {
+    dragRef.current = null;
+  };
+
   // Duplicate / Rename State
   const [duplicateModalTarget, setDuplicateModalTarget] = useState<EpaperHeaderTemplateDoc | null>(null);
   const [duplicateName, setDuplicateName] = useState<string>('');
@@ -969,7 +1005,10 @@ export const EpaperHeaderTemplateManager: React.FC<EpaperHeaderTemplateManagerPr
                   backgroundColor: activeTemplate.backgroundColor || '#FFFFFF',
                   borderColor: activeTemplate.borderColor || '#0F172A',
                 }}
-                className="relative rounded-sm shadow-2xl border transition-all overflow-hidden select-none"
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onPointerLeave={handleCanvasPointerUp}
+                className="relative rounded-sm shadow-2xl border transition-all overflow-hidden select-none cursor-default"
               >
                 {/* Tricolor Ribbon on Top */}
                 {activeTemplate.hasTricolorRibbon && (
@@ -988,6 +1027,7 @@ export const EpaperHeaderTemplateManager: React.FC<EpaperHeaderTemplateManagerPr
                     return (
                       <div
                         key={el.id}
+                        onPointerDown={(e) => handleElementPointerDown(e, el)}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedElementId(el.id);
@@ -1000,7 +1040,7 @@ export const EpaperHeaderTemplateManager: React.FC<EpaperHeaderTemplateManagerPr
                           backgroundColor: el.backgroundColor || '#0F172A',
                           zIndex: isSelected ? 40 : el.zIndex || 1,
                         }}
-                        className={`absolute cursor-pointer transition-shadow ${
+                        className={`absolute cursor-move transition-shadow ${
                           isSelected ? 'ring-2 ring-blue-500 shadow-md' : 'hover:ring-1 hover:ring-blue-300'
                         }`}
                       />
@@ -1010,6 +1050,7 @@ export const EpaperHeaderTemplateManager: React.FC<EpaperHeaderTemplateManagerPr
                   return (
                     <div
                       key={el.id}
+                      onPointerDown={(e) => handleElementPointerDown(e, el)}
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedElementId(el.id);
@@ -1133,6 +1174,94 @@ export const EpaperHeaderTemplateManager: React.FC<EpaperHeaderTemplateManagerPr
                         onChange={(e) => updateSelectedElement({ height: parseFloat(e.target.value) || 10 })}
                         className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-white"
                       />
+                    </div>
+                  </div>
+
+                  {/* Header Frame Positioning (Move Box Across 848pt Frame) */}
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <label className="block text-[10px] font-bold text-slate-300">
+                      हेडर फ्रेम में बॉक्स स्थिति (Frame Box Position):
+                    </label>
+                    <div className="grid grid-cols-4 gap-1 text-[11px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedElement({ x: 16 })}
+                        className="py-1.5 px-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 hover:border-blue-500 transition-colors text-center cursor-pointer"
+                        title="बॉक्स को बाएं किनारे पर सेट करें"
+                      >
+                        बाएं (Left)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateSelectedElement({
+                            x: Math.round(Math.max(16, (848 - selectedElement.width) / 2)),
+                          })
+                        }
+                        className="py-1.5 px-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 hover:border-blue-500 transition-colors text-center cursor-pointer"
+                        title="बॉक्स को हेडर फ्रेम के बिल्कुल बीच में रखें"
+                      >
+                        मध्य (Center)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateSelectedElement({
+                            x: Math.round(Math.max(16, 848 - selectedElement.width - 16)),
+                          })
+                        }
+                        className="py-1.5 px-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 hover:border-blue-500 transition-colors text-center cursor-pointer"
+                        title="बॉक्स को दाएं किनारे पर सेट करें"
+                      >
+                        दाएं (Right)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSelectedElement({ x: 16, width: 816 })}
+                        className="py-1.5 px-1 bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 rounded border border-indigo-700 transition-colors text-center cursor-pointer"
+                        title="बॉक्स को पूरे हेडर की चौड़ाई (Full Width) में फैलाएं"
+                      >
+                        पूर्ण चौड़ाई
+                      </button>
+                    </div>
+
+                    {/* Nudge Controls */}
+                    <div className="flex items-center justify-between gap-1 pt-1">
+                      <span className="text-[10px] font-bold text-slate-400">खिसकाव (Nudge):</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateSelectedElement({ x: Math.max(0, Math.round(selectedElement.x - 10)) })}
+                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[11px] font-mono border border-slate-700 cursor-pointer"
+                          title="10pt बाएं खिसकाएं"
+                        >
+                          ← 10
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateSelectedElement({ x: Math.min(848 - selectedElement.width, Math.round(selectedElement.x + 10)) })}
+                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[11px] font-mono border border-slate-700 cursor-pointer"
+                          title="10pt दाएं खिसकाएं"
+                        >
+                          → 10
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateSelectedElement({ y: Math.max(0, Math.round(selectedElement.y - 5)) })}
+                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[11px] font-mono border border-slate-700 cursor-pointer"
+                          title="5pt ऊपर खिसकाएं"
+                        >
+                          ↑ 5
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateSelectedElement({ y: Math.round(selectedElement.y + 5) })}
+                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded text-[11px] font-mono border border-slate-700 cursor-pointer"
+                          title="5pt नीचे खिसकाएं"
+                        >
+                          ↓ 5
+                        </button>
+                      </div>
                     </div>
                   </div>
 

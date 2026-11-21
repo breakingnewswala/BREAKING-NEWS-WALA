@@ -1538,6 +1538,14 @@ export const apiClient = {
       throw new Error(res.error?.message || 'हेल्थ टेस्ट विफल रहा।');
     },
 
+    async deleteProvider(id: string): Promise<boolean> {
+      const res = await request<any>(`/api-pool/providers/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (res.success) return true;
+      throw new Error(res.error?.message || 'प्रदाता हटाने में त्रुटि हुई।');
+    },
+
     async getUsageSummary(): Promise<ApiPoolUsageSummary> {
       const res = await request<ApiPoolUsageSummary>('/api-pool/usage');
       return res.success && res.data
@@ -1626,6 +1634,15 @@ export const apiClient = {
       });
       if (res.success && res.data) return res.data;
       return { isValid: false, isSafe: false, error: res.error?.message || 'सत्यापन विफल' };
+    },
+
+    async convertUrl(payload: { url: string; district?: string; category?: string }): Promise<any> {
+      const res = await request<any>('/rss/convert-url', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (res.success && res.data) return res.data;
+      throw new Error(res.error?.message || 'URL को RSS में कनवर्ट करने में त्रुटि हुई।');
     },
 
     async listItems(params?: { sourceId?: string; status?: string; search?: string; page?: number; limit?: number }): Promise<{

@@ -54,6 +54,7 @@ import {
   FileQuestion,
   Download,
   CheckCheck,
+  Cpu,
 } from 'lucide-react';
 import {
   AppRole,
@@ -351,6 +352,14 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   const [loadingIntegrations, setLoadingIntegrations] = useState(false);
   const [integrationMsg, setIntegrationMsg] = useState<{ text: string; isError?: boolean } | null>(null);
 
+  // New API Provider Modal State
+  const [showAddProviderModal, setShowAddProviderModal] = useState(false);
+  const [newProvName, setNewProvName] = useState('');
+  const [newProvType, setNewProvType] = useState('GEMINI');
+  const [newProvKey, setNewProvKey] = useState('');
+  const [newProvBaseUrl, setNewProvBaseUrl] = useState('');
+  const [newProvDailyLimit, setNewProvDailyLimit] = useState(100000);
+
   // New RSS Source Form
   const [newRssName, setNewRssName] = useState('');
   const [newRssUrl, setNewRssUrl] = useState('');
@@ -420,6 +429,44 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
       loadIntegrationData();
     } catch (err: any) {
       setIntegrationMsg({ text: err.message || 'हेल्थ टेस्ट विफल', isError: true });
+    }
+  };
+
+  const handleAddProviderSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProvName.trim() || !newProvKey.trim()) return;
+    try {
+      const created = await apiClient.integrations.registerProvider({
+        name: newProvName.trim(),
+        providerId: `prov-${newProvType.toLowerCase()}-${Date.now()}`,
+        category: 'ai_services',
+        apiKey: newProvKey.trim(),
+        baseUrl: newProvBaseUrl.trim() || undefined,
+        dailyQuotaLimit: Number(newProvDailyLimit) || 100000,
+        monthlyQuotaLimit: (Number(newProvDailyLimit) || 100000) * 30,
+        rateLimitInfo: '60 RPM, 1000 TPM',
+        costPer1kInputTokensUsd: 0.0015,
+        costPer1kOutputTokensUsd: 0.002,
+      });
+      setLiveProviders((prev) => [created, ...prev]);
+      setShowAddProviderModal(false);
+      setNewProvName('');
+      setNewProvKey('');
+      setNewProvBaseUrl('');
+      setIntegrationMsg({ text: `नया API प्रोवाइडर "${created.name}" सफलतापूर्वक जोड़ दिया गया!` });
+    } catch (err: any) {
+      setIntegrationMsg({ text: `प्रोवाइडर जोड़ने में त्रुटि: ${err.message}`, isError: true });
+    }
+  };
+
+  const handleDeleteProvider = async (id: string, name: string) => {
+    if (!window.confirm(`क्या आप सचमुच API प्रोवाइडर "${name}" को हटाना चाहते हैं?`)) return;
+    try {
+      await apiClient.integrations.deleteProvider(id);
+      setLiveProviders((prev) => prev.filter((p) => p.id !== id));
+      setIntegrationMsg({ text: `API प्रोवाइडर "${name}" सफलतापूर्वक हटा दिया गया।` });
+    } catch (err: any) {
+      setIntegrationMsg({ text: `हटाने में त्रुटि: ${err.message}`, isError: true });
     }
   };
 
@@ -3264,6 +3311,22 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                   </div>
                 )}
 
+                {/* Provider Cards Header with Add Button */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">पंजीकृत AI व API प्रोवाइडर्स ({liveProviders.length})</h4>
+                    <p className="text-xs text-slate-500">सभी AI मॉडल्स, सर्च एंडपॉइंट्स व थर्ड-पार्टी सेवाएं</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddProviderModal(true)}
+                    className="px-3.5 py-2 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-700 hover:to-amber-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer self-start sm:self-auto"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ नया API प्रोवाइडर जोड़ें</span>
+                  </button>
+                </div>
+
                 {/* Provider Cards Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {liveProviders.map((prov) => {
@@ -3334,29 +3397,145 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                         </div>
 
                         {/* Actions */}
-                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={() => handleToggleProvider(prov.id, prov.isEnabled)}
-                            className={`px-2.5 py-1 rounded text-[11px] font-bold transition-colors ${prov.isEnabled ? 'bg-slate-200 hover:bg-slate-300 text-slate-800' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${prov.isEnabled ? 'bg-slate-200 hover:bg-slate-300 text-slate-800' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                               }`}
                           >
                             {prov.isEnabled ? 'प्रोवाइडर निष्क्रिय करें' : 'सक्रिय करें'}
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleTestProviderHealth(prov.id)}
-                            className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded text-[11px] font-bold flex items-center gap-1"
-                          >
-                            <Activity className="w-3 h-3 text-red-600" />
-                            <span>हेल्थ टेस्ट रन</span>
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleTestProviderHealth(prov.id)}
+                              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Activity className="w-3 h-3 text-red-600" />
+                              <span>हेल्थ टेस्ट</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProvider(prov.id, prov.name)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                              title="API प्रोवाइडर हटाएं"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Add API Provider Modal */}
+                {showAddProviderModal && (
+                  <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-xs">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Cpu className="w-5 h-5 text-red-600" />
+                          <h3 className="font-bold text-slate-900 text-base">नया API प्रोवाइडर जोड़ें</h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddProviderModal(false)}
+                          className="text-slate-400 hover:text-slate-700 font-bold p-1 cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleAddProviderSubmit} className="space-y-3">
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">प्रोवाइडर नाम (Provider Name)</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="उदा. Google Gemini 1.5 Pro Central"
+                            value={newProvName}
+                            onChange={(e) => setNewProvName(e.target.value)}
+                            className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none font-medium"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="font-bold text-slate-700 block mb-1">मॉडल / प्रकार</label>
+                            <select
+                              value={newProvType}
+                              onChange={(e) => setNewProvType(e.target.value)}
+                              className="w-full p-2.5 border border-slate-300 rounded-lg bg-slate-50 font-medium"
+                            >
+                              <option value="GEMINI">Google Gemini</option>
+                              <option value="CLAUDE">Anthropic Claude</option>
+                              <option value="OPENAI">OpenAI GPT</option>
+                              <option value="GROQ">Groq LPU</option>
+                              <option value="DEEPSEEK">DeepSeek AI</option>
+                              <option value="CUSTOM">Custom Endpoint</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="font-bold text-slate-700 block mb-1">दैनिक टोकन सीमा</label>
+                            <input
+                              type="number"
+                              value={newProvDailyLimit}
+                              onChange={(e) => setNewProvDailyLimit(Number(e.target.value))}
+                              className="w-full p-2.5 border border-slate-300 rounded-lg font-mono font-bold"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">API Key / Secret</label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="AIzaSy... अथवा sk-..."
+                            value={newProvKey}
+                            onChange={(e) => setNewProvKey(e.target.value)}
+                            className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none font-mono"
+                          />
+                          <span className="text-[10px] text-slate-500 mt-0.5 block">
+                            * की सर्वर-साइड KMS से एन्क्रिप्ट कर सुरक्षित रखी जाती है।
+                          </span>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">वैकल्पिक बेस URL (Custom Endpoint)</label>
+                          <input
+                            type="url"
+                            placeholder="https://api.openai.com/v1"
+                            value={newProvBaseUrl}
+                            onChange={(e) => setNewProvBaseUrl(e.target.value)}
+                            className="w-full p-2.5 border border-slate-300 rounded-lg font-mono"
+                          />
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowAddProviderModal(false)}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
+                          >
+                            रद्द करें
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm cursor-pointer"
+                          >
+                            प्रोवाइडर सुरक्षित करें
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -4545,6 +4724,7 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
             onAddPendingArticle={(art) => {
               if (onAddPendingArticle) onAddPendingArticle(art);
             }}
+            onPublishArticle={onPublishArticle}
             onNavigateToReviewQueue={() => setActiveTab('review_queue')}
           />
         )}

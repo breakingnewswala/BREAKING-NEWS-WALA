@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   ChevronRight,
   Palette,
+  RotateCcw,
 } from 'lucide-react';
 import {
   ArticleDetail,
@@ -46,6 +47,7 @@ export interface EpaperToolboxPanelProps {
   onGridColumnsChange?: (cols: GridColumnCount) => void;
   onViewportChange?: (updater: (prev: CanvasViewportState) => CanvasViewportState) => void;
   onUploadMedia?: (file: File, category: 'newspaper' | 'article' | 'photo', caption?: string) => Promise<void> | void;
+  onClearFreehandDrawings?: () => void;
 }
 
 export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
@@ -60,6 +62,7 @@ export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
   onGridColumnsChange,
   onViewportChange,
   onUploadMedia,
+  onClearFreehandDrawings,
 }) => {
   const [activeTab, setActiveTab] = useState<'layout' | 'stories' | 'uploads' | 'templates'>('layout');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -329,6 +332,19 @@ export const EpaperToolboxPanel: React.FC<EpaperToolboxPanelProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Clear / Reset Drawings Button */}
+              {onClearFreehandDrawings && (
+                <button
+                  type="button"
+                  onClick={onClearFreehandDrawings}
+                  className="w-full mt-2 py-1.5 px-2 bg-amber-100/90 hover:bg-red-50 text-amber-900 hover:text-red-700 border border-amber-300 hover:border-red-300 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                  title="कैनवास के सभी रेखांकन व मार्किंग तुरंत हटाएं"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-red-600" />
+                  <span>रेखांकन साफ़ करें (Clear Drawings)</span>
+                </button>
+              )}
             </div>
           </div>
 

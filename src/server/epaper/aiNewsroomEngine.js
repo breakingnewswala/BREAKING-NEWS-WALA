@@ -978,6 +978,7 @@ export class EpaperAiNewsroomEngine {
    */
   static async interviewToArticle({
     transcript = '',
+    transcriptText = '',
     rawText = '',
     intervieweeName = '',
     interviewerName = '',
@@ -985,7 +986,7 @@ export class EpaperAiNewsroomEngine {
     district = 'भोपाल',
     user = null,
   } = {}) {
-    const inputContent = (transcript || rawText || '').trim();
+    const inputContent = (transcript || transcriptText || rawText || '').trim();
     if (!inputContent) {
       throw new Error('साक्षात्कार ट्रांसक्रिप्ट या टेक्स्ट अनिवार्य है।');
     }

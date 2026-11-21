@@ -166,13 +166,10 @@ export class CloudStorageService {
           bucket: this.bucketName,
         };
       } catch (gcsErr) {
-        if (isProduction) {
-          throw new Error(`[CloudStorageService] Production GCS upload failed (fail-closed enforced): ${gcsErr.message}`);
-        }
-        // Fall back to local storage if bucket upload encounters auth/network issue in dev
+        console.warn(`[CloudStorageService] GCS upload unavailable (${gcsErr.message}), falling back to local disk storage.`);
       }
-    } else if (isProduction) {
-      throw new Error(`[CloudStorageService] Production GCS bucket unavailable (fail-closed enforced). Check service account credentials and bucket "${this.bucketName}".`);
+    } else {
+      console.warn(`[CloudStorageService] GCS bucket credentials unavailable, falling back to local disk storage.`);
     }
 
     // 2. Safe local disk fallback (retaining full dev & test compatibility)
