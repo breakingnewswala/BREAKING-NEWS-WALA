@@ -1,0 +1,66 @@
+name: Staging Environment Build & Verification
+
+on:
+  push:
+    branches: [ staging ]
+  workflow_dispatch:
+    inputs:
+      notify_team:
+        description: 'Send Staging Deployment notification'
+        required: false
+        default: 'true'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  staging-verify-and-package:
+    name: Staging Environment Build & Release Candidate Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Staging Branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Type Check & Code Quality Audit
+        run: npm run lint
+
+      - name: Build Staging Web Application
+        env:
+          NODE_ENV: staging
+          VITE_APP_ENV: staging
+          PERSISTENCE_MODE: firestore
+        run: npm run build
+
+      - name: Staging Artifacts & Bundle Integrity Check
+        run: |
+          echo "=== STAGING BUILD ARTIFACTS VERIFICATION ==="
+          if [ ! -f "dist/index.html" ]; then
+            echo "::error::Staging build failed: dist/index.html missing!"
+            exit 1
+          fi
+
+          TOTAL_JS=$(find dist/assets -name "*.js" | wc -l)
+          TOTAL_CSS=$(find dist/assets -name "*.css" | wc -l)
+
+          echo "Staging Index HTML: Present"
+          echo "Staging JS Bundles: $TOTAL_JS"
+          echo "Staging CSS Bundles: $TOTAL_CSS"
+
+          if [ "$TOTAL_JS" -eq 0 ] || [ "$TOTAL_CSS" -eq 0 ]; then
+            echo "::error::Incomplete build artifacts in dist/assets."
+            exit 1
+          fi
+
+          echo "✅ Staging Release Candidate Verified Successfully."
+          echo "Environment: staging (Branch: ${{ github.ref_name }})"
+          echo "Commit: ${{ github.sha }}"

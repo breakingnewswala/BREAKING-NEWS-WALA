@@ -59,33 +59,50 @@ export class ProviderPoolManager {
     this.userDailyUsage = new Map(); // userId:date -> count
   }
 
+  setGeminiKey(key) {
+    this.geminiKey = key && key.trim() ? key.trim() : null;
+  }
+
+  setOpenAiKey(key) {
+    this.openaiKey = key && key.trim() ? key.trim() : null;
+  }
+
+  setAnthropicKey(key) {
+    this.anthropicKey = key && key.trim() ? key.trim() : null;
+  }
+
   /**
    * Returns list of configured providers and their health statuses.
    */
   getProvidersStatus() {
+    const isRealKey = (key) => Boolean(key && typeof key === 'string' && !key.includes('Fake') && !key.includes('DEMO') && key.length > 15);
+    const hasGemini = isRealKey(this.geminiKey);
+    const hasClaude = isRealKey(this.anthropicKey);
+    const hasOpenAI = isRealKey(this.openaiKey);
+
     return [
       {
         id: AI_PROVIDERS.GEMINI,
         name: 'Google Gemini',
         models: [AI_MODELS.GEMINI_FLASH, AI_MODELS.GEMINI_PRO],
-        configured: Boolean(this.geminiKey),
-        status: this.geminiKey ? 'active' : 'unconfigured',
-        isPrimary: true,
+        configured: hasGemini,
+        status: hasGemini ? 'active' : 'unconfigured',
+        isPrimary: hasGemini || (!hasClaude && !hasOpenAI),
       },
       {
         id: AI_PROVIDERS.ANTHROPIC,
         name: 'Anthropic Claude',
         models: [AI_MODELS.CLAUDE_SONNET],
-        configured: Boolean(this.anthropicKey),
-        status: this.anthropicKey ? 'active' : 'unconfigured',
+        configured: hasClaude,
+        status: hasClaude ? 'active' : 'unconfigured',
         isPrimary: false,
       },
       {
         id: AI_PROVIDERS.OPENAI,
         name: 'OpenAI GPT',
         models: [AI_MODELS.GPT_4O_MINI, AI_MODELS.GPT_4O],
-        configured: Boolean(this.openaiKey),
-        status: this.openaiKey ? 'active' : 'unconfigured',
+        configured: hasOpenAI,
+        status: hasOpenAI ? 'active' : 'unconfigured',
         isPrimary: false,
       },
       {
@@ -94,7 +111,7 @@ export class ProviderPoolManager {
         models: [AI_MODELS.MOCK_NEWSROOM],
         configured: true,
         status: 'active',
-        isPrimary: !this.geminiKey && !this.openaiKey && !this.anthropicKey,
+        isPrimary: !hasGemini && !hasClaude && !hasOpenAI,
       },
     ];
   }

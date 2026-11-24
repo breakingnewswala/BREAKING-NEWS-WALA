@@ -26,6 +26,7 @@ google-services.json
 # System and logs
 .DS_Store
 *.log
+*.bak
 Thumbs.db
 
 # Environment and secrets

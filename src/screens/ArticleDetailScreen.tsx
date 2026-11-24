@@ -559,21 +559,55 @@ export const ArticleDetailScreen: React.FC<ArticleDetailScreenProps> = ({
         )}
 
         {/* Featured Image */}
-        {article.featuredImage && (
+        {(article.featuredImage || article.imageUrl) && (
           <div className="mt-4 rounded-xl overflow-hidden border border-slate-200 shadow-2xs">
             <img
-              src={article.featuredImage}
+              src={article.featuredImage || article.imageUrl}
               alt={article.title}
               className="w-full h-auto max-h-[420px] object-cover"
             />
-            {(article.imageCaption || article.imageAttribution) && (
+            {(article.imageCaption || article.imageAttribution || (article as any).imageCredit) && (
               <div className="bg-slate-50 px-3 py-2 text-[11px] text-slate-600 border-t border-slate-200 flex flex-col md:flex-row md:justify-between gap-1">
                 <span>{article.imageCaption}</span>
-                {article.imageAttribution && (
-                  <span className="font-semibold text-slate-500">स्रोत: {article.imageAttribution}</span>
+                {(article.imageAttribution || (article as any).imageCredit) && (
+                  <span className="font-semibold text-slate-500">स्रोत / साभार: {article.imageAttribution || (article as any).imageCredit}</span>
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Photo Gallery if article has multiple photos */}
+        {article.galleryImages && article.galleryImages.length > 0 && (
+          <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+            <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <span>फोटो गैलरी ({article.galleryImages.length + 1} तस्वीरें)</span>
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {article.galleryImages.map((img, idx) => (
+                <div key={img.id || idx} className="rounded-lg overflow-hidden border border-slate-200 bg-white shadow-2xs">
+                  <img src={img.url} alt={img.caption || 'फोटो'} className="w-full h-32 object-cover" />
+                  {(img.caption || img.credit) && (
+                    <div className="p-1.5 bg-white text-[11px] text-slate-600 border-t border-slate-100">
+                      <p className="truncate font-medium">{img.caption || 'ग्राउंड फोटो'}</p>
+                      {img.credit && <p className="text-[10px] text-slate-400">साभार: {img.credit}</p>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Official Statement Box */}
+        {article.officialStatement && (
+          <div className="mt-4 p-3.5 bg-amber-50/80 border-l-4 border-amber-500 rounded-r-xl text-xs text-amber-950 space-y-1">
+            <strong className="block text-amber-900 font-bold uppercase tracking-wider text-[11px]">
+              प्रशासनिक / अधिकृत पक्ष:
+            </strong>
+            <p className="italic font-medium leading-relaxed">
+              "{article.officialStatement}"
+            </p>
           </div>
         )}
 

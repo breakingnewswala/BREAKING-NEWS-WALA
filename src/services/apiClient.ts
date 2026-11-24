@@ -1283,6 +1283,23 @@ export const apiClient = {
       return res.success && res.data ? res.data : { activeProvider: 'mock', providers: {}, models: [], roleQuotas: {} };
     },
 
+    async extractFromUrl(payload: {
+      url: string;
+      district?: string;
+      category?: string;
+      format?: string;
+      language?: string;
+    }): Promise<AiNewsWriterResponse> {
+      const res = await request<AiNewsWriterResponse>('/ai/extract-from-url', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (res.success && res.data) {
+        return res.data;
+      }
+      throw new Error(res.error?.message || 'URL से समाचार आलेख तैयार करने में त्रुटि हुई।');
+    },
+
     async generateNewsDraft(payload: AiNewsWriterRequest): Promise<AiNewsWriterResponse> {
       const res = await request<AiNewsWriterResponse>('/ai/news-writer', {
         method: 'POST',

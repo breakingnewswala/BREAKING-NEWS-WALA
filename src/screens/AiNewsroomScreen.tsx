@@ -346,37 +346,26 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
     }
     setWriterLoading(true);
     try {
-      let inferredTitle = '';
-      let domain = 'news-source';
-      try {
-        const fullUrl = newsUrlInput.trim().startsWith('http') ? newsUrlInput.trim() : `https://${newsUrlInput.trim()}`;
-        const urlObj = new URL(fullUrl);
-        domain = urlObj.hostname.replace('www.', '');
-        const slug = decodeURIComponent(urlObj.pathname.split('/').filter(Boolean).pop() || '')
-          .replace(/[-_]/g, ' ')
-          .replace(/\.(html|php|xml|aspx|cms)/g, '');
-        inferredTitle = slug.length > 5 ? slug : `${writerDistrict} में महत्वपूर्ण घटनाक्रम व विकास रिपोर्ट`;
-      } catch {
-        inferredTitle = `${writerDistrict} विशेष समाचार बुलेटिन`;
-      }
-
-      const res = await apiClient.ai.generateNewsDraft({
-        title: writerTitle || inferredTitle,
-        keyFacts: [
-          `वेब स्रोत URL: ${newsUrlInput.trim()}`,
-          `डोमेन / प्रकाशक: ${domain}`,
-          `अधिदेश जिला: ${writerDistrict}`,
-          `संपादकीय श्रेणी: ${writerCategory}`,
-          'इस स्रोत के आधार पर देवनागरी में 5W1H पत्रकारिता मानकों के अनुसार सटीक आलेख बनाएं'
-        ],
+      const res: any = await apiClient.ai.extractFromUrl({
+        url: newsUrlInput.trim(),
         district: writerDistrict,
+        category: writerCategory,
         format: writerFormat,
         language: writerLang,
-        notes: `URL आधारित एक्सट्रैक्शन: ${newsUrlInput.trim()}`
       });
 
+      if (writerTitle && writerTitle.trim()) {
+        res.headline = writerTitle.trim();
+      }
+
       setWriterResult(res);
-      showToast('URL से समाचार आलेख सफलतापूर्वक तैयार किया गया!');
+      if (res.district) setWriterDistrict(res.district);
+      if (res.category) setWriterCategory(res.category);
+      if (res.imageUrl || res.featuredImage) {
+        setExtractedImageUrl(res.imageUrl || res.featuredImage);
+      }
+
+      showToast('URL से समाचार आलेख व चित्र सफलतापूर्वक निकाल लिया गया!');
       loadProvidersAndUsage();
     } catch (err: any) {
       showToast(err.message || 'URL से आलेख बनाने में विफल', true);
@@ -431,6 +420,7 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
         categoryId: `cat-${writerCategory.toLowerCase()}`,
         categoryName: writerCategory,
         imageUrl: extractedImageUrl,
+        featuredImage: extractedImageUrl,
         imageCaption: `${writerDistrict} में विशेष समाचार रिपोर्ट छायाचित्र`,
         status: 'PUBLISHED',
         priority: writerFormat === 'BREAKING' ? 'BREAKING' : 'NORMAL',
@@ -472,6 +462,7 @@ export const AiNewsroomScreen: React.FC<AiNewsroomScreenProps> = ({
         categoryId: `cat-${writerCategory.toLowerCase()}`,
         categoryName: writerCategory,
         imageUrl: extractedImageUrl,
+        featuredImage: extractedImageUrl,
         imageCaption: `${writerDistrict} में तैयार आलेख छायाचित्र`,
         status: 'PENDING_REVIEW',
         priority: writerFormat === 'BREAKING' ? 'BREAKING' : 'NORMAL',

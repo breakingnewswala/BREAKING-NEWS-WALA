@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   CheckCircle,
   XCircle,
@@ -20,9 +20,23 @@ import {
   History,
   MessageSquare,
   RefreshCw,
+  PlusCircle,
+  Image as ImageIcon,
+  Upload,
+  Trash2,
+  Bold,
+  Heading2,
+  Heading3,
+  List,
+  Quote,
+  FileText,
+  Layers,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 import {
   ArticleItem,
+  ArticleDetail,
   ArticlePriority,
   ArticleStatus,
   EditorialFactCheckResult,
@@ -55,6 +69,8 @@ export interface NewsroomDeskScreenProps {
   onSaveEditorialNotes?: (articleId: string, notes: string) => void;
   onUpdateReporterStatus?: (reporterId: string, status: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'TRAINEE') => void;
   onAssignReporterBeats?: (reporterId: string, beats: string[]) => void;
+  onPublishArticle?: (article: Partial<ArticleDetail>) => Promise<void> | void;
+  onAddPendingArticle?: (article: Partial<ArticleDetail>) => Promise<void> | void;
 }
 
 type QueueTab =
@@ -66,6 +82,18 @@ type QueueTab =
   | 'APPROVED'
   | 'PUBLISHED'
   | 'REJECTED';
+
+
+export const MP_PHOTO_PRESETS = [
+  { label: 'राजधानी भोपाल (मंत्रालय/सचिवालय)', url: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?w=1200&auto=format&fit=crop&q=80', credit: 'बीएनडब्ल्यू विशेष ब्यूरो' },
+  { label: 'इंदौर बीआरटीएस व शहरी विकास', url: 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=1200&auto=format&fit=crop&q=80', credit: 'इंदौर प्रतिनिधि' },
+  { label: 'उज्जैन महाकाल लोक व संस्कृति', url: 'https://images.unsplash.com/photo-1609766857041-ed402ea8069a?w=1200&auto=format&fit=crop&q=80', credit: 'उज्जैन ब्यूरो' },
+  { label: 'किसान, फसल व अनाज मंडी', url: 'https://images.unsplash.com/photo-1595246140625-573b715d11dc?w=1200&auto=format&fit=crop&q=80', credit: 'कृषि संवाददाता' },
+  { label: 'पुलिस, कानून व्यवस्था व जांच', url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=1200&auto=format&fit=crop&q=80', credit: 'क्राइम डेस्क' },
+  { label: 'सड़क, दुर्घटना व हाईवे एंबुलेंस', url: 'https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?w=1200&auto=format&fit=crop&q=80', credit: 'आपातकालीन संवाद' },
+  { label: 'सड़क, फ्लाईओवर व निर्माण', url: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1200&auto=format&fit=crop&q=80', credit: 'इंफ्रास्ट्रक्चर डेस्क' },
+  { label: 'अस्पताल व स्वास्थ्य सेवाएं', url: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=1200&auto=format&fit=crop&q=80', credit: 'स्वास्थ्य संवाददाता' },
+];
 
 const REJECTION_REASONS = [
   { code: 'UNVERIFIED_SOURCE', labelHindi: 'अपुष्ट स्रोत / आधारहीन दावा' },
@@ -96,6 +124,8 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
   onSaveEditorialNotes,
   onUpdateReporterStatus,
   onAssignReporterBeats,
+  onPublishArticle,
+  onAddPendingArticle,
 }) => {
   // Normalize string lists
   const normalizedCategories = useMemo(() => {
@@ -129,6 +159,24 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
   const [selectedArticleId, setSelectedArticleId] = useState<string>(
     combinedArticles[0]?.id || ''
   );
+
+  
+  // New Story Creation & Advanced Photo States
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [editedFeaturedImage, setEditedFeaturedImage] = useState('https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=1200&auto=format&fit=crop&q=80');
+  const [editedImageCaption, setEditedImageCaption] = useState('');
+  const [editedImageCredit, setEditedImageCredit] = useState('');
+  const [galleryImages, setGalleryImages] = useState<Array<{ id: string; url: string; caption: string; credit?: string }>>([]);
+  const [newGalleryUrl, setNewGalleryUrl] = useState('');
+  const [newGalleryCaption, setNewGalleryCaption] = useState('');
+  const [newGalleryCredit, setNewGalleryCredit] = useState('');
+  const [showAddGalleryModal, setShowAddGalleryModal] = useState(false);
+  const [showPresetPicker, setShowPresetPicker] = useState(false);
+  const [editedOfficialStatement, setEditedOfficialStatement] = useState('');
+  const [editedAuthorName, setEditedAuthorName] = useState(currentUser?.name || 'मुख्य संपादक');
+  const [editedTags, setEditedTags] = useState('मध्य प्रदेश, ताज़ा खबर');
+  const featuredFileInputRef = useRef<HTMLInputElement>(null);
+  const galleryFileInputRef = useRef<HTMLInputElement>(null);
 
   // Sub-editing state
   const [isEditing, setIsEditing] = useState(false);
@@ -261,6 +309,175 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
   }, [selectedArticle?.id, selectedArticle, normalizedDistricts, normalizedCategories]);
 
   // Handlers
+  const handleStartNewArticle = () => {
+    setIsCreatingNew(true);
+    setSelectedArticleId('');
+    setEditedTitle('');
+    setEditedSubheadline('');
+    setEditedContent('');
+    setEditedDistrict(normalizedDistricts[0] || 'भोपाल');
+    setEditedCategory(normalizedCategories[0] || 'मध्य प्रदेश');
+    setEditedSeoTitle('');
+    setEditedSeoDesc('');
+    setEditedPriority('NORMAL');
+    setIsBreakingTag(false);
+    setEditedFeaturedImage(MP_PHOTO_PRESETS[0].url);
+    setEditedImageCaption('मंत्रालय व प्रशासनिक भवन, भोपाल');
+    setEditedImageCredit('बीएनडब्ल्यू विशेष ब्यूरो');
+    setGalleryImages([]);
+    setEditedOfficialStatement('');
+    setEditedAuthorName(currentUser?.name || 'मुख्य संपादक');
+    setEditedTags('मध्य प्रदेश, ताज़ा खबर');
+    setIsEditing(true);
+    setFactCheckResult(null);
+  };
+
+  const handleCancelNewArticle = () => {
+    setIsCreatingNew(false);
+    setIsEditing(false);
+    if (combinedArticles[0]) {
+      setSelectedArticleId(combinedArticles[0].id);
+    }
+  };
+
+  const handleSaveOrPublishNew = async (targetStatus: 'DRAFT' | 'PENDING_REVIEW' | 'PUBLISHED') => {
+    if (!editedTitle.trim()) {
+      setDeskNotice({ type: 'error', text: 'कृपया समाचार का शीर्षक दर्ज करें।' });
+      return;
+    }
+    if (!editedContent.trim()) {
+      setDeskNotice({ type: 'error', text: 'कृपया समाचार का विवरण/सामग्री दर्ज करें।' });
+      return;
+    }
+
+    const newId = `desk-${Date.now()}`;
+    const newArticlePayload: Partial<ArticleDetail> = {
+      id: newId,
+      title: editedTitle.trim(),
+      subheadline: editedSubheadline.trim(),
+      content: editedContent.trim(),
+      summary: editedSubheadline.trim() || editedContent.trim().substring(0, 160),
+      districtName: editedDistrict,
+      categoryName: editedCategory,
+      priority: editedPriority,
+      isBreaking: isBreakingTag,
+      featuredImage: editedFeaturedImage || MP_PHOTO_PRESETS[0].url,
+      imageUrl: editedFeaturedImage || MP_PHOTO_PRESETS[0].url,
+      imageCaption: editedImageCaption,
+      imageCredit: editedImageCredit,
+      galleryImages: galleryImages,
+      officialStatement: editedOfficialStatement,
+      authorName: editedAuthorName || currentUser?.name || 'मुख्य संपादक',
+      authorRole: 'DESK_CHIEF',
+      tags: editedTags.split(',').map((t) => t.trim()).filter(Boolean),
+      seoTitle: editedSeoTitle || editedTitle,
+      seoDescription: editedSeoDesc || editedSubheadline || editedContent.substring(0, 150),
+      status: targetStatus as any,
+      publishedAt: targetStatus === 'PUBLISHED' ? new Date().toISOString() : undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      if (targetStatus === 'PUBLISHED') {
+        if (onPublishArticle) {
+          await onPublishArticle(newArticlePayload);
+        } else {
+          onApproveAndPublish(newId, editedTitle, editedContent, editedDistrict, editedCategory);
+        }
+        setDeskNotice({ type: 'success', text: '✨ नया समाचार सीधे लाइव प्रकाशित कर दिया गया है!' });
+      } else {
+        if (onAddPendingArticle) {
+          await onAddPendingArticle(newArticlePayload);
+        }
+        setDeskNotice({
+          type: 'success',
+          text: targetStatus === 'DRAFT' ? 'ड्राफ्ट सुरक्षित कर लिया गया है।' : 'समाचार समीक्षा कतार में जोड़ दिया गया है।'
+        });
+      }
+      setIsCreatingNew(false);
+      setIsEditing(false);
+    } catch (err: any) {
+      setDeskNotice({ type: 'error', text: `समाचार सहेजने में विफल: ${err?.message || 'त्रुटि'}` });
+    }
+  };
+
+  const handleFeaturedImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setEditedFeaturedImage(reader.result);
+          setDeskNotice({ type: 'success', text: `फोटो अपलोड सफल: ${file.name}` });
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleGalleryImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          const newPhoto = {
+            id: `gal-${Date.now()}`,
+            url: reader.result,
+            caption: newGalleryCaption || file.name,
+            credit: newGalleryCredit || 'बीएनडब्ल्यू न्यूज़ डेस्क',
+          };
+          setGalleryImages((prev) => [...prev, newPhoto]);
+          setShowAddGalleryModal(false);
+          setNewGalleryUrl('');
+          setNewGalleryCaption('');
+          setNewGalleryCredit('');
+          setDeskNotice({ type: 'success', text: 'अतिरिक्त फोटो गैलरी में जोड़ी गई।' });
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAddGalleryUrl = () => {
+    if (!newGalleryUrl.trim()) return;
+    const newPhoto = {
+      id: `gal-${Date.now()}`,
+      url: newGalleryUrl.trim(),
+      caption: newGalleryCaption.trim() || 'ग्राउंड फोटो',
+      credit: newGalleryCredit.trim() || 'बीएनडब्ल्यू न्यूज़ डेस्क',
+    };
+    setGalleryImages((prev) => [...prev, newPhoto]);
+    setShowAddGalleryModal(false);
+    setNewGalleryUrl('');
+    setNewGalleryCaption('');
+    setNewGalleryCredit('');
+    setDeskNotice({ type: 'success', text: 'अतिरिक्त फोटो गैलरी में जोड़ी गई।' });
+  };
+
+  const handleRemoveGalleryPhoto = (id: string) => {
+    setGalleryImages((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const insertFormatting = (prefix: string, suffix: string = '') => {
+    const textarea = document.getElementById('newsroom-content-editor') as HTMLTextAreaElement | null;
+    if (!textarea) {
+      setEditedContent((prev) => `${prev}\n${prefix}${suffix}`);
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = editedContent.substring(start, end);
+    const replacement = `${prefix}${selected || 'यहां लिखें'}${suffix}`;
+    const nextContent = editedContent.substring(0, start) + replacement + editedContent.substring(end);
+    setEditedContent(nextContent);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + prefix.length, start + prefix.length + (selected ? selected.length : 9));
+    }, 50);
+  };
+
   const handleRunAiAudit = async () => {
     if (!selectedArticle) return;
     setIsAiAuditing(true);
@@ -360,7 +577,17 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
       editedDistrict,
       editedCategory
     );
+    if (selectedArticle) {
+      (selectedArticle as any).featuredImage = editedFeaturedImage;
+      (selectedArticle as any).imageUrl = editedFeaturedImage;
+      (selectedArticle as any).imageCaption = editedImageCaption;
+      (selectedArticle as any).imageCredit = editedImageCredit;
+      (selectedArticle as any).galleryImages = galleryImages;
+      (selectedArticle as any).officialStatement = editedOfficialStatement;
+      (selectedArticle as any).authorName = editedAuthorName;
+    }
     setDeskNotice({ type: 'success', text: 'स्टोरी सफलतापूर्वक लाइव प्रकाशित की गई।' });
+    setIsEditing(false);
   };
 
   const handleTriggerBroadcast = () => {
@@ -562,6 +789,14 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
       {/* Multi-Dimensional Filter Bar */}
       <div className="max-w-7xl mx-auto px-4 pt-4 pb-2">
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center gap-2.5 text-xs">
+          <button
+            type="button"
+            onClick={handleStartNewArticle}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg font-bold text-xs shadow-xs transition-colors shrink-0"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>+ नया समाचार जोड़ें</span>
+          </button>
           <div className="flex-1 min-w-[200px] relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
@@ -639,7 +874,7 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
 
       {/* Main Workspace Layout */}
       <div className="max-w-7xl mx-auto px-4 py-3">
-        {filteredArticles.length === 0 ? (
+        {filteredArticles.length === 0 && !isCreatingNew ? (
           <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3">
             <CheckCircle className="w-14 h-14 text-emerald-500 mx-auto" />
             <h3 className="text-lg font-bold text-slate-900">
@@ -704,75 +939,102 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
             </div>
 
             {/* Right Column: Editorial & Sub-Editing Workspace (8 cols) */}
-            {selectedArticle && (
+            {(selectedArticle || isCreatingNew) ? (
               <div className="lg:col-span-8 space-y-4">
                 <div className="bg-white p-5 md:p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
                   {/* Top Metadata Header & Quick Action Buttons */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="bg-red-600 text-white text-xs font-bold px-2.5 py-0.5 rounded">
-                        {selectedArticle.districtName}
-                      </span>
-                      <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-2 py-0.5 rounded">
-                        {selectedArticle.categoryName}
-                      </span>
-                      {renderPriorityBadge(editedPriority || selectedArticle.priority)}
-                      {renderStatusBadge(selectedArticle.status)}
+                      {isCreatingNew ? (
+                        <>
+                          <span className="bg-red-600 text-white text-xs font-bold px-2.5 py-0.5 rounded flex items-center gap-1 shadow-xs">
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            नया समाचार निर्माण (New Story Desk)
+                          </span>
+                          <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded">
+                            संपादकीय डेस्क ड्राफ्ट
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="bg-red-600 text-white text-xs font-bold px-2.5 py-0.5 rounded">
+                            {selectedArticle?.districtName}
+                          </span>
+                          <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-2 py-0.5 rounded">
+                            {selectedArticle?.categoryName}
+                          </span>
+                          {renderPriorityBadge(editedPriority || selectedArticle?.priority)}
+                          {renderStatusBadge(selectedArticle?.status || 'PENDING_REVIEW')}
+                        </>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      {/* Claim Button */}
-                      <button
-                        type="button"
-                        onClick={handleClaim}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition-colors ${
-                          selectedArticle.claimedBy || selectedArticle.assignedEditorName
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                      >
-                        {selectedArticle.claimedBy || selectedArticle.assignedEditorName ? (
-                          <Lock className="w-3.5 h-3.5" />
-                        ) : (
-                          <Unlock className="w-3.5 h-3.5" />
-                        )}
-                        <span>
-                          {selectedArticle.claimedBy || selectedArticle.assignedEditorName
-                            ? `डेस्क: ${selectedArticle.claimedBy || selectedArticle.assignedEditorName}`
-                            : 'स्टोरी क्लेम करें'}
-                        </span>
-                      </button>
+                      {isCreatingNew ? (
+                        <button
+                          type="button"
+                          onClick={handleCancelNewArticle}
+                          className="flex items-center gap-1 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>रद्द करें</span>
+                        </button>
+                      ) : (
+                        <>
+                          {/* Claim Button */}
+                          <button
+                            type="button"
+                            onClick={handleClaim}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition-colors ${
+                              selectedArticle?.claimedBy || selectedArticle?.assignedEditorName
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            {selectedArticle?.claimedBy || selectedArticle?.assignedEditorName ? (
+                              <Lock className="w-3.5 h-3.5" />
+                            ) : (
+                              <Unlock className="w-3.5 h-3.5" />
+                            )}
+                            <span>
+                              {selectedArticle?.claimedBy || selectedArticle?.assignedEditorName
+                                ? `डेस्क: ${selectedArticle?.claimedBy || selectedArticle?.assignedEditorName}`
+                                : 'स्टोरी क्लेम करें'}
+                            </span>
+                          </button>
 
-                      {/* Reassign Button */}
-                      <button
-                        type="button"
-                        onClick={() => setShowReassignModal(true)}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold transition-colors"
-                      >
-                        <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                        <span>रीअसाइन</span>
-                      </button>
+                          {/* Reassign Button */}
+                          <button
+                            type="button"
+                            onClick={() => setShowReassignModal(true)}
+                            className="flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold transition-colors"
+                          >
+                            <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                            <span>रीअसाइन</span>
+                          </button>
 
-                      {/* Sub-editing Toggle */}
-                      <button
-                        type="button"
-                        onClick={() => setIsEditing(!isEditing)}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition-colors ${
-                          isEditing
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>{isEditing ? 'संपादन मोड सक्रिय' : 'सब-एडिट करें'}</span>
-                      </button>
+                          {/* Sub-editing Toggle */}
+                          <button
+                            type="button"
+                            onClick={() => setIsEditing(!isEditing)}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition-colors ${
+                              isEditing
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>{isEditing ? 'संपादन मोड सक्रिय' : 'सब-एडिट करें'}</span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 
                   {/* Priority & Breaking Quick Controls Bar */}
                   <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-700">प्राथमिकता बदलें:</span>
+                      <span className="font-bold text-slate-700">प्राथमिकता:</span>
                       {(['NORMAL', 'HIGH', 'CRITICAL', 'BREAKING'] as ArticlePriority[]).map((p) => (
                         <button
                           key={p}
@@ -803,33 +1065,37 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
                         <span>{isBreakingTag ? 'ब्रेकिंग सक्रिय है' : 'ब्रेकिंग टैग लगाएं'}</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowScheduleModal(true)}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded font-bold text-xs"
-                      >
-                        <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>{selectedArticle.scheduledAt ? 'पुनः शेड्यूल करें' : 'शेड्यूल करें'}</span>
-                      </button>
+                      {!isCreatingNew && selectedArticle && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setShowScheduleModal(true)}
+                            className="flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded font-bold text-xs"
+                          >
+                            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{selectedArticle.scheduledAt ? 'पुनः शेड्यूल करें' : 'शेड्यूल करें'}</span>
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowNotesModal(true)}
-                        className="flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded font-bold text-xs"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>आंतरिक टिप्पणी</span>
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowNotesModal(true)}
+                            className="flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded font-bold text-xs"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>आंतरिक टिप्पणी</span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 
                   {/* Headline & Subheadline (Display or Edit) */}
-                  {isEditing ? (
+                  {(isEditing || isCreatingNew) ? (
                     <div className="space-y-3">
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-xs font-bold text-slate-700">
-                            संपादित मुख्य शीर्षक (Headline):
+                            संपादित मुख्य शीर्षक (Headline) *
                           </label>
                           <span className="text-[10px] text-slate-400 font-mono">
                             {editedTitle.length} अक्षर
@@ -839,7 +1105,8 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
                           type="text"
                           value={editedTitle}
                           onChange={(e) => setEditedTitle(e.target.value)}
-                          className="w-full text-sm font-bold p-2.5 border border-blue-400 rounded-lg bg-blue-50/20"
+                          placeholder="उदा. भोपाल: नर्मदा परिक्रमा कर लौट रहे श्रद्धालुओं से भरी ट्रैक्टर-ट्रॉली पलटी, 3 की मौत"
+                          className="w-full text-sm font-bold p-2.5 border border-blue-400 rounded-lg bg-blue-50/20 focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
 
@@ -851,14 +1118,14 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
                           type="text"
                           value={editedSubheadline}
                           onChange={(e) => setEditedSubheadline(e.target.value)}
-                          placeholder="खबर का एक वाक्य में सार..."
+                          placeholder="उदा. घायल 30 श्रद्धालुओं को तत्काल जिला अस्पताल में भर्ती कराया गया, प्रशासन अलर्ट मोड पर..."
                           className="w-full text-xs p-2 border border-blue-300 rounded-lg bg-blue-50/10"
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">जिला:</label>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">जिला (District):</label>
                           <select
                             value={editedDistrict}
                             onChange={(e) => setEditedDistrict(e.target.value)}
@@ -871,8 +1138,9 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
                             ))}
                           </select>
                         </div>
+
                         <div>
-                          <label className="block text-xs font-bold text-slate-700 mb-1">श्रेणी:</label>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">श्रेणी (Category):</label>
                           <select
                             value={editedCategory}
                             onChange={(e) => setEditedCategory(e.target.value)}
@@ -885,57 +1153,330 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
                             ))}
                           </select>
                         </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">लेखक / संवाददाता (Byline):</label>
+                          <input
+                            type="text"
+                            value={editedAuthorName}
+                            onChange={(e) => setEditedAuthorName(e.target.value)}
+                            placeholder="मुख्य संपादक / संवाददाता नाम"
+                            className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white"
+                          />
+                        </div>
                       </div>
                     </div>
                   ) : (
                     <div>
                       <h2 className="text-base md:text-xl font-bold text-slate-900 leading-snug">
-                        {editedTitle || selectedArticle.title}
+                        {editedTitle || selectedArticle?.title}
                       </h2>
-                      {(editedSubheadline || selectedArticle.subheadline) && (
+                      {(editedSubheadline || selectedArticle?.subheadline) && (
                         <p className="text-xs md:text-sm text-slate-600 mt-1 font-medium">
-                          {editedSubheadline || selectedArticle.subheadline}
+                          {editedSubheadline || selectedArticle?.subheadline}
                         </p>
                       )}
                     </div>
                   )}
 
-                  {/* Image Preview & Credit */}
-                  {selectedArticle.featuredImage && (
-                    <div className="rounded-xl overflow-hidden border border-slate-200">
-                      <img
-                        src={selectedArticle.featuredImage}
-                        alt="ग्राउंड फोटो"
-                        className="w-full h-48 sm:h-56 object-cover"
-                      />
-                      {(selectedArticle.imageCaption || selectedArticle.imageCredit) && (
-                        <div className="text-[11px] text-slate-600 bg-slate-50 p-2 border-t border-slate-200 flex items-center justify-between">
-                          <span>{selectedArticle.imageCaption}</span>
-                          {selectedArticle.imageCredit && (
-                            <span className="text-slate-400">फोटो साभार: {selectedArticle.imageCredit}</span>
-                          )}
+                  {/* Photo Management Section (Featured Image + Multiple Photo Gallery) */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-red-600" />
+                        <h4 className="text-xs font-bold text-slate-800">
+                          फोटो प्रबंधन (Featured Photo & Gallery)
+                        </h4>
+                      </div>
+                      {(isEditing || isCreatingNew) && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowPresetPicker(!showPresetPicker)}
+                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 px-2 py-1 bg-indigo-50 border border-indigo-200 rounded-md"
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                            <span>म.प्र. प्रेस लाइब्रेरी</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => featuredFileInputRef.current?.click()}
+                            className="text-[11px] font-bold text-slate-700 hover:text-slate-900 flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-300 rounded-md shadow-2xs"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-blue-600" />
+                            <span>फ़ोटो अपलोड</span>
+                          </button>
+                          <input
+                            type="file"
+                            ref={featuredFileInputRef}
+                            accept="image/*"
+                            onChange={handleFeaturedImageUpload}
+                            className="hidden"
+                          />
                         </div>
                       )}
                     </div>
-                  )}
+
+                    {/* MP Photo Presets Drawer if toggled */}
+                    {showPresetPicker && (isEditing || isCreatingNew) && (
+                      <div className="p-3 bg-white border border-indigo-200 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
+                          <span>मध्य प्रदेश प्रेस फोटो लाइब्रेरी (8 थीम्स)</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowPresetPicker(false)}
+                            className="text-slate-400 hover:text-slate-600"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {MP_PHOTO_PRESETS.map((preset, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                setEditedFeaturedImage(preset.url);
+                                setEditedImageCaption(preset.label);
+                                setEditedImageCredit(preset.credit);
+                                setShowPresetPicker(false);
+                                setDeskNotice({ type: 'success', text: `फोटो चुनी गई: ${preset.label}` });
+                              }}
+                              className="group border border-slate-200 hover:border-indigo-500 rounded-lg overflow-hidden cursor-pointer transition-all bg-slate-50 hover:bg-indigo-50/30"
+                            >
+                              <img
+                                src={preset.url}
+                                alt={preset.label}
+                                className="w-full h-16 object-cover group-hover:scale-105 transition-transform"
+                              />
+                              <p className="text-[10px] font-bold text-slate-700 p-1.5 truncate">
+                                {preset.label}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Featured Image Display or Edit */}
+                    {(isEditing || isCreatingNew) ? (
+                      <div className="space-y-2.5">
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            value={editedFeaturedImage}
+                            onChange={(e) => setEditedFeaturedImage(e.target.value)}
+                            placeholder="मुख्य फोटो का वेब URL दर्ज करें (https://...)"
+                            className="flex-1 text-xs p-2 border border-slate-300 rounded-lg bg-white"
+                          />
+                        </div>
+
+                        {editedFeaturedImage && (
+                          <div className="relative rounded-xl overflow-hidden border border-slate-200 max-h-56 bg-slate-900 flex items-center justify-center">
+                            <img
+                              src={editedFeaturedImage}
+                              alt="मुख्य फोटो पूर्वावलोकन"
+                              className="w-full h-48 sm:h-56 object-cover"
+                            />
+                            <div className="absolute top-2 right-2 bg-slate-900/80 text-white text-[10px] px-2 py-0.5 rounded backdrop-blur-xs font-semibold">
+                              मुख्य फोटो
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600">फोटो कैप्शन (Caption):</label>
+                            <input
+                              type="text"
+                              value={editedImageCaption}
+                              onChange={(e) => setEditedImageCaption(e.target.value)}
+                              placeholder="उदा. घटनास्थल पर राहत एवं बचाव कार्य में जुटी प्रशासन की टीम"
+                              className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600">फोटो साभार (Credit):</label>
+                            <input
+                              type="text"
+                              value={editedImageCredit}
+                              onChange={(e) => setEditedImageCredit(e.target.value)}
+                              placeholder="उदा. बीएनडब्ल्यू विशेष संवाददाता / पीटीआई"
+                              className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      (editedFeaturedImage || selectedArticle?.featuredImage) && (
+                        <div className="rounded-xl overflow-hidden border border-slate-200">
+                          <img
+                            src={editedFeaturedImage || selectedArticle?.featuredImage}
+                            alt="ग्राउंड फोटो"
+                            className="w-full h-48 sm:h-56 object-cover"
+                          />
+                          {(editedImageCaption || selectedArticle?.imageCaption || editedImageCredit || selectedArticle?.imageCredit) && (
+                            <div className="text-[11px] text-slate-600 bg-slate-50 p-2 border-t border-slate-200 flex items-center justify-between">
+                              <span>{editedImageCaption || selectedArticle?.imageCaption}</span>
+                              {(editedImageCredit || selectedArticle?.imageCredit) && (
+                                <span className="text-slate-400">
+                                  फोटो साभार: {editedImageCredit || selectedArticle?.imageCredit}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    )}
+
+                    {/* Multiple Photo Gallery Section */}
+                    <div className="pt-2 border-t border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                          <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                          <span>अतिरिक्त फोटो गैलरी ({galleryImages.length})</span>
+                        </span>
+                        {(isEditing || isCreatingNew) && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAddGalleryModal(true)}
+                            className="text-[11px] font-bold text-red-600 hover:text-red-700 flex items-center gap-1"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            <span>+ फोटो जोड़ें</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {galleryImages.length > 0 ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {galleryImages.map((img) => (
+                            <div
+                              key={img.id}
+                              className="relative group rounded-lg overflow-hidden border border-slate-200 bg-white"
+                            >
+                              <img
+                                src={img.url}
+                                alt={img.caption || 'गैलरी फोटो'}
+                                className="w-full h-20 object-cover"
+                              />
+                              {(isEditing || isCreatingNew) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveGalleryPhoto(img.id)}
+                                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                              {img.caption && (
+                                <p className="text-[10px] text-slate-600 p-1 truncate bg-slate-50 border-t border-slate-100">
+                                  {img.caption}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic">
+                          कोई अतिरिक्त फोटो नहीं जोड़ी गई है। खबर में कई तस्वीरें शामिल करने हेतु '+ फोटो जोड़ें' पर क्लिक करें।
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
                   {/* Article Body Content (Display or Edit) */}
-                  {isEditing ? (
+                  {(isEditing || isCreatingNew) ? (
                     <div className="space-y-3">
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          संपादित खबर विवरण (Content Body):
-                        </label>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-blue-600" />
+                            <span>संपादित खबर विवरण (Content Body) *</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {editedContent.length} अक्षर | ~{editedContent.split(/\s+/).filter(Boolean).length} शब्द
+                          </span>
+                        </div>
+
+                        {/* Rich Formatting Toolbar */}
+                        <div className="flex flex-wrap items-center gap-1 p-1.5 bg-slate-100 border border-slate-300 rounded-t-lg text-slate-700 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => insertFormatting('**', '**')}
+                            className="p-1.5 hover:bg-white rounded font-bold hover:text-slate-900"
+                            title="बोल्ड करें"
+                          >
+                            <Bold className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => insertFormatting('## ', '')}
+                            className="px-2 py-1 hover:bg-white rounded font-bold text-xs"
+                            title="मुख्य उप-शीर्षक (H2)"
+                          >
+                            <Heading2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => insertFormatting('### ', '')}
+                            className="px-2 py-1 hover:bg-white rounded font-bold text-xs"
+                            title="खंड शीर्षक (H3)"
+                          >
+                            <Heading3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => insertFormatting('\n- ', '')}
+                            className="p-1.5 hover:bg-white rounded hover:text-slate-900"
+                            title="बुलेट सूची"
+                          >
+                            <List className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => insertFormatting('\n> ', '')}
+                            className="p-1.5 hover:bg-white rounded hover:text-slate-900"
+                            title="उद्धरण (Quote)"
+                          >
+                            <Quote className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => insertFormatting('\n> **प्रशासनिक पक्ष:** ', '')}
+                            className="px-2 py-0.5 bg-white border border-slate-200 rounded font-bold text-[11px] text-indigo-700 hover:bg-indigo-50"
+                            title="प्रशासनिक बयान बॉक्स"
+                          >
+                            + प्रशासनिक बयान
+                          </button>
+                        </div>
+
                         <textarea
+                          id="newsroom-content-editor"
                           value={editedContent}
                           onChange={(e) => setEditedContent(e.target.value)}
-                          rows={8}
-                          className="w-full text-xs md:text-sm p-3 border border-blue-400 rounded-lg bg-blue-50/20 leading-relaxed font-sans"
+                          rows={10}
+                          placeholder="खबर का विस्तृत विवरण यहां लिखें... (पैराग्राफ, प्रत्यक्षदर्शियों के बयान, प्रशासनिक प्रतिक्रिया आदि)"
+                          className="w-full text-xs md:text-sm p-3 border border-t-0 border-blue-400 rounded-b-lg bg-blue-50/15 leading-relaxed font-sans focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                         />
                       </div>
 
+                      {/* Official Statement Field */}
+                      <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 space-y-1">
+                        <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                          <span>प्रशासनिक / अधिकृत पक्ष (Official Administrative Statement):</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={editedOfficialStatement}
+                          onChange={(e) => setEditedOfficialStatement(e.target.value)}
+                          placeholder="उदा. कलेक्टर: 'मामले की मजिस्ट्रियल जांच के आदेश दे दिए गए हैं और पीड़ितों को मुआवजा वितरित किया जा रहा है...'"
+                          className="w-full text-xs p-2 border border-amber-300 rounded-lg bg-white"
+                        />
+                      </div>
+
+                      {/* SEO Tags & Metadata */}
                       <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                        <span className="text-xs font-bold text-slate-700 block">एसईओ मेटाडेटा (SEO Tags):</span>
+                        <span className="text-xs font-bold text-slate-700 block">एसईओ मेटाडेटा (SEO Tags & Search Keywords):</span>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                           <div>
                             <label className="text-[11px] text-slate-500">एसईओ टाइटल:</label>
@@ -943,29 +1484,41 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
                               type="text"
                               value={editedSeoTitle}
                               onChange={(e) => setEditedSeoTitle(e.target.value)}
+                              placeholder="गूगल सर्च के लिए अनुकूलित शीर्षक"
                               className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs"
                             />
                           </div>
                           <div>
-                            <label className="text-[11px] text-slate-500">मेटा विवरण:</label>
+                            <label className="text-[11px] text-slate-500">सर्च कीवर्ड्स / टैग्स (कॉमा से अलग):</label>
                             <input
                               type="text"
-                              value={editedSeoDesc}
-                              onChange={(e) => setEditedSeoDesc(e.target.value)}
+                              value={editedTags}
+                              onChange={(e) => setEditedTags(e.target.value)}
+                              placeholder="उदा. भोपाल, सड़क हादसा, राहत कार्य"
                               className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs"
                             />
                           </div>
                         </div>
+                        <div>
+                          <label className="text-[11px] text-slate-500">मेटा विवरण (Meta Description):</label>
+                          <input
+                            type="text"
+                            value={editedSeoDesc}
+                            onChange={(e) => setEditedSeoDesc(e.target.value)}
+                            placeholder="सोशल मीडिया शेयरिंग व गूगल सर्च परिणाम हेतु 150 अक्षरों का विवरण"
+                            className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs"
+                          />
+                        </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 whitespace-pre-line leading-relaxed max-h-64 overflow-y-auto">
-                      {editedContent || selectedArticle.content}
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 whitespace-pre-line leading-relaxed max-h-72 overflow-y-auto">
+                      {editedContent || selectedArticle?.content}
                     </div>
                   )}
 
                   {/* Scheduled Alert Notice if set */}
-                  {selectedArticle.scheduledAt && (
+                  {selectedArticle?.scheduledAt && (
                     <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg text-xs flex items-center gap-2 text-indigo-900 font-medium">
                       <Clock className="w-4 h-4 text-indigo-600 shrink-0" />
                       <span>
@@ -1026,7 +1579,7 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
                   </div>
 
                   {/* Revision History Display */}
-                  {selectedArticle.revisionHistory && selectedArticle.revisionHistory.length > 0 && (
+                  {selectedArticle?.revisionHistory && selectedArticle.revisionHistory.length > 0 && (
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                       <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                         <History className="w-3.5 h-3.5 text-slate-500" />
@@ -1051,33 +1604,103 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
 
                   {/* Editorial Actions Footer Bar */}
                   <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => setShowRevisionModal(true)}
-                        className="flex items-center gap-1 px-3 py-2 bg-amber-50 border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-bold transition-colors"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>संशोधन मांगें</span>
-                      </button>
+                    {isCreatingNew ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleCancelNewArticle}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                        >
+                          रद्द करें
+                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveOrPublishNew('DRAFT')}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition-colors"
+                          >
+                            ड्राफ्ट सहेजें
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveOrPublishNew('PENDING_REVIEW')}
+                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-colors"
+                          >
+                            समीक्षा कतार में भेजें
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveOrPublishNew('PUBLISHED')}
+                            className="flex items-center gap-1.5 px-5 py-2.5 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                            <span>स्वीकृत कर तुरंत लाइव प्रकाशित करें</span>
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowRevisionModal(true)}
+                            className="flex items-center gap-1 px-3 py-2 bg-amber-50 border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-lg text-xs font-bold transition-colors"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>संशोधन मांगें</span>
+                          </button>
 
-                      <button
-                        onClick={() => setShowRejectModal(true)}
-                        className="flex items-center gap-1 px-3 py-2 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold transition-colors"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        <span>अस्वीकृत करें</span>
-                      </button>
-                    </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowRejectModal(true)}
+                            className="flex items-center gap-1 px-3 py-2 bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-bold transition-colors"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>अस्वीकृत करें</span>
+                          </button>
+                        </div>
 
-                    <button
-                      onClick={handlePublishClick}
-                      className="flex items-center gap-1.5 px-5 py-2.5 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>स्वीकृत करें व लाइव प्रकाशित करें</span>
-                    </button>
+                        <div className="flex items-center gap-2">
+                          {isEditing && (
+                            <button
+                              type="button"
+                              onClick={() => setIsEditing(false)}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                            >
+                              संपादन रद्द
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handlePublishClick}
+                            className="flex items-center gap-1.5 px-5 py-2.5 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                            <span>
+                              {isEditing ? 'परिवर्तन सहेजें व लाइव प्रकाशित करें' : 'स्वीकृत करें व लाइव प्रकाशित करें'}
+                            </span>
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
+              </div>
+            ) : (
+              <div className="lg:col-span-8 bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-3">
+                <FileText className="w-12 h-12 text-slate-300 mx-auto" />
+                <h3 className="text-base font-bold text-slate-700">कोई स्टोरी चयनित नहीं है</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  समीक्षा या संपादन हेतु बाईं कतार से किसी खबर का चयन करें या ऊपर '+ नया समाचार जोड़ें' पर क्लिक करें।
+                </p>
+                <button
+                  type="button"
+                  onClick={handleStartNewArticle}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#ED1727] hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>+ नया समाचार जोड़ें</span>
+                </button>
               </div>
             )}
           </div>
@@ -1585,6 +2208,109 @@ export const NewsroomDeskScreen: React.FC<NewsroomDeskScreenProps> = ({
           </div>
         </div>
       )}
+      {/* MODAL 7: Add Gallery Photo */}
+      {showAddGalleryModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-5 space-y-4 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                <ImageIcon className="w-4 h-4 text-red-600" />
+                <span>अतिरिक्त फोटो गैलरी में जोड़ें</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddGalleryModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  फोटो URL दर्ज करें:
+                </label>
+                <input
+                  type="text"
+                  value={newGalleryUrl}
+                  onChange={(e) => setNewGalleryUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white"
+                />
+              </div>
+
+              <div className="text-center text-xs font-semibold text-slate-400">या</div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  कंप्यूटर / डिवाइस से फोटो फ़ाइल अपलोड करें:
+                </label>
+                <button
+                  type="button"
+                  onClick={() => galleryFileInputRef.current?.click()}
+                  className="w-full py-2 px-3 border border-dashed border-blue-400 bg-blue-50/40 hover:bg-blue-50 text-blue-700 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>फ़ोटो चुनें</span>
+                </button>
+                <input
+                  type="file"
+                  ref={galleryFileInputRef}
+                  accept="image/*"
+                  onChange={handleGalleryImageUpload}
+                  className="hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  फोटो कैप्शन (वैकल्पिक):
+                </label>
+                <input
+                  type="text"
+                  value={newGalleryCaption}
+                  onChange={(e) => setNewGalleryCaption(e.target.value)}
+                  placeholder="उदा. राहत कार्य की अन्य तस्वीर"
+                  className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  फोटो साभार / क्रेडिट (वैकल्पिक):
+                </label>
+                <input
+                  type="text"
+                  value={newGalleryCredit}
+                  onChange={(e) => setNewGalleryCredit(e.target.value)}
+                  placeholder="उदा. बीएनडब्ल्यू ब्यूरो"
+                  className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowAddGalleryModal(false)}
+                className="px-3 py-1.5 text-xs text-slate-600 font-semibold"
+              >
+                रद्द करें
+              </button>
+              <button
+                type="button"
+                onClick={handleAddGalleryUrl}
+                disabled={!newGalleryUrl.trim()}
+                className="px-4 py-1.5 bg-[#ED1727] hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-xs disabled:opacity-50"
+              >
+                गैलरी में जोड़ें
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

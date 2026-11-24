@@ -35,6 +35,7 @@ import {
 } from './persistence/adapter.js';
 import { aiProviderPool, AI_MODELS, ROLE_DAILY_QUOTAS } from './ai/providerPool.js';
 import { generateNewsDraft } from './ai/newsWriterAgent.js';
+import { extractNewsFromUrl } from './ai/urlNewsExtractor.js';
 import { generateFiveHeadlines } from './ai/headlineAgent.js';
 import { summarizeNews, rewriteNews } from './ai/summarizerAgent.js';
 import { performFactCheck } from './ai/factCheckAgent.js';
@@ -5662,6 +5663,41 @@ export async function handleApiRequest(req, res) {
       models: AI_MODELS,
       roleQuotas: ROLE_DAILY_QUOTAS,
     });
+  }
+
+  // 10a-2. Smart URL News Extractor & Auto-Draft Endpoint
+  if (pathname === '/api/v1/ai/extract-from-url' && req.method === 'POST') {
+    const body = await parseRequestBody(req);
+    const userId = user?.id || 'usr-desk';
+    const userRole = user?.role || user?.roles?.[0] || 'REPORTER';
+
+    try {
+      const result = await extractNewsFromUrl({
+        ...body,
+        userId,
+        userRole,
+      });
+
+      // Record AI usage
+      await adapter.recordAiUsage({
+        userId,
+        userRole,
+        promptCategory: 'NEWS_EXTRACTOR',
+        provider: result.data.provider,
+        model: result.data.model,
+        inputTokens: 400,
+        outputTokens: 650,
+        totalTokens: 1050,
+        estimatedCostInr: 0.15,
+        executionTimeMs: 450,
+        success: true,
+      });
+
+      adapter.addAuditLog(user?.fullName || 'डेस्क संपादक', 'AI_WRITER', 'URL_NEWS_EXTRACTED', `URL से समाचार निष्कर्षित: "${result.data.headline}" (${body.url})`, req);
+      return sendSuccess(res, result.data);
+    } catch (err) {
+      return sendError(res, 400, 'ERR_URL_EXTRACTION_FAILED', err.message);
+    }
   }
 
   // 10b. AI News Writer Endpoint

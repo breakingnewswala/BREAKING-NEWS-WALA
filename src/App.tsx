@@ -31,6 +31,8 @@ import { BnwMasthead } from './components/BnwMasthead';
 import { BottomNav, NavTab } from './components/BottomNav';
 import { NavDrawer } from './components/NavDrawer';
 import { Footer } from './components/Footer';
+import { StagingBanner } from './components/common/StagingBanner';
+import { PolicySectionKey } from './types';
 // Performance Optimization (ME-027 / STEP 18): Code-splitting operational and content surfaces
 const HomeScreen = React.lazy(() => import('./screens/HomeScreen').then((m) => ({ default: m.HomeScreen })));
 const ArticleDetailScreen = React.lazy(() => import('./screens/ArticleDetailScreen').then((m) => ({ default: m.ArticleDetailScreen })));
@@ -43,6 +45,7 @@ const ProfileScreen = React.lazy(() => import('./screens/ProfileScreen').then((m
 const GraphicsStudioScreen = React.lazy(() => import('./screens/GraphicsStudioScreen').then((m) => ({ default: m.GraphicsStudioScreen })));
 const VideoStudioScreen = React.lazy(() => import('./screens/VideoStudioScreen').then((m) => ({ default: m.VideoStudioScreen })));
 const AiNewsroomScreen = React.lazy(() => import('./screens/AiNewsroomScreen').then((m) => ({ default: m.AiNewsroomScreen })));
+const PolicyHubScreen = React.lazy(() => import('./screens/PolicyHubScreen').then((m) => ({ default: m.PolicyHubScreen })));
 import { TazaFeedScreen } from './components/taza/TazaFeedScreen';
 import { PublicVideoFeedScreen } from './components/video/PublicVideoFeedScreen';
 import { AdminVideoManagerModal } from './components/video/AdminVideoManagerModal';
@@ -96,6 +99,26 @@ export const App: React.FC = () => {
     setAdminInitialTab(tab);
     setAdminEpaperAction(action);
     navigateToTab('admin');
+  };
+
+  // Policy & Statutory Subpages State
+  const [activePolicySection, setActivePolicySection] = useState<PolicySectionKey>('privacy');
+
+  const handleNavigatePolicy = (section: PolicySectionKey) => {
+    setSelectedArticleId(null);
+    setActivePolicySection(section);
+    setActiveTab('policies');
+    const targetHash = section === 'privacy' ? '#privacy' :
+                       section === 'terms' ? '#terms' :
+                       section === 'payments' ? '#payments' :
+                       section === 'grievance' ? '#grievance' :
+                       section === 'editorial' ? '#editorial-policy' :
+                       section === 'about' ? '#about' :
+                       section === 'contact' ? '#contact' :
+                       section === 'disclaimer' ? '#disclaimer' :
+                       section === 'advertising' ? '#advertising' : `#${section}`;
+    window.location.hash = targetHash;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Operational Surface States
@@ -396,6 +419,34 @@ export const App: React.FC = () => {
       if (target === 'epaper' || target === 'search' || target === 'profile' || target === 'taza' || target === 'video-feed') {
         setSelectedArticleId(null);
         setActiveTab(target as NavTab);
+      } else if (
+        [
+          'privacy',
+          'terms',
+          'payments',
+          'refund',
+          'refund-policy',
+          'grievance',
+          'editorial',
+          'editorial-policy',
+          'about',
+          'contact',
+          'disclaimer',
+          'advertising',
+          'policies',
+        ].includes(target)
+      ) {
+        setSelectedArticleId(null);
+        setActiveTab('policies');
+        if (target === 'refund' || target === 'refund-policy') {
+          setActivePolicySection('payments');
+        } else if (target === 'editorial-policy') {
+          setActivePolicySection('editorial');
+        } else if (target === 'policies') {
+          // Keep current section or default to privacy
+        } else {
+          setActivePolicySection(target as PolicySectionKey);
+        }
       } else if (target === 'videos') {
         setSelectedArticleId(null);
         setActiveTab('video-feed');
@@ -497,7 +548,13 @@ export const App: React.FC = () => {
   const navigateToTab = (tab: NavTab) => {
     setSelectedArticleId(null);
     setActiveTab(tab);
-    window.location.hash = tab === 'home' ? '' : tab;
+    if (tab === 'home') {
+      window.location.hash = '';
+    } else if (tab === 'policies') {
+      window.location.hash = activePolicySection ? `#${activePolicySection}` : '#privacy';
+    } else {
+      window.location.hash = tab;
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1149,6 +1206,9 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+      {/* 0. Staging Environment Indicator Banner */}
+      <StagingBanner />
+
       {/* 1. Global Masthead with Menu button next to Logo */}
       <BnwMasthead
         onOpenMenu={() => setIsMenuOpen(true)}
@@ -1172,6 +1232,7 @@ export const App: React.FC = () => {
         onClose={() => setIsMenuOpen(false)}
         activeTab={activeTab}
         onTabSelect={navigateToTab}
+        onNavigatePolicy={handleNavigatePolicy}
         currentRole={currentRole}
         accountRole={accountRole}
         onRoleChange={(role) => setCurrentRole(role)}
@@ -1354,6 +1415,8 @@ export const App: React.FC = () => {
                 onSaveEditorialNotes={handleSaveEditorialNotes}
                 onUpdateReporterStatus={handleUpdateReporterStatus}
                 onAssignReporterBeats={handleAssignReporterBeats}
+                onPublishArticle={handleDirectPublishArticle}
+                onAddPendingArticle={handleAddPendingArticle}
               />
             )}
 
@@ -1440,6 +1503,8 @@ export const App: React.FC = () => {
                     onSaveEditorialNotes={handleSaveEditorialNotes}
                     onUpdateReporterStatus={handleUpdateReporterStatus}
                     onAssignReporterBeats={handleAssignReporterBeats}
+                    onPublishArticle={handleDirectPublishArticle}
+                    onAddPendingArticle={handleAddPendingArticle}
                   />
                 ) : (
                   <ReporterDeskScreen
@@ -1543,6 +1608,15 @@ export const App: React.FC = () => {
                 onAddToReviewQueue={handleAddPendingArticle}
               />
             )}
+
+            {/* Surface 8: Statutory Policies & Newsroom Info Hub */}
+            {activeTab === 'policies' && (
+              <PolicyHubScreen
+                initialSection={activePolicySection}
+                onNavigateHome={() => navigateToTab('home')}
+                onSectionChange={(sec) => setActivePolicySection(sec)}
+              />
+            )}
             </>
           )}
         </React.Suspense>
@@ -1554,12 +1628,14 @@ export const App: React.FC = () => {
         activeTab === 'search' ||
         activeTab === 'profile' ||
         activeTab === 'video-feed' ||
+        activeTab === 'policies' ||
         selectedArticleId) && (
           <Footer
             categories={CATEGORIES}
             districts={DISTRICTS}
             divisions={DIVISIONS}
             onNavigateTab={navigateToTab}
+            onNavigatePolicy={handleNavigatePolicy}
             onSelectCategory={(catId) => {
               setInitialCategoryFilter(catId);
               navigateToTab('home');

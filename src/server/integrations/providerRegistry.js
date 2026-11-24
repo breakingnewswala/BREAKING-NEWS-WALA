@@ -4,8 +4,16 @@
  * Grounded in docs/19-API-Pool.md and docs/20-Integrations.md
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { CANONICAL_SEED_PROVIDERS, INTEGRATION_ERROR_CODES } from './constants.js';
+import { aiProviderPool } from '../ai/providerPool.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ENV_FILE_PATH = path.resolve(__dirname, '../../../.env');
 
 export class ProviderRegistry {
   constructor(adapter) {
@@ -17,12 +25,54 @@ export class ProviderRegistry {
 
   init() {
     for (const p of CANONICAL_SEED_PROVIDERS) {
-      this.memoryProviders.set(p.id, { ...p });
+      const copy = { ...p };
+      let key = null;
       if (p.providerId === 'google_gemini') {
-        const key = process.env.GEMINI_API_KEY || 'AIzaSyFakeDevKeyForTesting12345';
-        this.credentialVault.set(p.id, key);
-        this.memoryProviders.get(p.id).maskedCredential = this.maskSecret(key);
+        key = process.env.GEMINI_API_KEY || null;
+      } else if (p.providerId === 'openai_gpt4o') {
+        key = process.env.OPENAI_API_KEY || null;
+      } else if (p.providerId === 'anthropic_claude') {
+        key = process.env.ANTHROPIC_API_KEY || null;
       }
+
+      const isReal = key && typeof key === 'string' && !key.includes('Fake') && !key.includes('DEMO') && key.length > 15;
+      if (isReal) {
+        this.credentialVault.set(p.id, key);
+        copy.maskedCredential = this.maskSecret(key);
+        copy.configStatus = 'configured';
+        copy.connectionStatus = 'connected';
+        copy.healthStatus = 'healthy';
+        if (p.providerId === 'google_gemini') aiProviderPool.setGeminiKey(key);
+      } else if (p.providerId === 'mock_local') {
+        copy.maskedCredential = 'OFFLINE_MOCK';
+        copy.configStatus = 'configured';
+        copy.connectionStatus = 'connected';
+        copy.healthStatus = 'healthy';
+      } else {
+        copy.maskedCredential = null;
+        copy.configStatus = 'pending_configuration';
+        copy.connectionStatus = 'pending_authorization';
+        copy.healthStatus = 'unknown';
+      }
+      this.memoryProviders.set(p.id, copy);
+    }
+  }
+
+  persistEnvKey(keyName, val) {
+    try {
+      let content = '';
+      if (fs.existsSync(ENV_FILE_PATH)) {
+        content = fs.readFileSync(ENV_FILE_PATH, 'utf8');
+      }
+      const regex = new RegExp(`^${keyName}=.*$`, 'm');
+      if (regex.test(content)) {
+        content = content.replace(regex, `${keyName}=${val}`);
+      } else {
+        content = content ? `${content.trim()}\n${keyName}=${val}\n` : `${keyName}=${val}\n`;
+      }
+      fs.writeFileSync(ENV_FILE_PATH, content, 'utf8');
+    } catch (e) {
+      console.warn(`[ProviderRegistry] Could not persist ${keyName} to .env:`, e.message);
     }
   }
 
@@ -119,11 +169,26 @@ export class ProviderRegistry {
     if (!prov) return null;
 
     if (dto.apiKey || dto.clientSecret) {
-      const secret = dto.apiKey || dto.clientSecret;
+      const secret = (dto.apiKey || dto.clientSecret).trim();
       this.credentialVault.set(prov.id, secret);
       prov.maskedCredential = this.maskSecret(secret);
       prov.configStatus = 'configured';
       prov.connectionStatus = 'connected';
+      prov.healthStatus = 'healthy';
+
+      if (prov.providerId === 'google_gemini' || prov.id === 'prov-gemini') {
+        process.env.GEMINI_API_KEY = secret;
+        aiProviderPool.setGeminiKey(secret);
+        this.persistEnvKey('GEMINI_API_KEY', secret);
+      } else if (prov.providerId === 'openai_gpt4o' || prov.id === 'prov-openai') {
+        process.env.OPENAI_API_KEY = secret;
+        aiProviderPool.setOpenAiKey(secret);
+        this.persistEnvKey('OPENAI_API_KEY', secret);
+      } else if (prov.providerId === 'anthropic_claude' || prov.id === 'prov-claude') {
+        process.env.ANTHROPIC_API_KEY = secret;
+        aiProviderPool.setAnthropicKey(secret);
+        this.persistEnvKey('ANTHROPIC_API_KEY', secret);
+      }
     }
 
     if (dto.name) prov.name = dto.name;

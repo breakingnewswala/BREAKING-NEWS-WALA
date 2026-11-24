@@ -81,6 +81,7 @@ export interface ArticleItem {
   viewCount: number;
   publishedAt?: string;
   createdAt: string;
+  updatedAt?: string;
   tags?: string[];
   readingTimeMinutes?: number;
   videoUrl?: string;
@@ -91,6 +92,8 @@ export interface ArticleItem {
 export interface ArticleDetail extends ArticleItem {
   imageCaption?: string;
   imageAttribution?: string;
+  galleryImages?: Array<{ id: string; url: string; caption?: string; credit?: string }>;
+  officialStatement?: string;
   shareCount: number;
   content: string;
   factChecked?: boolean;
@@ -3020,6 +3023,39 @@ export interface EpaperSchedulePublishInput {
   expectedVersion?: number;
   version?: number;
 }
+
+export type PolicySectionKey =
+  | 'privacy'
+  | 'terms'
+  | 'payments'
+  | 'refund'
+  | 'grievance'
+  | 'editorial'
+  | 'about'
+  | 'contact'
+  | 'disclaimer'
+  | 'advertising'
+  | 'sitemap';
+
+export interface GrievanceComplaintPayload {
+  complainantName: string;
+  complainantEmail: string;
+  complainantPhone: string;
+  complainantCity: string;
+  articleUrlOrHeadline: string;
+  category: 'FACTUAL_ERROR' | 'DEFAMATION' | 'PRIVACY_VIOLATION' | 'COPYRIGHT' | 'OBSCENITY' | 'OTHER';
+  description: string;
+}
+
+export interface ContactInquiryPayload {
+  name: string;
+  emailOrPhone: string;
+  city: string;
+  inquiryType: 'EDITORIAL' | 'ADVERTISING' | 'STRINGER' | 'TECHNICAL' | 'GENERAL';
+  subject: string;
+  message: string;
+}
+
 
 
 

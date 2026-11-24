@@ -15,7 +15,21 @@ export type NavTab =
   | 'profile'
   | 'graphics'
   | 'videos'
-  | 'ai-newsroom';
+  | 'ai-newsroom'
+  | 'policies';
+
+export type PolicySectionKey =
+  | 'privacy'
+  | 'terms'
+  | 'payments'
+  | 'refund'
+  | 'grievance'
+  | 'editorial'
+  | 'about'
+  | 'contact'
+  | 'disclaimer'
+  | 'advertising'
+  | 'sitemap';
 
 interface BottomNavProps {
   activeTab: NavTab;

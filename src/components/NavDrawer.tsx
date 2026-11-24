@@ -24,7 +24,7 @@ import {
   Crown,
   Plus,
 } from 'lucide-react';
-import { AppRole, CategoryItem, DistrictItem, DivisionItem, EpaperEdition } from '../types';
+import { AppRole, CategoryItem, DistrictItem, DivisionItem, EpaperEdition, PolicySectionKey } from '../types';
 import { NavTab } from './BottomNav';
 
 interface NavDrawerProps {
@@ -32,6 +32,7 @@ interface NavDrawerProps {
   onClose: () => void;
   activeTab: NavTab;
   onTabSelect: (tab: NavTab) => void;
+  onNavigatePolicy?: (policyKey: PolicySectionKey) => void;
   currentRole: AppRole;
   accountRole?: AppRole;
   onRoleChange: (role: AppRole) => void;
@@ -57,6 +58,7 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
   onClose,
   activeTab,
   onTabSelect,
+  onNavigatePolicy,
   currentRole,
   accountRole = currentRole,
   onRoleChange,
@@ -85,6 +87,16 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
 
   const navigateTo = (tab: NavTab) => {
     onTabSelect(tab);
+    onClose();
+  };
+
+  const navigateToPolicy = (section: PolicySectionKey) => {
+    if (onNavigatePolicy) {
+      onNavigatePolicy(section);
+    } else {
+      window.location.hash = `#${section}`;
+      onTabSelect('policies');
+    }
     onClose();
   };
 
@@ -557,10 +569,77 @@ export const NavDrawer: React.FC<NavDrawerProps> = ({
                 >
                   <span className="flex items-center gap-2.5">
                     <HelpCircle className="w-4 h-4 text-cyan-600" />
-                    सहायता, फीडबैक व शिकायत
+                    सहायता व फीडबैक
                   </span>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                 </button>
+
+                {/* Policies & Statutory Links Section */}
+                <div className="pt-2 mt-2 border-t border-slate-200/80 space-y-1">
+                  <span className="px-3 text-[10px] font-black uppercase text-slate-400 tracking-wider block">
+                    नीतियां एवं वैधानिक जानकारी
+                  </span>
+                  <button
+                    onClick={() => navigateToPolicy('privacy')}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                      गोपनीयता नीति (DPDPA 2023)
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                  </button>
+                  <button
+                    onClick={() => navigateToPolicy('terms')}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-blue-600" />
+                      नियम एवं शर्तें (Terms of Service)
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                  </button>
+                  <button
+                    onClick={() => navigateToPolicy('payments')}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-purple-600" />
+                      भुगतान, रिफंड व रद्दीकरण नीति
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                  </button>
+                  <button
+                    onClick={() => navigateToPolicy('grievance')}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-amber-600" />
+                      शिकायत निवारण अधिकारी (IT Rules)
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                  </button>
+                  <button
+                    onClick={() => navigateToPolicy('about')}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Building2 className="w-3.5 h-3.5 text-red-600" />
+                      हमारे बारे में (About Us)
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                  </button>
+                  <button
+                    onClick={() => navigateToPolicy('contact')}
+                    className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-red-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-blue-600" />
+                      संपर्क करें व संभाग ब्यूरो
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                  </button>
+                </div>
 
                 {isAuthenticated && (
                   <button

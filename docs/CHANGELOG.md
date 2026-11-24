@@ -387,6 +387,20 @@ This section constitutes the canonical, historical Keep a Changelog record for t
 ## [Unreleased]
 
 ### Added
+- **[Staging Environment & Statutory Policy Pages] Staging Pipeline Setup, CI/CD Automated Release Gates, & 9 Statutory Subpages (DOC-STAGING-RELEASE-V1.0):**
+  - **Staging Pipeline & Release Infrastructure**:
+    - Established dedicated GitHub branch `staging` off `main` establishing the canonical 2-tier release promotion model (`feature/* -> staging -> main`).
+    - Updated `.github/workflows/ci.yml` running type-checks, linters, and distribution bundle integrity verification on both `main` and `staging`.
+    - Created `.github/workflows/staging-deploy.yml` dedicated staging build and release candidate packaging workflow.
+    - Added `.env.staging` staging environment template (`APP_ENV=staging`, `PERSISTENCE_MODE=firestore`).
+    - Built `StagingBanner.tsx` non-intrusive sticky staging badge displayed only in staging environments.
+    - Authored bilingual developer and newsroom runbook `docs/STAGING-WORKFLOW.md`.
+  - **Statutory, Regulatory & Informational Subpages (`PolicyHubScreen.tsx`)**:
+    - Built comprehensive, responsive legal hub containing 9 dedicated policies: Privacy Policy (DPDPA 2023), Terms of Service (IT Act 2000), Payments & Refund Policy (Razorpay & RBI merchant guidelines with 5-7 business day turnaround), Grievance Redressal (IT Rules 2021 Rule 11 with Grievance Officer Advocate Rajesh Saxena and interactive complaint form), Editorial Ethics & 10-Point Fact-Checking Protocol, About Us (Newsroom mission and 55 districts network), Contact Us & Bureau Directory (Headquarters in Bhopal and 10 division bureaus), Disclaimer & Copyright, and Advertising Policy.
+    - Added full client-side deep linking and hash/path synchronization (`/#privacy`, `/#terms`, `/#payments`, `/#grievance`, `/#about`, `/#contact`, etc.).
+    - Modernized `Footer.tsx` with structured 4-column statutory links replacing legacy modal dialogs.
+    - Integrated policy access into `NavDrawer.tsx` for mobile readers.
+
 - **[E-Paper Layout Designer & Master Admin Suite Overhaul] E-Paper Designer Reorganization, Header Manager, Embedded Studios, AI Newsroom & RSS Desk (BNW-MASTER-041):**
   - **E-Paper Layout Designer Redesign**:
     - Reorganized the top toolbar into two structured rows: Row 1 for Publication, Edition, Page count, Section, Zoom, Undo/Redo, and Save Status; Row 2 for Design Tools (Auto/Assisted/Manual, Selection, Move, Brush, Columns, Photo, Text, Shapes).

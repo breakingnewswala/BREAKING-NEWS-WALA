@@ -360,6 +360,12 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
   const [newProvBaseUrl, setNewProvBaseUrl] = useState('');
   const [newProvDailyLimit, setNewProvDailyLimit] = useState(100000);
 
+  // Update Existing Provider Key Modal State
+  const [showUpdateKeyModal, setShowUpdateKeyModal] = useState(false);
+  const [selectedProviderForEdit, setSelectedProviderForEdit] = useState<IntegrationProviderItem | null>(null);
+  const [editKeyInput, setEditKeyInput] = useState('');
+  const [savingKey, setSavingKey] = useState(false);
+
   // New RSS Source Form
   const [newRssName, setNewRssName] = useState('');
   const [newRssUrl, setNewRssUrl] = useState('');
@@ -429,6 +435,27 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
       loadIntegrationData();
     } catch (err: any) {
       setIntegrationMsg({ text: err.message || 'हेल्थ टेस्ट विफल', isError: true });
+    }
+  };
+
+  const handleUpdateProviderKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProviderForEdit || !editKeyInput.trim()) return;
+    setSavingKey(true);
+    try {
+      await apiClient.integrations.updateProvider(selectedProviderForEdit.id, {
+        apiKey: editKeyInput.trim(),
+        isEnabled: true,
+      });
+      setIntegrationMsg({ text: `✨ ${selectedProviderForEdit.name}: API Key सफलतापूर्वक अपडेट व सक्रिय कर दी गई!` });
+      setShowUpdateKeyModal(false);
+      setEditKeyInput('');
+      setSelectedProviderForEdit(null);
+      loadIntegrationData();
+    } catch (err: any) {
+      setIntegrationMsg({ text: err.message || 'Key अपडेट विफल', isError: true });
+    } finally {
+      setSavingKey(false);
     }
   };
 
@@ -1639,17 +1666,20 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                       {selectedReviewArticle.title}
                     </h3>
 
-                    {selectedReviewArticle.featuredImage && (
+                    {(selectedReviewArticle.featuredImage || selectedReviewArticle.imageUrl) && (
                       <div className="rounded-lg overflow-hidden border border-slate-200">
                         <img
-                          src={selectedReviewArticle.featuredImage}
+                          src={selectedReviewArticle.featuredImage || selectedReviewArticle.imageUrl}
                           alt="ग्राउंड फोटो"
-                          className="w-full h-48 object-cover"
+                          className="w-full h-56 object-cover"
                         />
-                        {selectedReviewArticle.imageCaption && (
-                          <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 border-t border-slate-200">
-                            {selectedReviewArticle.imageCaption}
-                          </p>
+                        {(selectedReviewArticle.imageCaption || selectedReviewArticle.imageCredit) && (
+                          <div className="text-[11px] text-slate-600 bg-slate-50 p-2 border-t border-slate-200 flex items-center justify-between">
+                            <span>{selectedReviewArticle.imageCaption}</span>
+                            {selectedReviewArticle.imageCredit && (
+                              <span className="text-slate-400">फोटो साभार: {selectedReviewArticle.imageCredit}</span>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
@@ -3410,6 +3440,20 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                           <div className="flex items-center gap-1.5">
                             <button
                               type="button"
+                              onClick={() => {
+                                setSelectedProviderForEdit(prov);
+                                setEditKeyInput('');
+                                setShowUpdateKeyModal(true);
+                              }}
+                              className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                              title="नई API Key दर्ज करें"
+                            >
+                              <Key className="w-3 h-3 text-blue-600" />
+                              <span>Key अपडेट</span>
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => handleTestProviderHealth(prov.id)}
                               className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
                             >
@@ -3530,6 +3574,76 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
                             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-sm cursor-pointer"
                           >
                             प्रोवाइडर सुरक्षित करें
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* Update API Key Modal */}
+                {showUpdateKeyModal && selectedProviderForEdit && (
+                  <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-xs">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Key className="w-5 h-5 text-blue-600" />
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-base">{selectedProviderForEdit.name}</h3>
+                            <p className="text-[11px] text-slate-500">API Key / क्रेडेंशियल अपडेट करें</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowUpdateKeyModal(false);
+                            setSelectedProviderForEdit(null);
+                          }}
+                          className="text-slate-400 hover:text-slate-700 font-bold p-1 cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleUpdateProviderKey} className="space-y-3">
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 text-[11px]">
+                          वर्तमान क्रेडेंशियल: <strong className="font-mono">{selectedProviderForEdit.maskedCredential || 'कॉन्फ़िगर नहीं है'}</strong>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">
+                            नई वास्तविक API Key (Real API Key) *
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="अपनी वास्तविक API Key यहां पेस्ट करें..."
+                            value={editKeyInput}
+                            onChange={(e) => setEditKeyInput(e.target.value)}
+                            className="w-full p-2.5 border border-blue-400 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono text-xs"
+                          />
+                          <span className="text-[10px] text-slate-500 mt-1 block">
+                            * यह की सीधे सर्वर पर सुरक्षित सेव होगी और तुरंत एक्टिवेट हो जाएगी।
+                          </span>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowUpdateKeyModal(false);
+                              setSelectedProviderForEdit(null);
+                            }}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
+                          >
+                            रद्द करें
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={savingKey || !editKeyInput.trim()}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-sm cursor-pointer disabled:opacity-50"
+                          >
+                            {savingKey ? 'सहेज रहे हैं...' : 'Key सहेजें व सक्रिय करें'}
                           </button>
                         </div>
                       </form>
@@ -4586,6 +4700,8 @@ export const AdminControlScreen: React.FC<AdminControlScreenProps> = ({
               onUpdatePriority={onUpdatePriority}
               onToggleBreaking={onToggleBreaking}
               onSchedulePublication={onSchedulePublication}
+              onPublishArticle={onPublishArticle}
+              onAddPendingArticle={onAddPendingArticle}
             />
           </div>
         )}

@@ -309,6 +309,7 @@ export const RssManagementDesk: React.FC<RssManagementDeskProps> = ({
       categoryId: `cat-${converterCategory.toLowerCase()}`,
       categoryName: converterCategory,
       imageUrl: sample.imageUrl || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80',
+      featuredImage: sample.imageUrl || sample.featuredImage || 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?w=800&auto=format&fit=crop&q=80',
       imageCaption: `${converterDistrict} में समाचार छायाचित्र`,
       status: 'DRAFT',
       priority: 'NORMAL',
