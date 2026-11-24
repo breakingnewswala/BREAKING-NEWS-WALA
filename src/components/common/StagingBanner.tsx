@@ -14,9 +14,10 @@ export const StagingBanner: React.FC<StagingBannerProps> = ({
     // Only display if explicitly in staging environment or on staging/preview hostname
     if (typeof window === 'undefined') return false;
     const isStagingEnv = appEnv === 'staging';
+    const isStagingPath = window.location.pathname.startsWith('/testing');
     const isStagingHost = window.location.hostname.includes('staging') ||
                           window.location.hostname.includes('preview');
-    return isStagingEnv || isStagingHost;
+    return isStagingEnv || isStagingHost || isStagingPath;
   });
 
   if (!isVisible) return null;
@@ -36,7 +37,7 @@ export const StagingBanner: React.FC<StagingBannerProps> = ({
             STAGING QA
           </span>
           <span className="truncate text-[11px] sm:text-xs text-slate-950 font-medium">
-            <strong>स्टेजिंग मोड:</strong> यह प्री-प्रोडक्शन टेस्टिंग पोर्टल है। यहाँ सभी नए बदलावों का परीक्षण किया जा रहा है।
+            <strong>स्टेजिंग मोड:</strong> यह प्री-प्रोडक्शन टेस्टिंग पोर्टल (breakingnewswala.com/testing) है। यहाँ सभी नए बदलावों का परीक्षण किया जा रहा है।
           </span>
         </div>
 

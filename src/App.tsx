@@ -413,7 +413,14 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase();
-      const pathname = window.location.pathname.replace('/', '').toLowerCase();
+      // Support staging subpath at /testing (breakingnewswala.com/testing)
+      let rawPath = window.location.pathname.toLowerCase();
+      if (rawPath === '/testing' || rawPath === '/testing/') {
+        rawPath = '/';
+      } else if (rawPath.startsWith('/testing/')) {
+        rawPath = rawPath.replace(/^\/testing\/?/, '/');
+      }
+      const pathname = rawPath.replace('/', '');
       const target = hash || pathname;
 
       if (target === 'epaper' || target === 'search' || target === 'profile' || target === 'taza' || target === 'video-feed') {

@@ -200,8 +200,17 @@ export interface CreateEditionPayload {
   pdfUrl?: string;
 }
 
-// API Base URL resolution (relative /api/v1 or VITE_API_URL)
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || '/api/v1';
+// API Base URL resolution (supports /testing staging subpath as well as /api/v1 or VITE_API_URL)
+const resolveApiBaseUrl = (): string => {
+  if ((import.meta as any).env?.VITE_API_URL) {
+    return (import.meta as any).env.VITE_API_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/testing')) {
+    return '/testing/api/v1';
+  }
+  return '/api/v1';
+};
+const API_BASE_URL = resolveApiBaseUrl();
 
 // Token Storage Keys
 const ACCESS_TOKEN_KEY = 'bnw_access_token';
@@ -439,7 +448,7 @@ export const apiClient = {
   health: {
     async checkHealth(): Promise<any> {
       try {
-        const res = await fetch('/api/v1/health');
+        const res = await fetch(`${API_BASE_URL}/health`);
         if (res.ok) {
           return await res.json();
         }
@@ -447,7 +456,8 @@ export const apiClient = {
         // Fallback to secondary endpoints
       }
       try {
-        const fallbackRes = await fetch('/healthz/');
+        const fallbackBase = API_BASE_URL.replace(/\/api\/v1$/, '');
+        const fallbackRes = await fetch(`${fallbackBase}/healthz/`);
         if (fallbackRes.ok) {
           return await fallbackRes.json();
         }
@@ -3631,7 +3641,7 @@ export const apiClient = {
       const token = localStorage.getItem('bnw_auth_token');
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const response = await fetch(`/api/v1/epaper/editions/${encodeURIComponent(editionId)}/export/pdf`, {
+      const response = await fetch(`${API_BASE_URL}/epaper/editions/${encodeURIComponent(editionId)}/export/pdf`, {
         method: options ? 'POST' : 'GET',
         headers: options ? { ...headers, 'Content-Type': 'application/json' } : headers,
         body: options ? JSON.stringify(options) : undefined,
@@ -3649,7 +3659,7 @@ export const apiClient = {
       const token = localStorage.getItem('bnw_auth_token');
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const response = await fetch(`/api/v1/epaper/editions/${encodeURIComponent(editionId)}/export/page/${pageNumber}/image`, {
+      const response = await fetch(`${API_BASE_URL}/epaper/editions/${encodeURIComponent(editionId)}/export/page/${pageNumber}/image`, {
         method: options ? 'POST' : 'GET',
         headers: options ? { ...headers, 'Content-Type': 'application/json' } : headers,
         body: options ? JSON.stringify(options) : undefined,

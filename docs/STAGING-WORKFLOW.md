@@ -35,7 +35,7 @@ BREAKING NEWS WALA प्लेटफ़ॉर्म पर निरंतर �
 | शाखा (Branch) | उद्देश्य (Purpose) | डिप्लॉयमेंट टार्गेट (Deployment) | सुरक्षा नियम (Protection Rule) |
 | :--- | :--- | :--- | :--- |
 | **`main`** | प्रोडक्शन-रेडी कोड (Production Releases) | Live Website (`breakingnewswala.com`) | केवल स्टेजिंग से टेस्टेड PRs ही अनुमत |
-| **`staging`** | प्री-प्रोडक्शन एकीकरण व QA (Release Candidates) | Staging Portal (`staging.breakingnewswala.com`) | सभी फ़ीचर्स का अंतिम एकीकरण स्थल |
+| **`staging`** | प्री-प्रोडक्शन एकीकरण व QA (Release Candidates) | Staging Portal (`breakingnewswala.com/testing`) | सभी फ़ीचर्स का अंतिम एकीकरण स्थल |
 | **`feature/*`** | नया फ़ीचर विकास (New Features) | Local Dev Environment | `staging` से ब्रांच करें |
 | **`fix/*`** | बग सुधार (Bugfixes & Hotfixes) | Local Dev Environment | `staging` से ब्रांच करें |
 

@@ -64,7 +64,26 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const pathname = parsedUrl.pathname;
+  let pathname = parsedUrl.pathname;
+
+  // 0. Staging / Testing Subpath Mount Support (breakingnewswala.com/testing)
+  if (pathname === '/testing') {
+    res.writeHead(301, {
+      Location: '/testing/' + (parsedUrl.search || '') + (parsedUrl.hash || ''),
+      'Content-Type': 'text/plain; charset=UTF-8',
+    });
+    res.end('Redirecting to /testing/');
+    return;
+  }
+
+  if (pathname.startsWith('/testing/')) {
+    pathname = pathname.substring('/testing'.length);
+    if (!pathname.startsWith('/')) {
+      pathname = '/' + pathname;
+    }
+    // Rewrite req.url so downstream handlers (API Engine, media, health check) see canonical paths
+    req.url = pathname + (parsedUrl.search || '');
+  }
 
   // 1. Machine-readable health check endpoint (Section 13)
   if (
